@@ -1,4 +1,4 @@
-import type { Alert, AnalyticsSummary, Competition, FeedEvent, MarketActivityPoint, MarketPulseBucket, MarketRow, OverviewKpis } from "@/types";
+import type { Alert, AnalyticsSummary, Competition, FeedEvent, FixtureRow, MarketActivityPoint, MarketPulseBucket, MarketRow, OverviewKpis } from "@/types";
 import type { FilterOptions, MarketDataProvider, MarketTick } from "./market-data-provider";
 
 /**
@@ -82,6 +82,10 @@ export class UnavailableMarketDataProvider implements MarketDataProvider {
 
   async getFilterOptions(): Promise<FilterOptions> {
     return { sports: [], countries: [], competitions: [], marketNames: [] };
+  }
+
+  async getFixtures(): Promise<FixtureRow[]> {
+    return [];
   }
 
   subscribeToTicks(_onTick: (ticks: MarketTick[]) => void): () => void {

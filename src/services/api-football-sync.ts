@@ -1,9 +1,9 @@
 import { db } from "@/lib/db";
 import {
-  LEAGUE_ALLOWLIST,
+  ApiFootballError,
   getFixturesByDate,
   getLiveFixtures,
-  getOddsForFixture,
+  getOddsByDate,
   isLiveStatus,
   type ApiFootballFixture,
 } from "@/lib/api-football";
@@ -11,15 +11,24 @@ import {
 export const PROVIDER_NAME = "api-football";
 
 // Free plan is 100 requests/day — this self-imposed cap leaves real margin
-// so a manual sync during development can never lock the account out for
-// the rest of the day. Tracked in Provider.requestsToday, reset on UTC
-// day rollover.
-const DAILY_BUDGET = 90;
-const MAX_ODDS_CALLS_PER_SYNC = 8;
-const ALLOWLISTED_LEAGUE_IDS = new Set<number>(LEAGUE_ALLOWLIST.map((l) => l.id));
+// so a manual sync can never lock the account out for the rest of the day.
+// Tracked in Provider.requestsToday, reset on UTC day rollover.
+const DAILY_BUDGET = 80;
+
+// Odds are fetched via the paginated /odds?date= endpoint (10 fixtures per
+// page), never one call per fixture — this caps how many pages one sync
+// spends, not how many matches exist. Running the sync again later (same
+// day, budget permitting) fetches further pages and fills in more real odds.
+const MAX_ODDS_PAGES_PER_SYNC = 6;
 
 function todayUTC(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function tomorrowUTC(): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
 }
 
 async function getOrCreateProvider() {
@@ -47,52 +56,193 @@ function mapEventStatus(short: string): "upcoming" | "live" | "finished" {
   return "finished";
 }
 
-async function upsertFixture(fixture: ApiFootballFixture) {
-  const provider = await getOrCreateProvider();
-  const league = LEAGUE_ALLOWLIST.find((l) => l.id === fixture.league.id);
-  if (!league) return null;
-
-  const competition = await db.competition.upsert({
-    where: { providerId_externalId: { providerId: provider.id, externalId: String(league.id) } },
-    create: {
-      providerId: provider.id,
-      externalId: String(league.id),
-      sport: "football",
-      country: league.country,
-      name: league.name,
-    },
-    update: {},
-  });
-
-  const event = await db.event.upsert({
-    where: { competitionId_externalId: { competitionId: competition.id, externalId: String(fixture.fixture.id) } },
-    create: {
-      competitionId: competition.id,
-      externalId: String(fixture.fixture.id),
-      homeTeam: fixture.teams.home.name,
-      awayTeam: fixture.teams.away.name,
-      kickoff: new Date(fixture.fixture.date),
-      status: mapEventStatus(fixture.fixture.status.short),
-      homeScore: fixture.goals.home,
-      awayScore: fixture.goals.away,
-    },
-    update: {
-      status: mapEventStatus(fixture.fixture.status.short),
-      homeScore: fixture.goals.home,
-      awayScore: fixture.goals.away,
-    },
-  });
-
-  return event;
+/** Runs `fn` over `items` with at most `limit` in flight at once — keeps DB round-trips fast without opening hundreds of connections at once. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await fn(items[index]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
-async function syncOddsForFixture(fixtureId: number, eventDbId: string) {
-  const odds = await getOddsForFixture(fixtureId);
-  if (!odds || odds.bookmakers.length === 0) return;
+/** One call reserved from the budget, or null if the budget is already exhausted — callers treat null as "skip this, don't fail the whole sync". */
+async function tryReserve(requestsUsed: { count: number }): Promise<boolean> {
+  const got = await reserveBudget(1);
+  if (got < 1) return false;
+  requestsUsed.count += 1;
+  return true;
+}
 
+export interface SyncResult {
+  ok: boolean;
+  reason?: string;
+  fixturesSynced: number;
+  competitionsSynced: number;
+  oddsFetched: number;
+  requestsUsed: number;
+}
+
+/**
+ * The only place this app ever calls the real API-Football API. No fixed
+ * league allowlist: every competition the API returns for the fetched
+ * dates gets stored, because curating a short list of "big" leagues was
+ * the actual cause of near-empty results, not a real coverage limit.
+ *
+ * Sequence: today's fixtures (required) -> live fixtures (best-effort) ->
+ * tomorrow's fixtures (best-effort) -> a capped number of paginated odds
+ * pages for today. Each step reserves its own budget before calling, so a
+ * budget shortfall degrades the sync (skips optional steps) instead of
+ * failing it outright, and the sync can never spend past DAILY_BUDGET.
+ * Every attempt — success or failure — is written to SyncLog.
+ */
+export async function syncApiFootball(): Promise<SyncResult> {
+  const provider = await getOrCreateProvider();
+  const requestsUsed = { count: 0 };
+  const startedAt = new Date();
+
+  try {
+    if (!(await tryReserve(requestsUsed))) {
+      return await finish({ ok: false, reason: "Daily API-Football request budget already exhausted." });
+    }
+    const todayFixtures = await getFixturesByDate(todayUTC());
+
+    let liveFixtures: ApiFootballFixture[] = [];
+    if (await tryReserve(requestsUsed)) {
+      try {
+        liveFixtures = await getLiveFixtures();
+      } catch {
+        liveFixtures = []; // best-effort — a failed live check shouldn't sink the whole sync
+      }
+    }
+
+    let tomorrowFixtures: ApiFootballFixture[] = [];
+    if (await tryReserve(requestsUsed)) {
+      try {
+        tomorrowFixtures = await getFixturesByDate(tomorrowUTC());
+      } catch {
+        tomorrowFixtures = []; // e.g. right at UTC day rollover — skip, don't fail
+      }
+    }
+
+    const byFixtureId = new Map<number, ApiFootballFixture>();
+    // Live status is the most current — apply it last so it wins over the plain date-listing entry for the same fixture.
+    for (const f of [...todayFixtures, ...tomorrowFixtures, ...liveFixtures]) byFixtureId.set(f.fixture.id, f);
+    const merged = [...byFixtureId.values()];
+
+    // One upsert per distinct competition first, so events can reference a real Competition id.
+    const leaguesById = new Map<number, ApiFootballFixture["league"]>();
+    for (const f of merged) leaguesById.set(f.league.id, f.league);
+
+    const competitionIdByLeagueId = new Map<number, string>();
+    await mapLimit([...leaguesById.values()], 10, async (league) => {
+      const competition = await db.competition.upsert({
+        where: { providerId_externalId: { providerId: provider.id, externalId: String(league.id) } },
+        create: { providerId: provider.id, externalId: String(league.id), sport: "football", country: league.country, name: league.name },
+        update: { name: league.name, country: league.country },
+      });
+      competitionIdByLeagueId.set(league.id, competition.id);
+    });
+
+    const eventByFixtureId = new Map<number, string>();
+    await mapLimit(merged, 20, async (fixture) => {
+      const competitionId = competitionIdByLeagueId.get(fixture.league.id);
+      if (!competitionId) return;
+      const event = await db.event.upsert({
+        where: { competitionId_externalId: { competitionId, externalId: String(fixture.fixture.id) } },
+        create: {
+          competitionId,
+          externalId: String(fixture.fixture.id),
+          homeTeam: fixture.teams.home.name,
+          awayTeam: fixture.teams.away.name,
+          kickoff: new Date(fixture.fixture.date),
+          status: mapEventStatus(fixture.fixture.status.short),
+          homeScore: fixture.goals.home,
+          awayScore: fixture.goals.away,
+        },
+        update: {
+          kickoff: new Date(fixture.fixture.date),
+          status: mapEventStatus(fixture.fixture.status.short),
+          homeScore: fixture.goals.home,
+          awayScore: fixture.goals.away,
+        },
+      });
+      eventByFixtureId.set(fixture.fixture.id, event.id);
+    });
+
+    // Odds: paginated bulk endpoint only, never one call per fixture. Stop
+    // as soon as the daily budget or the per-sync page cap is reached.
+    let oddsFetched = 0;
+    for (let page = 1; page <= MAX_ODDS_PAGES_PER_SYNC; page++) {
+      if (!(await tryReserve(requestsUsed))) break;
+      let oddsPage;
+      try {
+        oddsPage = await getOddsByDate(todayUTC(), page);
+      } catch {
+        break; // stop paging on any error rather than risk burning budget on repeats of the same failure
+      }
+      for (const odds of oddsPage.entries) {
+        const eventDbId = eventByFixtureId.get(odds.fixture.id);
+        if (!eventDbId) continue; // odds for a fixture we didn't store (shouldn't normally happen for `date=today`)
+        const synced = await syncOddsForFixture(eventDbId, odds);
+        if (synced) oddsFetched += 1;
+      }
+      if (page >= oddsPage.totalPages) break;
+    }
+
+    await db.provider.update({ where: { id: provider.id }, data: { lastSyncedAt: new Date() } });
+
+    return await finish({
+      ok: true,
+      fixturesSynced: eventByFixtureId.size,
+      competitionsSynced: competitionIdByLeagueId.size,
+      oddsFetched,
+    });
+  } catch (error) {
+    const message = error instanceof ApiFootballError ? error.message : "Unexpected error during sync.";
+    return await finish({ ok: false, reason: message });
+  }
+
+  async function finish(partial: {
+    ok: boolean;
+    reason?: string;
+    fixturesSynced?: number;
+    competitionsSynced?: number;
+    oddsFetched?: number;
+  }): Promise<SyncResult> {
+    await db.syncLog.create({
+      data: {
+        providerId: provider.id,
+        startedAt,
+        finishedAt: new Date(),
+        ok: partial.ok,
+        fixturesSynced: partial.fixturesSynced ?? 0,
+        competitionsSynced: partial.competitionsSynced ?? 0,
+        oddsFetched: partial.oddsFetched ?? 0,
+        requestsUsed: requestsUsed.count,
+        errorMessage: partial.reason,
+      },
+    });
+    return {
+      ok: partial.ok,
+      reason: partial.reason,
+      fixturesSynced: partial.fixturesSynced ?? 0,
+      competitionsSynced: partial.competitionsSynced ?? 0,
+      oddsFetched: partial.oddsFetched ?? 0,
+      requestsUsed: requestsUsed.count,
+    };
+  }
+}
+
+async function syncOddsForFixture(eventDbId: string, odds: Awaited<ReturnType<typeof getOddsByDate>>["entries"][number]): Promise<boolean> {
+  if (!odds.bookmakers.length) return false;
   const bookmaker = odds.bookmakers[0];
   const matchWinner = bookmaker.bets.find((b) => b.name === "Match Winner");
-  if (!matchWinner) return;
+  if (!matchWinner) return false;
 
   const market = await db.market.upsert({
     where: { eventId_externalId: { eventId: eventDbId, externalId: `${bookmaker.id}-${matchWinner.id}` } },
@@ -109,6 +259,7 @@ async function syncOddsForFixture(fixtureId: number, eventDbId: string) {
 
   const positionByValue: Record<string, string> = { Home: "home", Draw: "draw", Away: "away" };
   const now = new Date();
+  let wroteAny = false;
 
   for (const outcome of matchWinner.values) {
     const position = positionByValue[outcome.value];
@@ -122,73 +273,9 @@ async function syncOddsForFixture(fixtureId: number, eventDbId: string) {
 
     // A real snapshot of a real bookmaker price, timestamped to when we
     // actually fetched it — never backdated or interpolated.
-    await db.oddsSnapshot.create({
-      data: { selectionId: selection.id, price: Number(outcome.odd), timestamp: now },
-    });
-  }
-}
-
-export interface SyncResult {
-  ok: boolean;
-  reason?: string;
-  fixturesSynced: number;
-  oddsFetched: number;
-  requestsUsed: number;
-}
-
-/**
- * The only place this app ever calls the real API-Football API. Reads
- * today's fixtures + currently-live fixtures (both allowlisted-league only),
- * then spends a small, capped number of additional calls on odds for the
- * fixtures that matter most right now (live first, then soonest upcoming).
- * Everything is written to Postgres with real timestamps; nothing here
- * fabricates a value the API didn't actually return.
- */
-export async function syncApiFootball(): Promise<SyncResult> {
-  const budget = await reserveBudget(2);
-  if (budget < 2) {
-    return { ok: false, reason: "Daily API-Football request budget exhausted.", fixturesSynced: 0, oddsFetched: 0, requestsUsed: 0 };
+    await db.oddsSnapshot.create({ data: { selectionId: selection.id, price: Number(outcome.odd), timestamp: now } });
+    wroteAny = true;
   }
 
-  const [todayFixtures, liveFixtures] = await Promise.all([
-    getFixturesByDate(todayUTC()),
-    getLiveFixtures(),
-  ]);
-  let requestsUsed = 2;
-
-  const liveIds = new Set(liveFixtures.map((f) => f.fixture.id));
-  const merged = [...liveFixtures, ...todayFixtures.filter((f) => !liveIds.has(f.fixture.id))].filter((f) =>
-    ALLOWLISTED_LEAGUE_IDS.has(f.league.id)
-  );
-
-  const eventByFixtureId = new Map<number, string>();
-  for (const fixture of merged) {
-    const event = await upsertFixture(fixture);
-    if (event) eventByFixtureId.set(fixture.fixture.id, event.id);
-  }
-
-  // Prioritize live matches for odds, then the soonest upcoming ones —
-  // never spend the odds budget on fixtures already finished.
-  const oddsCandidates = merged
-    .filter((f) => mapEventStatus(f.fixture.status.short) !== "finished")
-    .sort((a, b) => {
-      const aLive = isLiveStatus(a.fixture.status.short) ? 0 : 1;
-      const bLive = isLiveStatus(b.fixture.status.short) ? 0 : 1;
-      if (aLive !== bLive) return aLive - bLive;
-      return a.fixture.timestamp - b.fixture.timestamp;
-    });
-
-  const oddsBudget = await reserveBudget(Math.min(MAX_ODDS_CALLS_PER_SYNC, oddsCandidates.length));
-  let oddsFetched = 0;
-  for (const fixture of oddsCandidates.slice(0, oddsBudget)) {
-    const eventDbId = eventByFixtureId.get(fixture.fixture.id);
-    if (!eventDbId) continue;
-    await syncOddsForFixture(fixture.fixture.id, eventDbId);
-    oddsFetched += 1;
-  }
-  requestsUsed += oddsFetched;
-
-  await db.provider.update({ where: { name: PROVIDER_NAME }, data: { lastSyncedAt: new Date() } });
-
-  return { ok: true, fixturesSynced: eventByFixtureId.size, oddsFetched, requestsUsed };
+  return wroteAny;
 }

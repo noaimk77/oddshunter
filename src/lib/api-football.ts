@@ -4,29 +4,30 @@
  * `x-apisports-key` header. Every shape here was verified against real
  * responses during setup, not assumed from documentation alone.
  *
- * Free plan: 100 requests/day (resets 00:00 UTC, unused requests are lost),
- * 10 requests/minute. Every function here is a single real HTTP call —
- * callers (the sync job) are responsible for staying inside that budget by
- * calling sparingly, not this module.
+ * Free plan (verified empirically, not just from docs):
+ * - 100 requests/day (resets 00:00 UTC, unused requests are lost), 10
+ *   requests/minute — this module serializes every call at least
+ *   MIN_INTERVAL_MS apart so a caller making several requests in a row can
+ *   never trip the per-minute limit.
+ * - `/fixtures?date=` only accepts a rolling 3-day window (yesterday, today,
+ *   tomorrow) — confirmed by the API's own error message, not assumed.
+ * - Any endpoint that takes a `season` parameter (league+season fixture
+ *   queries, standings, `next=`) is restricted to seasons 2022-2024 —
+ *   useless for the current season, so this client never uses `season`.
+ * - There is no fixed league allowlist here on purpose: the free plan's
+ *   `/fixtures?date=` and `/odds?date=` endpoints already return every
+ *   competition with real coverage for that date (293 competitions, 1217+
+ *   fixtures observed on a single day) — curating a short list of "big"
+ *   leagues was the actual cause of near-empty results, not a real API
+ *   limitation. Callers (the sync job) decide what to store; this module
+ *   just exposes what the API actually returns.
  */
 
 const BASE_URL = "https://v3.football.api-sports.io";
 
-/**
- * Curated set of well-known, high-coverage competitions. Verified against
- * the real API during setup (id -> name/country all confirmed). Keeps the
- * daily request budget predictable: fixtures/live cost one call each
- * regardless of league count, but odds are fetched per fixture, so a small
- * curated set of leagues keeps that bounded.
- */
-export const LEAGUE_ALLOWLIST = [
-  { id: 39, name: "Premier League", country: "England" },
-  { id: 140, name: "La Liga", country: "Spain" },
-  { id: 61, name: "Ligue 1", country: "France" },
-  { id: 78, name: "Bundesliga", country: "Germany" },
-  { id: 135, name: "Serie A", country: "Italy" },
-  { id: 2, name: "UEFA Champions League", country: "World" },
-] as const;
+/** Minimum spacing between outgoing requests — keeps every caller under the 10/minute cap without needing to coordinate. */
+const MIN_INTERVAL_MS = 6200;
+let lastRequestAt = 0;
 
 export class ApiFootballError extends Error {
   constructor(
@@ -41,12 +42,24 @@ export class ApiFootballError extends Error {
 interface ApiFootballEnvelope<T> {
   errors: unknown;
   results: number;
+  paging?: { current: number; total: number };
   response: T;
 }
 
-async function request<T>(path: string, params: Record<string, string | number>): Promise<T> {
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function request<T>(
+  path: string,
+  params: Record<string, string | number>
+): Promise<{ response: T; paging?: { current: number; total: number } }> {
   const apiKey = process.env.API_FOOTBALL_KEY;
   if (!apiKey) throw new ApiFootballError("API_FOOTBALL_KEY is not set.");
+
+  const waitFor = MIN_INTERVAL_MS - (Date.now() - lastRequestAt);
+  if (waitFor > 0) await sleep(waitFor);
+  lastRequestAt = Date.now();
 
   const url = new URL(`${BASE_URL}${path}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, String(value));
@@ -62,7 +75,7 @@ async function request<T>(path: string, params: Record<string, string | number>)
   if (hasErrors) {
     throw new ApiFootballError(`API-Football returned an error: ${JSON.stringify(body.errors)}`);
   }
-  return body.response;
+  return { response: body.response, paging: body.paging };
 }
 
 export interface ApiFootballStatus {
@@ -71,8 +84,9 @@ export interface ApiFootballStatus {
   requests: { current: number; limit_day: number };
 }
 
-export function getAccountStatus(): Promise<ApiFootballStatus> {
-  return request<ApiFootballStatus>("/status", {});
+export async function getAccountStatus(): Promise<ApiFootballStatus> {
+  const { response } = await request<ApiFootballStatus>("/status", {});
+  return response;
 }
 
 export interface ApiFootballFixture {
@@ -102,14 +116,21 @@ export function isLiveStatus(statusShort: string): boolean {
   return LIVE_STATUS_CODES.has(statusShort);
 }
 
-/** All fixtures for a given date (YYYY-MM-DD), across every league — one call regardless of volume. */
-export function getFixturesByDate(date: string): Promise<ApiFootballFixture[]> {
-  return request<ApiFootballFixture[]>("/fixtures", { date });
+/**
+ * All fixtures for a given date (YYYY-MM-DD), across every competition —
+ * one call regardless of volume. The free plan only accepts dates within a
+ * rolling 3-day window (yesterday/today/tomorrow); anything outside that
+ * throws an ApiFootballError with the plan's own message.
+ */
+export async function getFixturesByDate(date: string): Promise<ApiFootballFixture[]> {
+  const { response } = await request<ApiFootballFixture[]>("/fixtures", { date });
+  return response;
 }
 
-/** Every fixture API-Football currently considers live, across all leagues — one call. */
-export function getLiveFixtures(): Promise<ApiFootballFixture[]> {
-  return request<ApiFootballFixture[]>("/fixtures", { live: "all" });
+/** Every fixture API-Football currently considers live, across all competitions — one call. */
+export async function getLiveFixtures(): Promise<ApiFootballFixture[]> {
+  const { response } = await request<ApiFootballFixture[]>("/fixtures", { live: "all" });
+  return response;
 }
 
 export interface ApiFootballOdds {
@@ -122,8 +143,20 @@ export interface ApiFootballOdds {
   }[];
 }
 
-/** Pre-match bookmaker odds for one fixture. Costs one call per fixture — call sparingly. */
-export async function getOddsForFixture(fixtureId: number): Promise<ApiFootballOdds | null> {
-  const response = await request<ApiFootballOdds[]>("/odds", { fixture: fixtureId });
-  return response[0] ?? null;
+export interface OddsPage {
+  entries: ApiFootballOdds[];
+  currentPage: number;
+  totalPages: number;
+}
+
+/**
+ * Pre-match bookmaker odds for every fixture on a given date, paginated
+ * (10 fixtures per page) — one call per page, not one call per fixture.
+ * This is the only odds endpoint this app uses: fetching odds "match by
+ * match" would burn the daily budget almost immediately, so callers page
+ * through this instead and stop whenever their own budget runs out.
+ */
+export async function getOddsByDate(date: string, page: number): Promise<OddsPage> {
+  const { response, paging } = await request<ApiFootballOdds[]>("/odds", { date, page });
+  return { entries: response, currentPage: paging?.current ?? page, totalPages: paging?.total ?? 1 };
 }

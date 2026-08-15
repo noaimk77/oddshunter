@@ -1,5 +1,5 @@
 import { MOCK_DATASET } from "@/data/mock-generator";
-import { sortMoneywayRows } from "@/lib/market";
+import { sortMoneywayRows, toFixtureRow } from "@/lib/market";
 import type { FeedEvent, MarketRow } from "@/types";
 import type {
   FilterOptions,
@@ -165,6 +165,11 @@ export class MockMarketDataProvider implements MarketDataProvider {
       competitions: [...competitions].sort(),
       marketNames: [...marketNames].sort(),
     };
+  }
+
+  async getFixtures() {
+    await delay(60);
+    return MOCK_DATASET.rows.map(toFixtureRow);
   }
 
   subscribeToTicks(onTick: (ticks: MarketTick[]) => void, intervalMs = 3200): () => void {

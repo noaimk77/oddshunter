@@ -46,6 +46,29 @@ export interface Event {
   marketIds: string[];
 }
 
+/**
+ * A real fixture for a fixtures-first view — independent of whether odds
+ * have been fetched yet. Unlike MarketRow (which requires a Market and
+ * therefore silently drops any fixture without odds), a FixtureRow always
+ * represents a real match; `odds` is simply null until a sync has fetched
+ * a real bookmaker price for it.
+ */
+export interface FixtureRow {
+  id: string; // event id
+  sport: Sport;
+  country: string;
+  competition: string;
+  homeTeam: string;
+  awayTeam: string;
+  kickoff: string; // ISO 8601
+  status: EventStatus;
+  homeScore: number | null;
+  awayScore: number | null;
+  marketId: string | null;
+  odds: { home: number; draw: number; away: number; bookmaker: string } | null;
+  oddsUpdatedAt: string | null; // ISO 8601 — when the odds above were actually fetched, never fabricated
+}
+
 export interface Runner {
   id: string;
   name: string;

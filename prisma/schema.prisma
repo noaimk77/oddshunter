@@ -205,6 +205,28 @@ model Provider {
   requestsDate  String? // YYYY-MM-DD (UTC) the requestsToday counter applies to
 
   competitions Competition[]
+  syncLogs     SyncLog[]
+}
+
+/// One row per sync attempt — the technical journal a human can check without
+/// ever seeing the API key: when it ran, what it found, what broke. Kept as
+/// a history (not just "last sync" fields on Provider) so a failed run
+/// doesn't erase the evidence of what happened before it.
+model SyncLog {
+  id                 String    @id @default(cuid())
+  providerId         String
+  startedAt          DateTime  @default(now())
+  finishedAt         DateTime?
+  ok                 Boolean   @default(false)
+  fixturesSynced     Int       @default(0)
+  competitionsSynced Int       @default(0)
+  oddsFetched        Int       @default(0)
+  requestsUsed       Int       @default(0)
+  errorMessage       String?
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, startedAt])
 }
 
 model Competition {

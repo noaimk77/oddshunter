@@ -3,11 +3,11 @@ import {
   Bell,
   CalendarDays,
   LayoutGrid,
+  LineChart,
   Radar,
   Settings,
   Star,
   UserCircle,
-  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,7 +21,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { label: "Overview", href: "/", icon: LayoutGrid },
   { label: "Scanner", href: "/scanner", icon: Radar },
   { label: "Fixtures", href: "/fixtures", icon: CalendarDays },
-  { label: "Moneyway", href: "/moneyway", icon: Wallet },
+  { label: "Mouvements de cotes", href: "/mouvements", icon: LineChart },
   { label: "Alerts", href: "/alerts", icon: Bell },
   { label: "Watchlist", href: "/watchlist", icon: Star },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },

@@ -8,6 +8,7 @@ import type {
   Event,
   EventStatus,
   FeedEvent,
+  FixtureRow,
   Market,
   MarketPulseBucket,
   MarketRow,
@@ -341,6 +342,65 @@ export class ApiFootballProvider implements MarketDataProvider {
       largestMovements: [...rows].sort((a, b) => Math.abs(b.movementPercent) - Math.abs(a.movementPercent)).slice(0, 8),
       highestVolumeMarkets: [], // no volume data with this provider
     };
+  }
+
+  /**
+   * Every real synced fixture, independent of odds availability — a match
+   * with no odds fetched yet still shows up here (with `odds: null`)
+   * instead of being silently dropped the way listMarkets()/rows() would
+   * drop it (those require a Market, which only exists once odds exist).
+   */
+  async getFixtures(): Promise<FixtureRow[]> {
+    const provider = await db.provider.findUnique({ where: { name: PROVIDER_NAME } });
+    if (!provider) return [];
+
+    const events = await db.event.findMany({
+      where: { competition: { providerId: provider.id } },
+      include: {
+        competition: true,
+        markets: {
+          take: 1,
+          orderBy: { lastUpdated: "desc" },
+          include: { selections: { include: { odds: { orderBy: { timestamp: "desc" }, take: 1 } } } },
+        },
+      },
+      orderBy: { kickoff: "asc" },
+    });
+
+    return events.map((event) => {
+      const market = event.markets[0];
+      let odds: FixtureRow["odds"] = null;
+      let oddsUpdatedAt: string | null = null;
+
+      if (market && market.selections.length > 0) {
+        const bySlot: Partial<Record<string, number>> = {};
+        for (const selection of market.selections) {
+          const latest = selection.odds[0];
+          if (latest) bySlot[selection.position] = latest.price;
+        }
+        if (bySlot.home != null && bySlot.draw != null && bySlot.away != null) {
+          const bookmaker = /\(([^)]+)\)/.exec(market.name)?.[1] ?? "Bookmaker";
+          odds = { home: bySlot.home, draw: bySlot.draw, away: bySlot.away, bookmaker };
+          oddsUpdatedAt = market.lastUpdated.toISOString();
+        }
+      }
+
+      return {
+        id: event.id,
+        sport: "football",
+        country: event.competition.country,
+        competition: event.competition.name,
+        homeTeam: event.homeTeam,
+        awayTeam: event.awayTeam,
+        kickoff: event.kickoff.toISOString(),
+        status: event.status as EventStatus,
+        homeScore: event.homeScore,
+        awayScore: event.awayScore,
+        marketId: market ? market.id : null,
+        odds,
+        oddsUpdatedAt,
+      };
+    });
   }
 
   async getFilterOptions(): Promise<FilterOptions> {

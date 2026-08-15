@@ -173,6 +173,11 @@ export class BetfairProvider implements MarketDataProvider {
     return { sports: [], countries: [], competitions: [], marketNames: [] };
   }
 
+  async getFixtures() {
+    // Same TODO as listMarkets() above — no live account wired up yet.
+    return [];
+  }
+
   subscribeToTicks(_onTick: (ticks: MarketTick[]) => void): () => void {
     // Needs the Exchange Stream API — no-op until that's built.
     return () => {};

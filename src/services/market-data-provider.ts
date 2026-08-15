@@ -4,6 +4,7 @@ import type {
   Competition,
   EventStatus,
   FeedEvent,
+  FixtureRow,
   MarketActivityPoint,
   MarketPulseBucket,
   MarketRow,
@@ -85,6 +86,12 @@ export interface MarketDataProvider {
   getAlerts(): Promise<Alert[]>;
   getAnalytics(): Promise<AnalyticsSummary>;
   getFilterOptions(): Promise<FilterOptions>;
+  /**
+   * Every real fixture for a fixtures-first view, independent of odds
+   * availability — unlike listMarkets(), a fixture with no odds yet still
+   * appears here (with `odds: null`), never silently dropped.
+   */
+  getFixtures(): Promise<FixtureRow[]>;
   /** Simulates (or, later, streams) live market updates. Returns an unsubscribe function. */
   subscribeToTicks(onTick: (ticks: MarketTick[]) => void, intervalMs?: number): () => void;
 }

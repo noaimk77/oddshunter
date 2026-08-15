@@ -1,80 +1,87 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, CalendarX } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LiveIndicator } from "@/components/shared/live-indicator";
-import { SPORT_LABELS } from "@/features/scanner/filter-types";
-import { formatClock, formatCurrency } from "@/lib/format";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { formatClock, formatOdds } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Event, MarketRow, Sport } from "@/types";
-import { CalendarX } from "lucide-react";
+import type { FixtureRow } from "@/types";
 
-type DayTab = "today" | "live" | "upcoming" | "finished";
+type DayTab = "live" | "today" | "tomorrow" | "upcoming";
 
 const DAY_TABS: { value: DayTab; label: string }[] = [
-  { value: "today", label: "Today" },
-  { value: "live", label: "In-play" },
-  { value: "upcoming", label: "Upcoming" },
-  { value: "finished", label: "Finished" },
+  { value: "live", label: "En direct" },
+  { value: "today", label: "Aujourd'hui" },
+  { value: "tomorrow", label: "Demain" },
+  { value: "upcoming", label: "À venir" },
 ];
 
-interface EventGroup {
-  event: Event;
-  markets: MarketRow["market"][];
-  totalVolume: number;
+function dateKeyUTC(iso: string): string {
+  return iso.slice(0, 10);
 }
 
-function groupByEvent(rows: MarketRow[]): EventGroup[] {
-  const map = new Map<string, EventGroup>();
-  for (const row of rows) {
-    const existing = map.get(row.event.id);
-    if (existing) {
-      existing.markets.push(row.market);
-      existing.totalVolume += row.market.matchedVolume;
-    } else {
-      map.set(row.event.id, { event: row.event, markets: [row.market], totalVolume: row.market.matchedVolume });
-    }
-  }
-  return [...map.values()];
+interface Group {
+  label: string;
+  rows: FixtureRow[];
 }
 
-const DAY_MS = 24 * 60 * 60_000;
-
-export function FixturesView({ rows }: { rows: MarketRow[] }) {
-  const sports = useMemo(() => [...new Set(rows.map((r) => r.event.sport))] as Sport[], [rows]);
+export function FixturesView({ rows, isDemo }: { rows: FixtureRow[]; isDemo: boolean }) {
   const [dayTab, setDayTab] = useState<DayTab>("today");
-  const [sport, setSport] = useState<Sport | "all">("all");
+  const [country, setCountry] = useState("all");
+  const [competition, setCompetition] = useState("all");
 
-  // Lazy initializer runs once on first render only — the accepted escape
-  // hatch for a one-time "now" snapshot (setState-in-effect is flagged by
-  // the hooks linter as an extra render for no reason).
-  const [now] = useState<number>(() => Date.now());
+  // Lazy initializers run once on first render only — the accepted escape
+  // hatch for a one-time "today"/"tomorrow" snapshot without an effect.
+  const [today] = useState(() => new Date().toISOString().slice(0, 10));
+  const [tomorrow] = useState(() => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+  });
 
-  const groups = useMemo(() => groupByEvent(rows), [rows]);
+  const countries = useMemo(() => [...new Set(rows.map((r) => r.country))].sort(), [rows]);
+  const competitionsForCountry = useMemo(() => {
+    const pool = country === "all" ? rows : rows.filter((r) => r.country === country);
+    return [...new Set(pool.map((r) => r.competition))].sort();
+  }, [rows, country]);
 
   const filtered = useMemo(() => {
-    return groups.filter((g) => {
-      if (sport !== "all" && g.event.sport !== sport) return false;
-      const kickoffMs = new Date(g.event.kickoff).getTime();
-      if (dayTab === "live") return g.event.status === "live";
-      if (dayTab === "upcoming") return g.event.status === "upcoming";
-      if (dayTab === "finished") return g.event.status === "finished";
-      return Math.abs(kickoffMs - now) <= DAY_MS;
+    return rows.filter((r) => {
+      if (country !== "all" && r.country !== country) return false;
+      if (competition !== "all" && r.competition !== competition) return false;
+      if (dayTab === "live") return r.status === "live";
+      if (dayTab === "upcoming") return r.status === "upcoming";
+      if (dayTab === "today") return dateKeyUTC(r.kickoff) === today;
+      return dateKeyUTC(r.kickoff) === tomorrow; // "tomorrow"
     });
-  }, [groups, sport, dayTab, now]);
+  }, [rows, country, competition, dayTab, today, tomorrow]);
 
-  const byCompetition = useMemo(() => {
-    const map = new Map<string, EventGroup[]>();
-    for (const g of filtered) {
-      const key = `${g.event.country} · ${g.event.competition}`;
-      const list = map.get(key) ?? [];
-      list.push(g);
-      map.set(key, list);
+  const groups = useMemo(() => {
+    const sorted = [...filtered].sort((a, b) => {
+      const aLive = a.status === "live" ? 0 : 1;
+      const bLive = b.status === "live" ? 0 : 1;
+      if (aLive !== bLive) return aLive - bLive;
+      return new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime();
+    });
+
+    const map = new Map<string, Group>();
+    for (const r of sorted) {
+      const key = `${r.country} · ${r.competition}`;
+      const existing = map.get(key);
+      if (existing) existing.rows.push(r);
+      else map.set(key, { label: key, rows: [r] });
     }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+    return [...map.values()].sort((a, b) => {
+      const aLive = a.rows[0].status === "live" ? 0 : 1;
+      const bLive = b.rows[0].status === "live" ? 0 : 1;
+      if (aLive !== bLive) return aLive - bLive;
+      return new Date(a.rows[0].kickoff).getTime() - new Date(b.rows[0].kickoff).getTime();
+    });
   }, [filtered]);
 
   return (
@@ -89,82 +96,123 @@ export function FixturesView({ rows }: { rows: MarketRow[] }) {
                 type="button"
                 onClick={() => setDayTab(tab.value)}
                 className={cn(
-                  "relative rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                  active ? "border-transparent text-foreground" : "border-border/70 text-muted-foreground hover:border-border hover:text-foreground"
+                  "rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
+                  active
+                    ? "border-transparent bg-secondary text-foreground"
+                    : "border-border/70 text-muted-foreground hover:border-border hover:text-foreground"
                 )}
               >
-                {active && (
-                  <motion.span
-                    layoutId="fixtures-day-active"
-                    className="absolute inset-0 rounded-md bg-secondary"
-                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                  />
-                )}
-                <span className="relative">{tab.label}</span>
+                {tab.label}
               </button>
             );
           })}
         </div>
 
-        <div className="flex flex-wrap gap-1.5">
-          {(["all", ...sports] as const).map((s) => {
-            const active = s === sport;
-            return (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setSport(s)}
-                className={cn(
-                  "relative rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                  active ? "border-transparent text-foreground" : "border-border/70 text-muted-foreground hover:border-border hover:text-foreground"
-                )}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="fixtures-sport-active"
-                    className="absolute inset-0 rounded-md bg-secondary"
-                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                  />
-                )}
-                <span className="relative">{s === "all" ? "All sports" : SPORT_LABELS[s]}</span>
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-col gap-1">
+            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Pays</Label>
+            <Select
+              value={country}
+              onValueChange={(v) => {
+                setCountry(v ?? "all");
+                setCompetition("all");
+              }}
+            >
+              <SelectTrigger className="h-8 w-[10rem]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les pays</SelectItem>
+                {countries.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Compétition</Label>
+            <Select value={competition} onValueChange={(v) => setCompetition(v ?? "all")}>
+              <SelectTrigger className="h-8 w-[13rem]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes les compétitions</SelectItem>
+                {competitionsForCountry.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
-      {byCompetition.length === 0 ? (
-        <EmptyState icon={CalendarX} title="No fixtures in this window" description="Try another tab or sport filter." />
+      {groups.length === 0 ? (
+        <EmptyState icon={CalendarX} title="Aucun match dans cette sélection" description="Essayez un autre onglet, pays ou compétition." />
       ) : (
         <div className="space-y-4">
-          {byCompetition.map(([label, events]) => (
-            <div key={label} className="overflow-hidden rounded-lg border border-border/70 bg-card/40">
+          {groups.map((g) => (
+            <div key={g.label} className="overflow-hidden rounded-lg border border-border/70 bg-card/40">
               <div className="flex items-center justify-between border-b border-border/70 px-4 py-2.5">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
-                <span className="font-mono text-xs text-muted-foreground">{events.length} fixtures</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{g.label}</span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  {g.rows.length} match{g.rows.length > 1 ? "s" : ""}
+                </span>
               </div>
               <div className="divide-y divide-border/60">
-                {events.map((g) => (
-                  <Link
-                    key={g.event.id}
-                    href={`/market/${g.markets[0].id}`}
-                    className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-secondary/30"
-                  >
-                    <div className="w-16 shrink-0 font-mono text-xs text-muted-foreground">
-                      {g.event.status === "live" ? <LiveIndicator /> : formatClock(g.event.kickoff)}
+                {g.rows.map((r) => {
+                  const inner = (
+                    <>
+                      <div className="w-16 shrink-0 font-mono text-xs text-muted-foreground">
+                        {r.status === "live" ? <LiveIndicator real={!isDemo} /> : formatClock(r.kickoff)}
+                      </div>
+                      <div className="min-w-0 flex-1 text-sm text-foreground">
+                        {r.homeTeam} <span className="text-muted-foreground">—</span> {r.awayTeam}
+                        {r.status === "finished" && r.homeScore != null && r.awayScore != null && (
+                          <span className="ml-2 font-mono text-xs text-muted-foreground">
+                            {r.homeScore} - {r.awayScore}
+                          </span>
+                        )}
+                      </div>
+                      <div className="hidden shrink-0 sm:block">
+                        {r.odds ? (
+                          <div className="flex items-center gap-3 font-mono text-xs tabular-nums text-foreground">
+                            <span title="Domicile">{formatOdds(r.odds.home)}</span>
+                            <span title="Nul" className="text-muted-foreground">
+                              {formatOdds(r.odds.draw)}
+                            </span>
+                            <span title="Extérieur">{formatOdds(r.odds.away)}</span>
+                            <span className="text-muted-foreground">{r.odds.bookmaker}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Cotes non récupérées</span>
+                        )}
+                      </div>
+                      {r.marketId ? (
+                        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+                      ) : (
+                        <span className="w-3.5 shrink-0" />
+                      )}
+                    </>
+                  );
+
+                  return r.marketId ? (
+                    <Link
+                      key={r.id}
+                      href={`/market/${r.marketId}`}
+                      className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-secondary/30"
+                    >
+                      {inner}
+                    </Link>
+                  ) : (
+                    <div key={r.id} className="flex items-center gap-4 px-4 py-3">
+                      {inner}
                     </div>
-                    <div className="min-w-0 flex-1 text-sm text-foreground">
-                      {g.event.homeTeam} <span className="text-muted-foreground">—</span> {g.event.awayTeam}
-                    </div>
-                    <div className="hidden shrink-0 text-xs text-muted-foreground sm:block">
-                      {g.markets.length} market{g.markets.length > 1 ? "s" : ""}
-                    </div>
-                    <div className="w-20 shrink-0 text-right font-mono text-xs tabular-nums text-foreground">
-                      {formatCurrency(g.totalVolume)}
-                    </div>
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-                  </Link>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}
