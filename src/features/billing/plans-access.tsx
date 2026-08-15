@@ -18,22 +18,26 @@ function PlanCard({
   billingConfigured: boolean;
 }) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const isActive = status === "ACTIVE";
 
   const handleCheckout = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ priceId: plan.priceId }),
       });
-      const data = await res.json();
-      if (data.url) {
+      const data = await res.json().catch(() => null);
+      if (data?.url) {
         window.location.href = data.url;
         return;
       }
-      window.alert(data.error ?? "Something went wrong starting checkout.");
+      setError(data?.error ?? "Something went wrong starting checkout.");
+    } catch {
+      setError("Couldn't reach the server. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -62,9 +66,16 @@ function PlanCard({
       {isActive ? (
         <p className="mt-4 text-xs text-positive">Active — manage it with &quot;Manage billing&quot; below.</p>
       ) : (
-        <Button className="mt-4 w-full" disabled={!billingConfigured || loading} onClick={handleCheckout}>
-          {!billingConfigured ? "Billing not configured" : loading ? "Redirecting…" : `Get ${PLAN_LABEL[plan.type]}`}
-        </Button>
+        <>
+          <Button className="mt-4 w-full" disabled={!billingConfigured || loading} onClick={handleCheckout}>
+            {!billingConfigured ? "Billing not configured" : loading ? "Redirecting…" : `Get ${PLAN_LABEL[plan.type]}`}
+          </Button>
+          {error && (
+            <p role="alert" className="mt-2 text-xs text-signal-extreme">
+              {error}
+            </p>
+          )}
+        </>
       )}
     </div>
   );
@@ -82,17 +93,21 @@ export function PlansAccess({
   hasCustomer: boolean;
 }) {
   const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
 
   const handlePortal = async () => {
     setPortalLoading(true);
+    setPortalError(null);
     try {
       const res = await fetch("/api/stripe/portal", { method: "POST" });
-      const data = await res.json();
-      if (data.url) {
+      const data = await res.json().catch(() => null);
+      if (data?.url) {
         window.location.href = data.url;
         return;
       }
-      window.alert(data.error ?? "Something went wrong opening the billing portal.");
+      setPortalError(data?.error ?? "Something went wrong opening the billing portal.");
+    } catch {
+      setPortalError("Couldn't reach the server. Check your connection and try again.");
     } finally {
       setPortalLoading(false);
     }
@@ -110,9 +125,16 @@ export function PlansAccess({
         ))}
       </div>
       {hasCustomer && (
-        <Button variant="outline" className="mt-4" disabled={portalLoading} onClick={handlePortal}>
-          {portalLoading ? "Opening…" : "Manage billing"}
-        </Button>
+        <div className="mt-4">
+          <Button variant="outline" disabled={portalLoading} onClick={handlePortal}>
+            {portalLoading ? "Opening…" : "Manage billing"}
+          </Button>
+          {portalError && (
+            <p role="alert" className="mt-2 text-xs text-signal-extreme">
+              {portalError}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

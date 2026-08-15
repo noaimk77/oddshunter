@@ -1,21 +1,19 @@
 import { PrismaClient } from "@/generated/prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 /**
  * Prisma 7 requires an explicit driver adapter — there's no more implicit
- * "read DATABASE_URL and pick an engine" at the client level. SQLite today;
- * swapping to Postgres in production means swapping this adapter (and the
- * `datasource` provider in schema.prisma) — nothing else in the app touches
- * Prisma's connection setup.
+ * "read DATABASE_URL and pick an engine" at the client level. Postgres
+ * (Neon, provisioned via Stripe Projects) in every environment now; swap
+ * this adapter (and the `datasource` provider in schema.prisma) if that
+ * ever changes — nothing else in the app touches Prisma's connection setup.
  */
 function buildClient() {
-  const rawUrl = process.env.DATABASE_URL;
-  if (!rawUrl) {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
     throw new Error("DATABASE_URL is not set — see .env.example.");
   }
-  // better-sqlite3 wants a plain file path, not Prisma's `file:` URI form.
-  const url = rawUrl.startsWith("file:") ? rawUrl.slice("file:".length) : rawUrl;
-  const adapter = new PrismaBetterSqlite3({ url });
+  const adapter = new PrismaPg(connectionString);
   return new PrismaClient({ adapter });
 }
 

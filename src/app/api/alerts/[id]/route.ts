@@ -16,7 +16,8 @@ async function loadOwnedRule(userId: string, id: string) {
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireAuth();
+  const user = await requireAuth().catch(() => null);
+  if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   const { id } = await params;
 
   const owned = await loadOwnedRule(user.id, id);
@@ -33,7 +34,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireAuth();
+  const user = await requireAuth().catch(() => null);
+  if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   const { id } = await params;
 
   const owned = await loadOwnedRule(user.id, id);

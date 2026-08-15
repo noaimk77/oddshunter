@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 export function useWatchlist() {
   const [ids, setIds] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -19,7 +20,9 @@ export function useWatchlist() {
       .then((data) => {
         if (!cancelled) setIds(Array.isArray(data.marketIds) ? data.marketIds : []);
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setError("Couldn't load your watchlist.");
+      })
       .finally(() => {
         if (!cancelled) setHydrated(true);
       });
@@ -28,40 +31,75 @@ export function useWatchlist() {
     };
   }, []);
 
+  /**
+   * Optimistic by design (the star should react instantly), but a failed
+   * request must roll the local state back — otherwise the UI would show a
+   * market as watchlisted when the database never actually recorded it.
+   */
   const add = useCallback((marketId: string) => {
+    setError(null);
     setIds((prev) => (prev.includes(marketId) ? prev : [...prev, marketId]));
     fetch("/api/watchlist", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ marketId }),
-    }).catch(() => {});
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error();
+      })
+      .catch(() => {
+        setIds((prev) => prev.filter((id) => id !== marketId));
+        setError("Couldn't add that to your watchlist. Try again.");
+      });
   }, []);
 
   const remove = useCallback((marketId: string) => {
+    setError(null);
     setIds((prev) => prev.filter((id) => id !== marketId));
-    fetch(`/api/watchlist?marketId=${encodeURIComponent(marketId)}`, { method: "DELETE" }).catch(() => {});
+    fetch(`/api/watchlist?marketId=${encodeURIComponent(marketId)}`, { method: "DELETE" })
+      .then((res) => {
+        if (!res.ok) throw new Error();
+      })
+      .catch(() => {
+        setIds((prev) => (prev.includes(marketId) ? prev : [...prev, marketId]));
+        setError("Couldn't remove that from your watchlist. Try again.");
+      });
   }, []);
 
   const toggle = useCallback(
     (marketId: string) => {
+      setError(null);
+      let wasWatched = false;
       setIds((prev) => {
-        const isWatched = prev.includes(marketId);
-        if (isWatched) {
-          fetch(`/api/watchlist?marketId=${encodeURIComponent(marketId)}`, { method: "DELETE" }).catch(() => {});
-          return prev.filter((id) => id !== marketId);
-        }
-        fetch("/api/watchlist", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ marketId }),
-        }).catch(() => {});
-        return [...prev, marketId];
+        wasWatched = prev.includes(marketId);
+        return wasWatched ? prev.filter((id) => id !== marketId) : [...prev, marketId];
       });
+
+      const request = wasWatched
+        ? fetch(`/api/watchlist?marketId=${encodeURIComponent(marketId)}`, { method: "DELETE" })
+        : fetch("/api/watchlist", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ marketId }),
+          });
+
+      request
+        .then((res) => {
+          if (!res.ok) throw new Error();
+        })
+        .catch(() => {
+          // Revert to the pre-toggle state — never leave the star showing
+          // something the database doesn't actually have.
+          setIds((prev) =>
+            wasWatched ? (prev.includes(marketId) ? prev : [...prev, marketId]) : prev.filter((id) => id !== marketId)
+          );
+          setError("Couldn't update your watchlist. Try again.");
+        });
     },
     []
   );
 
   const isWatched = useCallback((marketId: string) => ids.includes(marketId), [ids]);
 
-  return { ids, hydrated, add, remove, toggle, isWatched };
+  return { ids, hydrated, error, add, remove, toggle, isWatched };
 }

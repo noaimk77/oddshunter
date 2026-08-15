@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "project": {
+    "catalog": "prod",
+    "initializedAt": "2026-08-15T10:10:54.536Z",
+    "merchantDisplayName": "Odds.Hunter98",
+    "merchantId": "acct_1U4KobINKReF4cku",
+    "projectId": "project_61VE2Vay4jqn3Dw1j16VDilxQFDPp9yDAk1l2dCemPBA",
+    "projectName": "oddscope"
+  },
+  "providers": {
+    "agentmail": {
+      "accountRequestId": "facctrq_61VE33iQJUYX0FhWw16VDilxQFDPp9yDAk1l2dCemSDA",
+      "configuration": {},
+      "linkedAt": "2026-08-15T10:46:12.514Z",
+      "providerId": "prvdr_61UWNSVKoGlVDwbHX5IUK",
+      "providerName": "AgentMail",
+      "redirectUrl": null,
+      "requestedAt": "2026-08-15T10:46:12.514Z",
+      "status": "complete"
+    },
+    "neon": {
+      "accountRequestId": "facctrq_61VE2aXkKXd0paX5l16VDilxQFDPp9yDAk1l2dCem7tA",
+      "configuration": {},
+      "linkedAt": "2026-08-15T10:16:03.042Z",
+      "providerId": "prvdr_61UH8uNXFdoJUJOtT54AC",
+      "providerName": "Neon",
+      "redirectUrl": null,
+      "requestedAt": "2026-08-15T10:16:03.042Z",
+      "status": "complete"
+    }
+  },
+  "resources": {
+    "agentmail-api": {
+      "configuration": {},
+      "createdAt": "2026-08-15T10:46:25.377Z",
+      "lastRevealedAt": "2026-08-15T10:46:25.646Z",
+      "lastStatus": "complete",
+      "name": "agentmail-api",
+      "providerId": "prvdr_61UWNSVKoGlVDwbHX5IUK",
+      "providerName": "AgentMail",
+      "resourceId": "fres_61VE33vpJNkTLpwOh16VDilxQFDPp9yDAk1l2dCemTVw",
+      "serviceId": "api"
+    },
+    "agentmail-plan": {
+      "configuration": {},
+      "createdAt": "2026-08-15T10:46:16.228Z",
+      "lastRevealedAt": "2026-08-15T10:46:16.502Z",
+      "lastStatus": "complete",
+      "name": "agentmail-plan",
+      "providerId": "prvdr_61UWNSVKoGlVDwbHX5IUK",
+      "providerName": "AgentMail",
+      "resourceId": "fres_61VE33llPTezWn7Lp16VDilxQFDPp9yDAk1l2dCemKzI",
+      "serviceId": "free"
+    },
+    "neon-plan": {
+      "configuration": {},
+      "createdAt": "2026-08-15T10:16:04.745Z",
+      "lastRevealedAt": "2026-08-15T10:16:04.993Z",
+      "lastStatus": "complete",
+      "name": "neon-plan",
+      "providerId": "prvdr_61UH8uNXFdoJUJOtT54AC",
+      "providerName": "Neon",
+      "resourceId": "fres_61VE2aZVGGXYkC6J716VDilxQFDPp9yDAk1l2dCemFOi",
+      "serviceId": "free"
+    },
+    "neon-postgres": {
+      "configuration": {},
+      "createdAt": "2026-08-15T10:16:06.962Z",
+      "lastRevealedAt": "2026-08-15T10:16:07.212Z",
+      "lastStatus": "complete",
+      "name": "neon-postgres",
+      "providerId": "prvdr_61UH8uNXFdoJUJOtT54AC",
+      "providerName": "Neon",
+      "resourceId": "fres_61VE2abGzB655A4Eq16VDilxQFDPp9yDAk1l2dCemNui",
+      "serviceId": "postgres"
+    }
+  }
+}

@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 /**
  * Credentials provider requires the JWT session strategy in Auth.js — there
@@ -30,6 +31,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const email = typeof credentials?.email === "string" ? credentials.email.trim().toLowerCase() : undefined;
         const password = typeof credentials?.password === "string" ? credentials.password : undefined;
         if (!email || !password) return null;
+
+        // Per-account brute-force guard: 10 attempts per 15 minutes,
+        // regardless of the source IP. Checked before touching the
+        // database or bcrypt, so a lockout is cheap for us and expensive
+        // for an attacker to route around.
+        if (!checkRateLimit(`login:${email}`, 10, 15 * 60 * 1000)) return null;
 
         const user = await db.user.findUnique({ where: { email } });
         if (!user?.passwordHash) return null;

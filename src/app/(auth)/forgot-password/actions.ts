@@ -3,11 +3,13 @@
 import crypto from "node:crypto";
 import { db } from "@/lib/db";
 import { forgotPasswordSchema, fieldErrorsFrom } from "@/lib/validation";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { isEmailConfigured, sendPasswordResetEmail } from "@/lib/email";
 
 export interface ForgotPasswordState {
   submitted?: boolean;
   fieldErrors?: Record<string, string>;
-  /** Only populated outside production, since no email provider is wired up — see the mission report. */
+  /** Only populated when no email provider is configured — see isEmailConfigured(). */
   devResetUrl?: string;
 }
 
@@ -18,6 +20,13 @@ export async function forgotPasswordAction(
   const parsed = forgotPasswordSchema.safeParse({ email: String(formData.get("email") ?? "") });
   if (!parsed.success) {
     return { fieldErrors: fieldErrorsFrom(parsed.error) };
+  }
+
+  // Checked before the user lookup and reported identically to success below
+  // (rate-limited vs. unknown-email both just return {submitted: true}) —
+  // otherwise a distinguishable response would leak which emails exist.
+  if (!checkRateLimit(`reset:${parsed.data.email}`, 3, 60 * 60 * 1000)) {
+    return { submitted: true };
   }
 
   const user = await db.user.findUnique({ where: { email: parsed.data.email } });
@@ -32,13 +41,24 @@ export async function forgotPasswordAction(
 
   const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/reset-password?token=${token}`;
 
-  // No transactional email provider is connected in this environment (see
-  // the mission report's "remaining blockers" section) — never claim an
-  // email was sent when it wasn't. Log server-side instead.
-  console.log(`[password-reset] no email provider configured — reset link for ${user.email}: ${resetUrl}`);
+  if (!isEmailConfigured()) {
+    // No transactional email provider connected — never claim an email was
+    // sent when it wasn't. Log server-side and expose the link on-screen
+    // instead, so the flow is still testable end-to-end.
+    console.log(`[password-reset] no email provider configured — reset link for ${user.email}: ${resetUrl}`);
+    return { submitted: true, devResetUrl: resetUrl };
+  }
 
-  return {
-    submitted: true,
-    devResetUrl: process.env.NODE_ENV !== "production" ? resetUrl : undefined,
-  };
+  try {
+    await sendPasswordResetEmail(user.email, resetUrl);
+  } catch (err) {
+    // The token now exists whether or not the email arrives — logging this
+    // is for us to notice a real provider outage, not for the requester:
+    // the response must stay identical to the success/unknown-email case
+    // above, or a distinguishable response would itself leak account
+    // existence.
+    console.error(`[password-reset] failed to send email to ${user.email}`, err);
+  }
+
+  return { submitted: true };
 }

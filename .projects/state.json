@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "providers": {
+    "agentmail": {
+      "name": "AgentMail"
+    },
+    "neon": {
+      "name": "Neon"
+    }
+  },
+  "resources": {
+    "agentmail-api": {
+      "name": "agentmail-api",
+      "providerName": "AgentMail",
+      "serviceId": "api"
+    },
+    "agentmail-plan": {
+      "name": "agentmail-plan",
+      "providerName": "AgentMail",
+      "serviceId": "free"
+    },
+    "neon-plan": {
+      "name": "neon-plan",
+      "providerName": "Neon",
+      "serviceId": "free"
+    },
+    "neon-postgres": {
+      "name": "neon-postgres",
+      "providerName": "Neon",
+      "serviceId": "postgres"
+    }
+  }
+}

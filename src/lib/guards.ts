@@ -28,7 +28,20 @@ export async function requireAuth() {
 
 export type EntitlementType = "VIP" | "BOT";
 
-/** Active entitlements only — canceled/past_due/incomplete don't count. */
+/**
+ * Active entitlements only — canceled/past_due/incomplete don't count.
+ *
+ * Not called anywhere yet, and that's correct as of this writing: VIP and
+ * Bot Access are delivered outside this web app (a Telegram channel and an
+ * automated bot respectively — see the real Stripe product descriptions in
+ * src/lib/plans.ts). There is currently no in-app page or API route whose
+ * *content* is VIP/Bot-exclusive, so there is nothing here for this guard
+ * to protect yet. It stays exported and ready: the day an in-app feature
+ * becomes VIP/Bot-gated (e.g. a Telegram-linking page once a real bot
+ * token exists), that route's handler should call requireEntitlement("VIP")
+ * or requireEntitlement("BOT") exactly like requireAuth() is called
+ * elsewhere in this file — never gate premium content by hiding a button.
+ */
 export async function requireEntitlement(type: EntitlementType) {
   const user = await requireAuth();
   const entitlement = await db.entitlement.findUnique({

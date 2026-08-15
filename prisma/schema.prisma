@@ -1,10 +1,9 @@
 // Odds Hunter — Prisma schema.
-// Provider is SQLite for local/dev right now (no external DB was available to
-// provision this session — see the mission report). Swapping to Postgres for
-// production is a one-line `provider` change plus a fresh `prisma migrate dev`;
-// nothing here uses SQLite-specific features. Enums are modeled as `String`
-// on purpose: Prisma does not support native enums on SQLite, and this keeps
-// the schema identical across both providers.
+// Provider is PostgreSQL (Neon, provisioned via Stripe Projects). Status
+// fields are still modeled as `String` rather than native Postgres enums —
+// that was originally a SQLite constraint, kept here now to minimize the
+// diff of this migration; converting to real enums is a safe follow-up,
+// not required for correctness.
 
 generator client {
   provider = "prisma-client"
@@ -12,7 +11,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 // ---------------------------------------------------------------------------

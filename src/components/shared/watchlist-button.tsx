@@ -14,7 +14,7 @@ export function WatchlistButton({
   className?: string;
   size?: "default" | "sm";
 }) {
-  const { isWatched, toggle } = useWatchlist();
+  const { isWatched, toggle, error } = useWatchlist();
   const watched = isWatched(marketId);
 
   return (
@@ -22,6 +22,7 @@ export function WatchlistButton({
       type="button"
       aria-pressed={watched}
       aria-label={watched ? "Remove from watchlist" : "Add to watchlist"}
+      title={error ?? undefined}
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -31,6 +32,7 @@ export function WatchlistButton({
         "inline-flex items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:text-amber-400",
         size === "sm" ? "h-6 w-6" : "h-8 w-8",
         watched && "text-amber-400",
+        error && "text-signal-extreme hover:text-signal-extreme",
         className
       )}
     >
@@ -43,6 +45,9 @@ export function WatchlistButton({
       >
         <Star className={cn(size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4", watched && "fill-amber-400")} />
       </motion.span>
+      <span role="alert" className="sr-only">
+        {error}
+      </span>
     </button>
   );
 }

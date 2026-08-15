@@ -9,6 +9,13 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.join(__dirname),
   },
+  // The AgentMail SDK's client statically imports the optional `@x402/fetch`
+  // payment-protocol package (a feature this app never uses) — Turbopack
+  // tries to resolve it at bundle time and fails since it isn't installed.
+  // Excluding the package from Server Components bundling makes Next use
+  // native Node `require` instead, which only resolves that import if the
+  // unused code path actually runs.
+  serverExternalPackages: ["agentmail"],
 };
 
 export default nextConfig;

@@ -17,7 +17,8 @@ const createAlertRuleSchema = z.object({
 });
 
 export async function GET() {
-  const user = await requireAuth();
+  const user = await requireAuth().catch(() => null);
+  if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   const rules = await db.alertRule.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
@@ -27,7 +28,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await requireAuth();
+  const user = await requireAuth().catch(() => null);
+  if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   const body = await request.json().catch(() => null);
   const parsed = createAlertRuleSchema.safeParse(body);
   if (!parsed.success) {

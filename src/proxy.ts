@@ -7,7 +7,8 @@ const PUBLIC_API_PREFIXES = ["/api/auth", "/api/stripe/webhook"];
 /**
  * Next.js 16 renamed `middleware` to `proxy` — and crucially, `proxy`
  * always runs in the Node.js runtime (never Edge), which is what makes the
- * Prisma + better-sqlite3 driver adapter usable here at all.
+ * Prisma + node-postgres (`pg`) driver adapter usable here at all (it opens
+ * real TCP sockets, which the Edge runtime doesn't support).
  */
 export const proxy = auth((req) => {
   const { pathname } = req.nextUrl;

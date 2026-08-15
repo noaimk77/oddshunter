@@ -35,17 +35,22 @@ const CONDITION_UNIT: Record<string, string> = {
 export function AlertRulesPanel({ options }: { options: FilterOptions }) {
   const [rules, setRules] = useState<AlertRuleDto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchRules = useCallback(() => {
     return fetch("/api/alerts")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
       .then((d) => setRules(Array.isArray(d.rules) ? d.rules : []))
-      .catch(() => {})
+      .catch(() => setError("Couldn't load your alert rules."))
       .finally(() => setLoading(false));
   }, []);
 
   const refresh = useCallback(() => {
     setLoading(true);
+    setError(null);
     fetchRules();
   }, [fetchRules]);
 
@@ -53,18 +58,32 @@ export function AlertRulesPanel({ options }: { options: FilterOptions }) {
     fetchRules();
   }, [fetchRules]);
 
+  // Optimistic, but rolled back on failure — a switch or a deleted row must
+  // never show a state the database doesn't actually have.
   const toggleRule = async (id: string, enabled: boolean) => {
+    setError(null);
+    const previous = rules;
     setRules((prev) => prev.map((r) => (r.id === id ? { ...r, enabled } : r)));
-    await fetch(`/api/alerts/${id}`, {
+    const res = await fetch(`/api/alerts/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled }),
-    }).catch(() => {});
+    }).catch(() => null);
+    if (!res?.ok) {
+      setRules(previous);
+      setError("Couldn't update that alert rule. Try again.");
+    }
   };
 
   const deleteRule = async (id: string) => {
+    setError(null);
+    const previous = rules;
     setRules((prev) => prev.filter((r) => r.id !== id));
-    await fetch(`/api/alerts/${id}`, { method: "DELETE" }).catch(() => {});
+    const res = await fetch(`/api/alerts/${id}`, { method: "DELETE" }).catch(() => null);
+    if (!res?.ok) {
+      setRules(previous);
+      setError("Couldn't delete that alert rule. Try again.");
+    }
   };
 
   return (
@@ -73,6 +92,12 @@ export function AlertRulesPanel({ options }: { options: FilterOptions }) {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your Alert Rules</h2>
         <AlertBuilder options={options} onCreated={refresh} />
       </div>
+
+      {error && (
+        <p role="alert" className="mb-3 rounded-md border border-signal-extreme/30 bg-signal-extreme/10 px-3 py-2 text-xs text-signal-extreme">
+          {error}
+        </p>
+      )}
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>

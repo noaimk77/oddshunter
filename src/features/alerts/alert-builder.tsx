@@ -82,14 +82,16 @@ export function AlertBuilder({ options, onCreated }: { options: FilterOptions; o
           liveOnly: matchPhase === "live",
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        setError(data.error ?? "Couldn't save that alert rule.");
+        setError(data?.error ?? "Couldn't save that alert rule.");
         return;
       }
       reset();
       setOpen(false);
       onCreated?.();
+    } catch {
+      setError("Couldn't reach the server. Check your connection and try again.");
     } finally {
       setSubmitting(false);
     }
