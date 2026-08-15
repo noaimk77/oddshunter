@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Bell, Database, Moon, Send } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
@@ -60,7 +61,11 @@ export default function SettingsPage() {
               icon={Bell}
               title="In-app alerts"
               description="Show new market signals in the Alert Center."
-              control={<Switch defaultChecked size="sm" />}
+              control={
+                <Link href="/account" className="text-xs font-medium text-gold hover:underline">
+                  Manage in Account
+                </Link>
+              }
             />
             <SettingRow
               icon={Send}

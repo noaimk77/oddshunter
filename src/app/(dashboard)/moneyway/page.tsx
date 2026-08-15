@@ -18,7 +18,7 @@ export default async function MoneywayPage() {
             {isDemo && <DemoDataBadge />}
           </span>
         }
-        description="Where the matched money is flowing right now, across every monitored selection."
+        description="Where the matched money is flowing across every monitored selection."
       />
       {status.available ? <MoneywayBody /> : <LiveDataUnavailable />}
     </div>

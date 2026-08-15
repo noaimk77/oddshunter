@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { MotionConfig } from "framer-motion";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -15,9 +15,17 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Odds Hunter — Market Intelligence Terminal",
+  title: {
+    default: "Odds Hunter — Market Intelligence Terminal",
+    template: "%s — Odds Hunter",
+  },
   description:
     "Odds Hunter monitors betting market odds, matched volume, and money flow to surface unusual price and volume activity.",
+  applicationName: "Odds Hunter",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#050505",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

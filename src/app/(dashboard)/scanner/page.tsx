@@ -14,7 +14,7 @@ export default async function ScannerPage() {
         eyebrow="Scanner"
         title={
           <span className="flex flex-wrap items-center gap-3">
-            Live Market Scanner
+            Market Scanner
             {isDemo && <DemoDataBadge />}
           </span>
         }

@@ -23,7 +23,9 @@ export default async function OverviewPage() {
           {isDemo && <DemoDataBadge />}
         </h1>
         <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">
-          Odds Hunter is watching price movement, matched volume, and money flow across every market it monitors.
+          {isDemo
+            ? "This dashboard is running on a simulated dataset for preview purposes — no real market connection yet. Every figure below is synthetic."
+            : "Odds Hunter is watching price movement, matched volume, and money flow across every market it monitors."}
         </p>
       </div>
       <OddsHunterMascot variant="compact" className="hidden shrink-0 sm:block" />
@@ -107,13 +109,17 @@ export default async function OverviewPage() {
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
         <SectionCard
           title="Top Market Movements"
-          description={`${topMovements.length} markets with the largest odds movement right now`}
+          description={`${topMovements.length} markets with the largest odds movement in this dataset`}
           className="xl:col-span-2"
           bodyClassName="p-0"
         >
           <TopMovementsTable rows={topMovements} />
         </SectionCard>
-        <SectionCard title="Live Market Feed" description="Recent activity across every monitored market" bodyClassName="p-2">
+        <SectionCard
+          title="Activity Feed"
+          description={isDemo ? "Simulated market events, generated locally for preview" : "Recent activity across every monitored market"}
+          bodyClassName="p-2"
+        >
           <LiveMarketFeed initialFeed={liveFeed} />
         </SectionCard>
       </div>

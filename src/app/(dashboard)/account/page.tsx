@@ -30,13 +30,13 @@ export default async function AccountPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <SectionCard title="Profile" className="lg:col-span-2">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4 min-w-0">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gold/10 font-mono text-lg font-semibold text-gold ring-1 ring-gold/25">
                 {initials(user.email)}
               </div>
-              <div>
-                <p className="text-sm font-medium text-foreground">{user.email}</p>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-foreground">{user.email}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   Member since {user.createdAt.toLocaleDateString("en-GB", { month: "short", year: "numeric" })}
                 </p>

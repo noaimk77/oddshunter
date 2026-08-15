@@ -36,7 +36,7 @@ export function MarketHeader({ event, market }: { event: Event; market: Market }
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Clock className="h-4 w-4" />
             {event.status === "live" ? (
-              <LiveIndicator label="Live now" />
+              <LiveIndicator />
             ) : event.status === "finished" ? (
               <span>Match finished</span>
             ) : (

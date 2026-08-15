@@ -26,8 +26,17 @@ import type {
   VolumeSnapshot,
 } from "@/types";
 
-/** Fixed reference "now" so server and client render identical mock data. */
-export const MOCK_NOW = new Date("2026-08-15T18:00:00Z").getTime();
+/**
+ * Reference "now" for the demo dataset — fixed for the lifetime of this
+ * server process (not per-request) so every page reads a consistent
+ * dataset, but anchored to when the process actually started rather than
+ * a hardcoded calendar date. A literal past date here would silently drift:
+ * events seeded as "a few minutes before MOCK_NOW" would read as "just
+ * now" only on the day that date fell on, then as stale multi-day-old
+ * activity on every day after — exactly the kind of fabricated freshness
+ * this app is required to never show.
+ */
+export const MOCK_NOW = Date.now();
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 

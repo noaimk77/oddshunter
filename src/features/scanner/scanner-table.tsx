@@ -66,7 +66,7 @@ export function ScannerTable({ rows }: { rows: MarketRow[] }) {
                   {row.event.country} · {row.event.competition}
                 </TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground">
-                  {row.event.status === "live" ? <LiveIndicator label="Live" /> : formatClock(row.event.kickoff)}
+                  {row.event.status === "live" ? <LiveIndicator /> : formatClock(row.event.kickoff)}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{row.market.name}</TableCell>
                 <TableCell className="text-right font-mono text-sm tabular-nums text-muted-foreground">

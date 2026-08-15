@@ -10,12 +10,9 @@ export function DataStatusIndicator({ status = "demo" }: { status?: "demo" | "li
   return (
     <div className="flex items-center gap-2 rounded-md border border-border/60 bg-surface-2/60 px-3 py-2">
       <span className="relative flex h-1.5 w-1.5 shrink-0">
-        <span
-          className={cn(
-            "absolute inline-flex h-full w-full animate-ping rounded-full opacity-75",
-            isLive ? "bg-positive" : "bg-signal-watch"
-          )}
-        />
+        {isLive && (
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-positive opacity-75" />
+        )}
         <span className={cn("relative inline-flex h-1.5 w-1.5 rounded-full", isLive ? "bg-positive" : "bg-signal-watch")} />
       </span>
       <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">

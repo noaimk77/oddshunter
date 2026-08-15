@@ -17,7 +17,7 @@ type DayTab = "today" | "live" | "upcoming" | "finished";
 
 const DAY_TABS: { value: DayTab; label: string }[] = [
   { value: "today", label: "Today" },
-  { value: "live", label: "Live" },
+  { value: "live", label: "In-play" },
   { value: "upcoming", label: "Upcoming" },
   { value: "finished", label: "Finished" },
 ];
@@ -147,7 +147,7 @@ export function FixturesView({ rows }: { rows: MarketRow[] }) {
                     className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-secondary/30"
                   >
                     <div className="w-16 shrink-0 font-mono text-xs text-muted-foreground">
-                      {g.event.status === "live" ? <LiveIndicator label="Live" /> : formatClock(g.event.kickoff)}
+                      {g.event.status === "live" ? <LiveIndicator /> : formatClock(g.event.kickoff)}
                     </div>
                     <div className="min-w-0 flex-1 text-sm text-foreground">
                       {g.event.homeTeam} <span className="text-muted-foreground">—</span> {g.event.awayTeam}
