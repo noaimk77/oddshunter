@@ -39,6 +39,22 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Odds Hunter surface scale — distinct from shadcn's card/popover pair so
+     deeply-nested panels (filter bars inside cards, table headers) can step
+     up in elevation without inventing ad-hoc grays per component. */
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-4: var(--surface-4);
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
+  --color-positive: var(--positive);
+  --color-signal-normal: var(--signal-normal);
+  --color-signal-watch: var(--signal-watch);
+  --color-signal-elevated: var(--signal-elevated);
+  --color-signal-high: var(--signal-high);
+  --color-signal-extreme: var(--signal-extreme);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -51,38 +67,66 @@
 :root,
 .dark {
   color-scheme: dark;
-  --background: #06070a;
-  --foreground: #e8ebf0;
-  --card: #0b0d12;
-  --card-foreground: #e8ebf0;
-  --popover: #0d1016;
-  --popover-foreground: #e8ebf0;
-  --primary: #10b981;
-  --primary-foreground: #03130c;
-  --secondary: #12151c;
-  --secondary-foreground: #cbd2dc;
-  --muted: #0e1116;
-  --muted-foreground: #8991a1;
-  --accent: #141821;
-  --accent-foreground: #e8ebf0;
-  --destructive: #f87171;
-  --border: color-mix(in oklab, white 8%, transparent);
-  --input: color-mix(in oklab, white 10%, transparent);
-  --ring: #10b981;
-  --chart-1: #10b981;
-  --chart-2: #22d3ee;
-  --chart-3: #a78bfa;
-  --chart-4: #fb923c;
-  --chart-5: #f87171;
-  --radius: 0.5rem;
-  --sidebar: #08090d;
-  --sidebar-foreground: #cbd2dc;
-  --sidebar-primary: #10b981;
-  --sidebar-primary-foreground: #03130c;
-  --sidebar-accent: #12151c;
-  --sidebar-accent-foreground: #e8ebf0;
+
+  /* Odds Hunter surface scale */
+  --surface-0: #050505;
+  --surface-1: #090909;
+  --surface-2: #0d0d0f;
+  --surface-3: #111114;
+  --surface-4: #151518;
+
+  --background: var(--surface-0);
+  --foreground: #f5f5f2;
+  --card: var(--surface-2);
+  --card-foreground: #f5f5f2;
+  --popover: var(--surface-3);
+  --popover-foreground: #f5f5f2;
+
+  /* Gold is the brand accent — used for identity and important signals only. */
+  --gold: #f5b800;
+  --gold-foreground: #1a1300;
+  --primary: var(--gold);
+  --primary-foreground: var(--gold-foreground);
+
+  --secondary: var(--surface-3);
+  --secondary-foreground: #c9c9c4;
+  --muted: var(--surface-2);
+  --muted-foreground: #868680;
+  --accent: var(--surface-4);
+  --accent-foreground: #f5f5f2;
+  --destructive: #e5484d;
+
+  --border: color-mix(in oklab, white 7%, transparent);
+  --input: color-mix(in oklab, white 9%, transparent);
+  --ring: var(--gold);
+
+  /* Functional signal scale — normal(gray) / watch(cyan, occasional secondary)
+     / elevated(gold, the brand's "important" color) / high(orange) /
+     extreme(red, reserved for critical anomalies only). Never a proof of
+     match-fixing — see lib/signal.ts for the vocabulary this backs. */
+  --signal-normal: #6b6b66;
+  --signal-watch: #38bdf8;
+  --signal-elevated: var(--gold);
+  --signal-high: #ff8a00;
+  --signal-extreme: #e5484d;
+  --positive: #22c55e;
+
+  --chart-1: var(--gold);
+  --chart-2: #38bdf8;
+  --chart-3: #ff8a00;
+  --chart-4: #e5484d;
+  --chart-5: #22c55e;
+
+  --radius: 0.4rem;
+
+  --sidebar: var(--surface-0);
+  --sidebar-foreground: #c9c9c4;
+  --sidebar-primary: var(--gold);
+  --sidebar-primary-foreground: var(--gold-foreground);
+  --sidebar-accent: var(--surface-2);
+  --sidebar-accent-foreground: #f5f5f2;
   --sidebar-border: color-mix(in oklab, white 6%, transparent);
-  --sidebar-ring: #10b981;
+  --sidebar-ring: var(--gold);
 }
 
 @layer base {
@@ -95,12 +139,15 @@
   }
   body {
     @apply bg-background text-foreground;
-    background-image:
-      radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in oklab, var(--primary) 7%, transparent), transparent);
+    background-image: radial-gradient(
+      ellipse 70% 45% at 50% -10%,
+      color-mix(in oklab, var(--gold) 5%, transparent),
+      transparent
+    );
     background-repeat: no-repeat;
   }
   ::selection {
-    background: color-mix(in oklab, var(--primary) 30%, transparent);
+    background: color-mix(in oklab, var(--gold) 30%, transparent);
   }
   .tabular-nums {
     font-variant-numeric: tabular-nums;
@@ -109,7 +156,7 @@
 
 @layer utilities {
   .glass {
-    background: color-mix(in oklab, var(--card) 60%, transparent);
+    background: color-mix(in oklab, var(--card) 65%, transparent);
     backdrop-filter: blur(12px);
   }
   .signal-pulse {
@@ -125,14 +172,14 @@
     }
   }
   .flash-up {
-    animation: flash-up 900ms ease-out;
+    animation: flash-up 800ms ease-out;
   }
   .flash-down {
-    animation: flash-down 900ms ease-out;
+    animation: flash-down 800ms ease-out;
   }
   @keyframes flash-up {
     0% {
-      background-color: color-mix(in oklab, #10b981 22%, transparent);
+      background-color: color-mix(in oklab, var(--gold) 20%, transparent);
     }
     100% {
       background-color: transparent;
@@ -140,10 +187,27 @@
   }
   @keyframes flash-down {
     0% {
-      background-color: color-mix(in oklab, #f87171 22%, transparent);
+      background-color: color-mix(in oklab, var(--signal-high) 16%, transparent);
     }
     100% {
       background-color: transparent;
     }
+  }
+  .mascot-glow {
+    filter: drop-shadow(0 0 24px color-mix(in oklab, var(--gold) 35%, transparent));
+  }
+}
+
+/* Respect the user's motion preference across every custom animation and
+   Tailwind's built-in transition utilities. Framer Motion components read
+   this separately via useReducedMotion() in lib/motion.ts. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -50,8 +50,8 @@ export function VolumeHistoryChart({ market }: { market: Market }) {
             {data.map((d, i) => (
               <Cell
                 key={i}
-                fill={d.volume > avg * 2.2 ? "#f87171" : d.volume > avg * 1.5 ? "#fb923c" : "#10b981"}
-                fillOpacity={0.85}
+                fill={d.volume > avg * 2.2 ? "#e5484d" : d.volume > avg * 1.5 ? "#ff8a00" : "#4a4a46"}
+                fillOpacity={0.9}
               />
             ))}
           </Bar>

@@ -1,6 +1,9 @@
 import type {
   Alert,
   AnalyticsSummary,
+  Competition,
+  EventStatus,
+  FeedEvent,
   MarketActivityPoint,
   MarketPulseBucket,
   MarketRow,
@@ -12,13 +15,15 @@ import type {
 export interface MarketFilters {
   sport?: Sport | "all";
   country?: string | "all";
-  league?: string | "all";
+  competition?: string | "all";
+  status?: EventStatus | "all";
   search?: string;
   minVolume?: number;
   oddsMin?: number;
   oddsMax?: number;
   signal?: SignalLevel | "all";
   movement?: "any" | "shortening" | "drifting";
+  volumeAcceleration?: "any" | "accelerating";
   timeWindow?: "all" | "1h" | "3h" | "6h" | "12h" | "24h";
 }
 
@@ -31,22 +36,42 @@ export interface MarketTick {
 export interface FilterOptions {
   sports: Sport[];
   countries: string[];
-  leagues: string[];
+  competitions: string[];
+  marketNames: string[];
+}
+
+export type MoneywaySort =
+  | "highest-matched"
+  | "highest-market-share"
+  | "biggest-drop"
+  | "fastest-volume"
+  | "most-concentrated";
+
+export interface ProviderStatus {
+  available: boolean;
+  providerName: string;
 }
 
 /**
  * Every UI component is built against this interface, never against a
- * concrete data source. `MockMarketDataProvider` backs it today; a future
- * `BetfairMarketDataProvider` (real Betfair Exchange API + streaming) can
- * be swapped in without touching a single component.
+ * concrete data source. Selection happens once in `services/index.ts`:
+ * `BetfairProvider` when credentials are configured, `MockMarketDataProvider`
+ * only in local development, otherwise `UnavailableMarketDataProvider` — so
+ * production never silently shows demo data as if it were real. Pages should
+ * check `getStatus()` before trusting an empty result to mean "no markets"
+ * rather than "no data source."
  */
 export interface MarketDataProvider {
+  getStatus(): Promise<ProviderStatus>;
   getOverviewKpis(): Promise<OverviewKpis>;
   getMarketPulse(): Promise<MarketPulseBucket[]>;
   getMarketActivity(): Promise<MarketActivityPoint[]>;
   getTopMovements(limit?: number): Promise<MarketRow[]>;
+  getLiveFeed(limit?: number): Promise<FeedEvent[]>;
   listMarkets(filters?: MarketFilters): Promise<MarketRow[]>;
+  listMoneyway(sort?: MoneywaySort, filters?: MarketFilters): Promise<MarketRow[]>;
   getMarket(id: string): Promise<MarketRow | undefined>;
+  getCompetitions(): Promise<Competition[]>;
   getAlerts(): Promise<Alert[]>;
   getAnalytics(): Promise<AnalyticsSummary>;
   getFilterOptions(): Promise<FilterOptions>;

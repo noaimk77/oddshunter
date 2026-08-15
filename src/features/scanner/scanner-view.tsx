@@ -13,11 +13,9 @@ import { DEFAULT_FILTERS, TIME_WINDOW_MS, type ScannerFilterState } from "./filt
 export function ScannerView({
   initialRows,
   filterOptions,
-  marketTypes,
 }: {
   initialRows: MarketRow[];
   filterOptions: FilterOptions;
-  marketTypes: string[];
 }) {
   const [rows, setRows] = useState(initialRows);
   const [filters, setFiltersState] = useState<ScannerFilterState>(DEFAULT_FILTERS);
@@ -43,11 +41,16 @@ export function ScannerView({
     return rows.filter((row) => {
       if (filters.sport !== "all" && row.event.sport !== filters.sport) return false;
       if (filters.country !== "all" && row.event.country !== filters.country) return false;
-      if (filters.league !== "all" && row.event.league !== filters.league) return false;
+      if (filters.competition !== "all" && row.event.competition !== filters.competition) return false;
       if (filters.marketType !== "all" && row.market.name !== filters.marketType) return false;
+      if (filters.status !== "all" && row.event.status !== filters.status) return false;
       if (filters.signal !== "all" && row.market.signal.level !== filters.signal) return false;
       if (filters.movement === "shortening" && row.movementPercent >= 0) return false;
       if (filters.movement === "drifting" && row.movementPercent <= 0) return false;
+      if (filters.volumeAcceleration === "accelerating") {
+        const accel = row.market.signal.reasons.find((r) => r.key === "volume-acceleration");
+        if (!accel || (accel.severity !== "high" && accel.severity !== "extreme")) return false;
+      }
       if (filters.minVolume && row.market.matchedVolume < Number(filters.minVolume)) return false;
       if (filters.oddsMin || filters.oddsMax) {
         const shortest = Math.min(...Object.values(row.market.currentOdds));
@@ -55,13 +58,13 @@ export function ScannerView({
         if (filters.oddsMax && shortest > Number(filters.oddsMax)) return false;
       }
       if (filters.timeWindow !== "all") {
-        const startMs = new Date(row.event.startTime).getTime();
+        const startMs = new Date(row.event.kickoff).getTime();
         const windowMs = TIME_WINDOW_MS[filters.timeWindow];
         if (row.event.status !== "live" && (startMs < now || startMs - now > windowMs)) return false;
       }
       if (filters.search) {
         const q = filters.search.toLowerCase();
-        const haystack = `${row.event.homeTeam} ${row.event.awayTeam} ${row.event.league} ${row.event.country}`.toLowerCase();
+        const haystack = `${row.event.homeTeam} ${row.event.awayTeam} ${row.event.competition} ${row.event.country} ${row.market.name}`.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
       return true;
@@ -76,7 +79,7 @@ export function ScannerView({
 
   return (
     <div className="space-y-4">
-      <FiltersBar filters={filters} onChange={setFilters} options={filterOptions} marketTypes={marketTypes} />
+      <FiltersBar filters={filters} onChange={setFilters} options={filterOptions} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SignalTabs value={filters.signal} onChange={(v) => setFilters({ signal: v })} counts={counts} />
         <p className="text-xs text-muted-foreground">

@@ -1,28 +1,43 @@
-import { Send } from "lucide-react";
 import { marketDataProvider } from "@/services";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
+import { DemoDataBadge } from "@/components/shared/demo-data-badge";
+import { LiveDataUnavailable } from "@/components/shared/live-data-unavailable";
 import { AlertFeed } from "@/features/alerts/alert-feed";
+import { AlertRulesPanel } from "@/features/alerts/alert-rules-panel";
 
 export default async function AlertsPage() {
-  const alerts = await marketDataProvider.getAlerts();
+  const [status, filterOptions] = await Promise.all([
+    marketDataProvider.getStatus(),
+    marketDataProvider.getFilterOptions(),
+  ]);
+  const isDemo = status.providerName === "mock-dev";
 
   return (
     <div>
       <PageHeader
         eyebrow="Alert Center"
-        title="Alert History"
-        description="Every market anomaly OddScope has flagged, most recent first."
-        action={
-          <div className="flex items-center gap-2 rounded-md border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
-            <Send className="h-3.5 w-3.5" />
-            Telegram delivery — coming soon
-          </div>
+        title={
+          <span className="flex flex-wrap items-center gap-3">
+            Alerts
+            {isDemo && <DemoDataBadge />}
+          </span>
         }
+        description="Create alert rules and review every market anomaly Odds Hunter has flagged."
       />
-      <SectionCard bodyClassName="p-2 sm:p-3">
-        <AlertFeed alerts={alerts} />
+
+      <SectionCard className="mb-4">
+        <AlertRulesPanel options={filterOptions} />
+      </SectionCard>
+
+      <SectionCard title="Alert History" bodyClassName={status.available ? "p-2 sm:p-3" : undefined}>
+        {status.available ? <AlertHistory /> : <LiveDataUnavailable title="No live alert history yet" />}
       </SectionCard>
     </div>
   );
+}
+
+async function AlertHistory() {
+  const alerts = await marketDataProvider.getAlerts();
+  return <AlertFeed alerts={alerts} />;
 }

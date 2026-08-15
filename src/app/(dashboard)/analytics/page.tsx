@@ -1,27 +1,45 @@
-import { Activity, Euro, Gauge, Zap } from "lucide-react";
+import { Activity, AlertTriangle, Euro, Gauge, Zap } from "lucide-react";
 import { marketDataProvider } from "@/services";
 import { PageHeader } from "@/components/shared/page-header";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { SectionCard } from "@/components/shared/section-card";
+import { DemoDataBadge } from "@/components/shared/demo-data-badge";
+import { LiveDataUnavailable } from "@/components/shared/live-data-unavailable";
 import {
+  HighestVolumeMarketsList,
+  LargestMovementsList,
+  SignalsByCompetitionChart,
   SignalsByDayChart,
-  SignalsByLeagueChart,
   SignalsBySeverityChart,
-  VolumeDistributionChart,
 } from "@/features/analytics/analytics-charts";
 
 export default async function AnalyticsPage() {
-  const analytics = await marketDataProvider.getAnalytics();
+  const status = await marketDataProvider.getStatus();
+  const isDemo = status.providerName === "mock-dev";
 
   return (
     <div>
       <PageHeader
         eyebrow="Analytics"
-        title="Platform Analytics"
-        description="Aggregate trends across every market and signal OddScope has processed."
+        title={
+          <span className="flex flex-wrap items-center gap-3">
+            Platform Analytics
+            {isDemo && <DemoDataBadge />}
+          </span>
+        }
+        description="Aggregate trends across every market and signal Odds Hunter has processed."
       />
+      {status.available ? <AnalyticsBody /> : <LiveDataUnavailable />}
+    </div>
+  );
+}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+async function AnalyticsBody() {
+  const analytics = await marketDataProvider.getAnalytics();
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
         <KpiCard
           label="Markets Monitored"
           value={analytics.marketsMonitored}
@@ -35,18 +53,24 @@ export default async function AnalyticsPage() {
           index={1}
         />
         <KpiCard
-          label="Avg. Odds Movement"
-          value={analytics.averageOddsMovement}
-          formatKind="percent"
-          icon={<Gauge className="h-4 w-4 text-muted-foreground/50" strokeWidth={1.75} />}
+          label="Extreme Signals"
+          value={analytics.extremeSignals}
+          icon={<AlertTriangle className="h-4 w-4 text-muted-foreground/50" strokeWidth={1.75} />}
           index={2}
         />
         <KpiCard
-          label="Volume Tracked"
-          value={analytics.volumeTracked}
+          label="Avg. Movement"
+          value={analytics.averageMovement}
+          formatKind="percent"
+          icon={<Gauge className="h-4 w-4 text-muted-foreground/50" strokeWidth={1.75} />}
+          index={3}
+        />
+        <KpiCard
+          label="Volume Monitored"
+          value={analytics.volumeMonitored}
           formatKind="compact-currency"
           icon={<Euro className="h-4 w-4 text-muted-foreground/50" strokeWidth={1.75} />}
-          index={3}
+          index={4}
         />
       </div>
 
@@ -54,16 +78,21 @@ export default async function AnalyticsPage() {
         <SectionCard title="Signals by Day" description="Last 7 days">
           <SignalsByDayChart data={analytics.signalsByDay} />
         </SectionCard>
-        <SectionCard title="Signals by League" description="Elevated, high & extreme markets">
-          <SignalsByLeagueChart data={analytics.signalsByLeague} />
+        <SectionCard title="Signals by Competition" description="Elevated, high & extreme markets">
+          <SignalsByCompetitionChart data={analytics.signalsByCompetition} />
         </SectionCard>
         <SectionCard title="Signals by Severity" description="Current distribution across monitored markets">
           <SignalsBySeverityChart data={analytics.signalsBySeverity} />
         </SectionCard>
-        <SectionCard title="Volume Distribution" description="Matched volume by sport">
-          <VolumeDistributionChart data={analytics.volumeDistribution} />
-        </SectionCard>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:col-span-2">
+          <SectionCard title="Largest Movements" description="Biggest odds swings right now">
+            <LargestMovementsList rows={analytics.largestMovements} />
+          </SectionCard>
+          <SectionCard title="Highest-Volume Markets" description="Where the most money has matched">
+            <HighestVolumeMarketsList rows={analytics.highestVolumeMarkets} />
+          </SectionCard>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

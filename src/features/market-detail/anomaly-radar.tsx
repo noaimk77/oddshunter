@@ -1,18 +1,21 @@
 "use client";
 
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } from "recharts";
-import type { AnomalyReason, SignalLevel } from "@/types";
+import type { AnomalyMetrics } from "@/types";
 
-const SEVERITY_SCORE: Record<SignalLevel, number> = {
-  normal: 12,
-  watch: 32,
-  elevated: 55,
-  high: 80,
-  extreme: 98,
+const LABELS: Record<keyof AnomalyMetrics, string> = {
+  priceAnomaly: "Price",
+  volumeAnomaly: "Volume",
+  velocity: "Velocity",
+  concentration: "Concentration",
+  liquidityAnomaly: "Liquidity",
 };
 
-export function AnomalyRadar({ reasons }: { reasons: AnomalyReason[] }) {
-  const data = reasons.map((r) => ({ subject: r.label, value: SEVERITY_SCORE[r.severity] }));
+export function AnomalyRadar({ breakdown }: { breakdown: AnomalyMetrics }) {
+  const data = (Object.keys(LABELS) as (keyof AnomalyMetrics)[]).map((key) => ({
+    subject: LABELS[key],
+    value: breakdown[key],
+  }));
 
   return (
     <div className="h-64 w-full">
@@ -20,14 +23,7 @@ export function AnomalyRadar({ reasons }: { reasons: AnomalyReason[] }) {
         <RadarChart data={data} outerRadius="72%">
           <PolarGrid stroke="var(--border)" />
           <PolarAngleAxis dataKey="subject" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
-          <Radar
-            dataKey="value"
-            stroke="#10b981"
-            fill="#10b981"
-            fillOpacity={0.28}
-            strokeWidth={2}
-            animationDuration={700}
-          />
+          <Radar dataKey="value" stroke="#f5b800" fill="#f5b800" fillOpacity={0.28} strokeWidth={2} animationDuration={700} />
         </RadarChart>
       </ResponsiveContainer>
     </div>

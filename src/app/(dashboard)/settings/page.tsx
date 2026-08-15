@@ -34,7 +34,7 @@ function SettingRow({
 export default function SettingsPage() {
   return (
     <div>
-      <PageHeader eyebrow="Settings" title="Settings" description="Configure how OddScope monitors markets and notifies you." />
+      <PageHeader eyebrow="Settings" title="Settings" description="Configure how Odds Hunter monitors markets and notifies you." />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <SectionCard title="Data Source" className="lg:col-span-2">
@@ -43,7 +43,7 @@ export default function SettingsPage() {
               icon={Database}
               title="Mock Market Data"
               description="Realistic simulated odds and volume, used for this preview build."
-              control={<Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">Active</Badge>}
+              control={<Badge className="bg-positive/10 text-positive border-positive/20">Active</Badge>}
             />
             <SettingRow
               icon={Database}
@@ -75,7 +75,7 @@ export default function SettingsPage() {
           <SettingRow
             icon={Moon}
             title="Dark mode"
-            description="OddScope is designed dark-first for extended monitoring sessions."
+            description="Odds Hunter is designed dark-first for extended monitoring sessions."
             control={<Switch defaultChecked disabled size="sm" />}
           />
         </SectionCard>

@@ -12,9 +12,16 @@ const TIMEFRAMES = [
   { label: "6H", points: 24 },
   { label: "12H", points: 48 },
   { label: "24H", points: 96 },
+  { label: "ALL", points: 96 },
 ] as const;
 
-const RUNNER_COLORS: Record<string, string> = { home: "#10b981", draw: "#22d3ee", away: "#a78bfa" };
+const RUNNER_COLORS: Record<string, string> = {
+  home: "#f5b800",
+  over: "#f5b800",
+  draw: "#38bdf8",
+  away: "#ff8a00",
+  under: "#ff8a00",
+};
 
 export function OddsHistoryChart({ market }: { market: Market }) {
   const [timeframe, setTimeframe] = useState<(typeof TIMEFRAMES)[number]["label"]>("6H");

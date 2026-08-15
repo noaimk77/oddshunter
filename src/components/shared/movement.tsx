@@ -16,7 +16,7 @@ export function Movement({ percent, className }: { percent: number; className?: 
     <span
       className={cn(
         "inline-flex items-center gap-1 font-mono text-sm font-medium tabular-nums",
-        shortening ? "text-emerald-400" : "text-orange-400",
+        shortening ? "text-gold" : "text-muted-foreground",
         className
       )}
     >

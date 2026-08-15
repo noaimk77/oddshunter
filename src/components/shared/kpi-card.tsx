@@ -50,7 +50,7 @@ export function KpiCard({ label, value, formatKind = "number", delta, deltaLabel
         <div
           className={cn(
             "mt-2.5 inline-flex items-center gap-1 text-xs font-medium",
-            positive ? "text-emerald-400" : "text-red-400"
+            positive ? "text-positive" : "text-muted-foreground"
           )}
         >
           {positive ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}

@@ -1,10 +1,12 @@
 import { MOCK_DATASET } from "@/data/mock-generator";
-import type { MarketRow } from "@/types";
+import { sortMoneywayRows } from "@/lib/market";
+import type { FeedEvent, MarketRow } from "@/types";
 import type {
   FilterOptions,
   MarketDataProvider,
   MarketFilters,
   MarketTick,
+  MoneywaySort,
 } from "./market-data-provider";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -31,12 +33,48 @@ function nudgeRow(row: MarketRow): MarketRow {
 
   return {
     event: row.event,
-    market: { ...row.market, currentOdds, matchedVolume, volumeDelta15m },
+    market: {
+      ...row.market,
+      currentOdds,
+      matchedVolume,
+      volumeDelta15m,
+      lastUpdated: new Date().toISOString(),
+    },
     movementPercent: round2(movementPercent),
   };
 }
 
+function matchesFilters(row: MarketRow, filters: MarketFilters): boolean {
+  if (filters.sport && filters.sport !== "all" && row.event.sport !== filters.sport) return false;
+  if (filters.country && filters.country !== "all" && row.event.country !== filters.country) return false;
+  if (filters.competition && filters.competition !== "all" && row.event.competition !== filters.competition) return false;
+  if (filters.status && filters.status !== "all" && row.event.status !== filters.status) return false;
+  if (filters.signal && filters.signal !== "all" && row.market.signal.level !== filters.signal) return false;
+  if (filters.minVolume && row.market.matchedVolume < filters.minVolume) return false;
+  if (filters.oddsMin != null || filters.oddsMax != null) {
+    const shortest = Math.min(...Object.values(row.market.currentOdds));
+    if (filters.oddsMin != null && shortest < filters.oddsMin) return false;
+    if (filters.oddsMax != null && shortest > filters.oddsMax) return false;
+  }
+  if (filters.movement === "shortening" && row.movementPercent >= 0) return false;
+  if (filters.movement === "drifting" && row.movementPercent <= 0) return false;
+  if (filters.volumeAcceleration === "accelerating") {
+    const accelReason = row.market.signal.reasons.find((r) => r.key === "volume-acceleration");
+    if (!accelReason || (accelReason.severity !== "high" && accelReason.severity !== "extreme")) return false;
+  }
+  if (filters.search) {
+    const q = filters.search.toLowerCase();
+    const haystack = `${row.event.homeTeam} ${row.event.awayTeam} ${row.event.competition} ${row.event.country} ${row.market.name}`.toLowerCase();
+    if (!haystack.includes(q)) return false;
+  }
+  return true;
+}
+
 export class MockMarketDataProvider implements MarketDataProvider {
+  async getStatus() {
+    return { available: true, providerName: "mock-dev" };
+  }
+
   async getOverviewKpis() {
     await delay(80);
     return MOCK_DATASET.kpis;
@@ -59,33 +97,44 @@ export class MockMarketDataProvider implements MarketDataProvider {
       .slice(0, limit);
   }
 
+  async getLiveFeed(limit = 14): Promise<FeedEvent[]> {
+    await delay(80);
+    const events: FeedEvent[] = [];
+    for (const row of MOCK_DATASET.rows) {
+      for (const tl of row.market.timeline) {
+        events.push({
+          id: `${row.market.id}-${tl.id}`,
+          timestamp: tl.timestamp,
+          marketId: row.market.id,
+          eventLabel: `${row.event.homeTeam} vs ${row.event.awayTeam}`,
+          type: tl.type,
+          label: tl.label,
+          severity: tl.severity ?? "watch",
+        });
+      }
+    }
+    return events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limit);
+  }
+
   async listMarkets(filters: MarketFilters = {}) {
     await delay(60);
-    return MOCK_DATASET.rows.filter((row) => {
-      if (filters.sport && filters.sport !== "all" && row.event.sport !== filters.sport) return false;
-      if (filters.country && filters.country !== "all" && row.event.country !== filters.country) return false;
-      if (filters.league && filters.league !== "all" && row.event.league !== filters.league) return false;
-      if (filters.signal && filters.signal !== "all" && row.market.signal.level !== filters.signal) return false;
-      if (filters.minVolume && row.market.matchedVolume < filters.minVolume) return false;
-      if (filters.oddsMin != null || filters.oddsMax != null) {
-        const shortest = Math.min(...Object.values(row.market.currentOdds));
-        if (filters.oddsMin != null && shortest < filters.oddsMin) return false;
-        if (filters.oddsMax != null && shortest > filters.oddsMax) return false;
-      }
-      if (filters.movement === "shortening" && row.movementPercent >= 0) return false;
-      if (filters.movement === "drifting" && row.movementPercent <= 0) return false;
-      if (filters.search) {
-        const q = filters.search.toLowerCase();
-        const haystack = `${row.event.homeTeam} ${row.event.awayTeam} ${row.event.league} ${row.event.country}`.toLowerCase();
-        if (!haystack.includes(q)) return false;
-      }
-      return true;
-    });
+    return MOCK_DATASET.rows.filter((row) => matchesFilters(row, filters));
+  }
+
+  async listMoneyway(sort: MoneywaySort = "highest-matched", filters: MarketFilters = {}) {
+    await delay(60);
+    const rows = MOCK_DATASET.rows.filter((row) => matchesFilters(row, filters));
+    return sortMoneywayRows(rows, sort);
   }
 
   async getMarket(id: string) {
     await delay(60);
     return MOCK_DATASET.rows.find((row) => row.market.id === id);
+  }
+
+  async getCompetitions() {
+    await delay(40);
+    return MOCK_DATASET.competitions;
   }
 
   async getAlerts() {
@@ -102,16 +151,19 @@ export class MockMarketDataProvider implements MarketDataProvider {
     await delay(40);
     const sports = new Set<string>();
     const countries = new Set<string>();
-    const leagues = new Set<string>();
+    const competitions = new Set<string>();
+    const marketNames = new Set<string>();
     for (const row of MOCK_DATASET.rows) {
       sports.add(row.event.sport);
       countries.add(row.event.country);
-      leagues.add(row.event.league);
+      competitions.add(row.event.competition);
+      marketNames.add(row.market.name);
     }
     return {
       sports: [...sports] as FilterOptions["sports"],
       countries: [...countries].sort(),
-      leagues: [...leagues].sort(),
+      competitions: [...competitions].sort(),
+      marketNames: [...marketNames].sort(),
     };
   }
 

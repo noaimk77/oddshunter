@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, ArrowLeftRight, TrendingDown, Zap } from "lucide-react";
+import { Activity, ArrowLeftRight, Droplets, TrendingDown, Zap } from "lucide-react";
 import { FadeIn } from "@/components/shared/fade-in";
 import { SignalBadge } from "@/components/shared/signal-badge";
 import { SIGNAL_META } from "@/lib/signal";
@@ -8,10 +8,11 @@ import { cn } from "@/lib/utils";
 import type { Alert } from "@/types";
 import { MOCK_NOW } from "@/data/mock-generator";
 
-const TYPE_ICON: Record<Alert["type"], typeof Zap> = {
+const TRIGGER_ICON: Record<Alert["trigger"], typeof Zap> = {
   "odds-drop": TrendingDown,
   "volume-spike": Zap,
   "money-shift": ArrowLeftRight,
+  "liquidity-shift": Droplets,
   "high-activity": Activity,
 };
 
@@ -19,8 +20,8 @@ export function AlertFeed({ alerts }: { alerts: Alert[] }) {
   return (
     <div className="divide-y divide-border/70">
       {alerts.map((alert, i) => {
-        const Icon = TYPE_ICON[alert.type];
-        const meta = SIGNAL_META[alert.level];
+        const Icon = TRIGGER_ICON[alert.trigger];
+        const meta = SIGNAL_META[alert.severity];
         return (
           <FadeIn key={alert.id} delay={Math.min(i * 0.03, 0.4)}>
             <Link
@@ -33,12 +34,12 @@ export function AlertFeed({ alerts }: { alerts: Alert[] }) {
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <SignalBadge level={alert.level} size="sm" showDot={false} />
+                  <SignalBadge level={alert.severity} size="sm" showDot={false} />
                   <span className="text-sm font-medium text-foreground">{alert.title}</span>
                 </div>
                 <p className="mt-0.5 truncate text-sm text-muted-foreground">{alert.description}</p>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground/70">
-                  {alert.eventLabel} · {alert.league}
+                  {alert.match} · {alert.competition}
                 </p>
               </div>
 

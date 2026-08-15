@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { MotionConfig } from "framer-motion";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
@@ -14,9 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OddScope — Market Intelligence",
+  title: "Odds Hunter — Market Intelligence Terminal",
   description:
-    "OddScope monitors betting market odds and volume in real time to surface unusual price and volume activity.",
+    "Odds Hunter monitors betting market odds, matched volume, and money flow to surface unusual price and volume activity.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -26,7 +27,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <TooltipProvider delay={200}>{children}</TooltipProvider>
+        <MotionConfig reducedMotion="user">
+          <TooltipProvider delay={200}>{children}</TooltipProvider>
+        </MotionConfig>
       </body>
     </html>
   );

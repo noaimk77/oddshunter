@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { FilterOptions } from "@/services";
-import { DEFAULT_FILTERS, SPORT_LABELS, type ScannerFilterState } from "./filter-types";
+import { DEFAULT_FILTERS, SPORT_LABELS, STATUS_LABELS, type ScannerFilterState } from "./filter-types";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -21,12 +21,10 @@ export function FiltersBar({
   filters,
   onChange,
   options,
-  marketTypes,
 }: {
   filters: ScannerFilterState;
   onChange: (next: Partial<ScannerFilterState>) => void;
   options: FilterOptions;
-  marketTypes: string[];
 }) {
   const dirty = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
 
@@ -50,7 +48,7 @@ export function FiltersBar({
           <Input
             value={filters.search}
             onChange={(e) => onChange({ search: e.target.value })}
-            placeholder="Search market, team or league…"
+            placeholder="Search team, competition or market…"
             className="h-9 bg-transparent pl-9"
           />
         </div>
@@ -81,13 +79,13 @@ export function FiltersBar({
           </Select>
         </Field>
 
-        <Field label="League">
-          <Select value={filters.league} onValueChange={(v) => onChange({ league: v ?? "all" })}>
+        <Field label="Competition">
+          <Select value={filters.competition} onValueChange={(v) => onChange({ competition: v ?? "all" })}>
             <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All leagues</SelectItem>
-              {options.leagues.map((l) => (
-                <SelectItem key={l} value={l}>{l}</SelectItem>
+              <SelectItem value="all">All competitions</SelectItem>
+              {options.competitions.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -98,8 +96,20 @@ export function FiltersBar({
             <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All markets</SelectItem>
-              {marketTypes.map((m) => (
+              {options.marketNames.map((m) => (
                 <SelectItem key={m} value={m}>{m}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field label="Status">
+          <Select value={filters.status} onValueChange={(v) => onChange({ status: v as ScannerFilterState["status"] })}>
+            <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {(Object.keys(STATUS_LABELS) as (keyof typeof STATUS_LABELS)[]).map((s) => (
+                <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -145,6 +155,19 @@ export function FiltersBar({
               <SelectItem value="any">Any</SelectItem>
               <SelectItem value="shortening">Shortening</SelectItem>
               <SelectItem value="drifting">Drifting</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field label="Volume acceleration">
+          <Select
+            value={filters.volumeAcceleration}
+            onValueChange={(v) => onChange({ volumeAcceleration: v as ScannerFilterState["volumeAcceleration"] })}
+          >
+            <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="any">Any</SelectItem>
+              <SelectItem value="accelerating">Accelerating</SelectItem>
             </SelectContent>
           </Select>
         </Field>

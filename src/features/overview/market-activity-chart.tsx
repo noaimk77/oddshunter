@@ -13,8 +13,8 @@ export function MarketActivityChart({ data }: { data: MarketActivityPoint[] }) {
         <AreaChart data={chartData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
           <defs>
             <linearGradient id="marketActivityFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#10b981" stopOpacity={0.32} />
-              <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+              <stop offset="0%" stopColor="#f5b800" stopOpacity={0.32} />
+              <stop offset="100%" stopColor="#f5b800" stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 6" />
@@ -49,7 +49,7 @@ export function MarketActivityChart({ data }: { data: MarketActivityPoint[] }) {
           <Area
             type="monotone"
             dataKey="volume"
-            stroke="#10b981"
+            stroke="#f5b800"
             strokeWidth={2}
             fill="url(#marketActivityFill)"
             animationDuration={900}

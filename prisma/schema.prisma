@@ -1,0 +1,287 @@
+// Odds Hunter — Prisma schema.
+// Provider is SQLite for local/dev right now (no external DB was available to
+// provision this session — see the mission report). Swapping to Postgres for
+// production is a one-line `provider` change plus a fresh `prisma migrate dev`;
+// nothing here uses SQLite-specific features. Enums are modeled as `String`
+// on purpose: Prisma does not support native enums on SQLite, and this keeps
+// the schema identical across both providers.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------------------------------------------------------------------------
+// Auth (Auth.js / next-auth v5 Prisma adapter shape)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Preferences (spec: odds format, currency, timezone, notifications)
+  oddsFormat  String  @default("decimal")
+  currency    String  @default("EUR")
+  timezone    String  @default("Europe/Paris")
+  inAppAlerts Boolean @default(true)
+
+  stripeCustomerId String? @unique
+
+  accounts       Account[]
+  sessions       Session[]
+  entitlements   Entitlement[]
+  watchlistItems WatchlistItem[]
+  alertRules     AlertRule[]
+  notifications  Notification[]
+  resetTokens    PasswordResetToken[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+/// Custom email+password reset flow (Auth.js has no built-in credentials
+/// reset — see the mission report for why email delivery isn't wired yet).
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Billing / entitlements — Stripe is the source of truth; this table mirrors
+// just enough state for the product to gate access without calling Stripe on
+// every request.
+// ---------------------------------------------------------------------------
+
+/// type: "VIP" | "BOT"
+/// status: "ACTIVE" | "PAST_DUE" | "CANCELED" | "INCOMPLETE"
+model Entitlement {
+  id                   String    @id @default(cuid())
+  userId               String
+  type                 String
+  status               String
+  stripeSubscriptionId String?   @unique
+  stripePriceId        String?
+  currentPeriodEnd     DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+}
+
+/// Processed Stripe webhook event IDs, so a redelivered event is a no-op.
+model StripeEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Product: watchlist + alert rules
+// ---------------------------------------------------------------------------
+
+model WatchlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  marketId  String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, marketId])
+}
+
+/// condition: "ODDS_DROP_PERCENT" | "ODDS_RISE_PERCENT" | "MATCHED_VOLUME_ABOVE" | "MONEYWAY_PERCENT_ABOVE"
+model AlertRule {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  sport         String?
+  competition   String?
+  marketType    String?
+  selection     String?
+  condition     String
+  threshold     Float
+  timeWindowMin Int?
+  preMatchOnly  Boolean  @default(false)
+  liveOnly      Boolean  @default(false)
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  triggers AlertTrigger[]
+}
+
+model AlertTrigger {
+  id          String   @id @default(cuid())
+  alertRuleId String
+  marketId    String
+  message     String
+  triggeredAt DateTime @default(now())
+
+  alertRule AlertRule @relation(fields: [alertRuleId], references: [id], onDelete: Cascade)
+}
+
+/// channel: "IN_APP" | "TELEGRAM" | "EMAIL"
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  channel   String
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Sports data domain — populated by a real MarketDataProvider only. Empty
+// until a provider (e.g. Betfair) is actually connected; never seeded with
+// fabricated rows in this environment.
+// ---------------------------------------------------------------------------
+
+model Provider {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  competitions Competition[]
+}
+
+model Competition {
+  id         String @id @default(cuid())
+  providerId String
+  externalId String
+  sport      String
+  country    String
+  name       String
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  events   Event[]
+
+  @@unique([providerId, externalId])
+}
+
+/// status: "upcoming" | "live" | "finished"
+model Event {
+  id            String   @id @default(cuid())
+  competitionId String
+  externalId    String
+  homeTeam      String
+  awayTeam      String
+  kickoff       DateTime
+  status        String
+  homeScore     Int?
+  awayScore     Int?
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  markets     Market[]
+
+  @@unique([competitionId, externalId])
+  @@index([kickoff])
+}
+
+/// status: "open" | "suspended" | "closed"
+model Market {
+  id            String   @id @default(cuid())
+  eventId       String
+  externalId    String
+  type          String
+  name          String
+  status        String
+  matchedVolume Float    @default(0)
+  lastUpdated   DateTime @default(now())
+
+  event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  selections Selection[]
+
+  @@unique([eventId, externalId])
+}
+
+model Selection {
+  id         String @id @default(cuid())
+  marketId   String
+  externalId String
+  name       String
+  position   String
+
+  market  Market           @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  odds    OddsSnapshot[]
+  volumes VolumeSnapshot[]
+
+  @@unique([marketId, externalId])
+}
+
+model OddsSnapshot {
+  id          String   @id @default(cuid())
+  selectionId String
+  price       Float
+  timestamp   DateTime @default(now())
+
+  selection Selection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
+
+  @@index([selectionId, timestamp])
+}
+
+model VolumeSnapshot {
+  id           String   @id @default(cuid())
+  selectionId  String
+  matchedTotal Float
+  timestamp    DateTime @default(now())
+
+  selection Selection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
+
+  @@index([selectionId, timestamp])
+}

@@ -1,20 +1,11 @@
 "use client";
 
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import Link from "next/link";
+import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { SIGNAL_META } from "@/lib/signal";
-import { SPORT_LABELS } from "@/features/scanner/filter-types";
-import { formatCompactNumber, formatCurrency } from "@/lib/format";
+import { Movement } from "@/components/shared/movement";
+import { formatCurrency } from "@/lib/format";
+import { getFavoriteRunner } from "@/lib/market";
 import type { AnalyticsSummary } from "@/types";
 
 const tooltipBox = "rounded-md border border-border bg-popover px-3 py-2 text-xs shadow-lg";
@@ -38,14 +29,14 @@ export function SignalsByDayChart({ data }: { data: AnalyticsSummary["signalsByD
               ) : null
             }
           />
-          <Bar dataKey="count" fill="#10b981" radius={[4, 4, 0, 0]} animationDuration={600} />
+          <Bar dataKey="count" fill="#f5b800" radius={[4, 4, 0, 0]} animationDuration={600} />
         </BarChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-export function SignalsByLeagueChart({ data }: { data: AnalyticsSummary["signalsByLeague"] }) {
+export function SignalsByCompetitionChart({ data }: { data: AnalyticsSummary["signalsByCompetition"] }) {
   return (
     <div className="h-56 w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -54,7 +45,7 @@ export function SignalsByLeagueChart({ data }: { data: AnalyticsSummary["signals
           <XAxis type="number" tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
           <YAxis
             type="category"
-            dataKey="league"
+            dataKey="competition"
             tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
@@ -71,7 +62,7 @@ export function SignalsByLeagueChart({ data }: { data: AnalyticsSummary["signals
               ) : null
             }
           />
-          <Bar dataKey="count" fill="#22d3ee" radius={[0, 4, 4, 0]} animationDuration={600} />
+          <Bar dataKey="count" fill="#38bdf8" radius={[0, 4, 4, 0]} animationDuration={600} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -117,37 +108,46 @@ export function SignalsBySeverityChart({ data }: { data: AnalyticsSummary["signa
   );
 }
 
-export function VolumeDistributionChart({ data }: { data: AnalyticsSummary["volumeDistribution"] }) {
-  const chartData = data.map((d) => ({ ...d, label: SPORT_LABELS[d.sport] }));
+export function LargestMovementsList({ rows }: { rows: AnalyticsSummary["largestMovements"] }) {
   return (
-    <div className="h-56 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chartData} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
-          <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 6" />
-          <XAxis dataKey="label" tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
-          <YAxis
-            tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-            axisLine={false}
-            tickLine={false}
-            tickFormatter={(v: number) => `€${formatCompactNumber(v)}`}
-            width={50}
-          />
-          <Tooltip
-            cursor={{ fill: "var(--secondary)" }}
-            content={({ active, payload, label }) =>
-              active && payload?.length ? (
-                <div className={tooltipBox}>
-                  <div className="text-muted-foreground">{label}</div>
-                  <div className="font-mono font-medium text-foreground">
-                    {formatCurrency(payload[0].value as number)}
-                  </div>
-                </div>
-              ) : null
-            }
-          />
-          <Bar dataKey="volume" fill="#a78bfa" radius={[4, 4, 0, 0]} animationDuration={600} />
-        </BarChart>
-      </ResponsiveContainer>
+    <div className="divide-y divide-border/60">
+      {rows.map((row) => (
+        <Link
+          key={row.market.id}
+          href={`/market/${row.market.id}`}
+          className="flex items-center justify-between gap-3 py-2.5 text-sm transition-colors hover:text-gold"
+        >
+          <span className="min-w-0 truncate text-foreground">
+            {row.event.homeTeam} — {row.event.awayTeam}
+          </span>
+          <Movement percent={row.movementPercent} className="shrink-0" />
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+export function HighestVolumeMarketsList({ rows }: { rows: AnalyticsSummary["highestVolumeMarkets"] }) {
+  return (
+    <div className="divide-y divide-border/60">
+      {rows.map((row) => {
+        const favorite = getFavoriteRunner(row.market);
+        return (
+          <Link
+            key={row.market.id}
+            href={`/market/${row.market.id}`}
+            className="flex items-center justify-between gap-3 py-2.5 text-sm transition-colors hover:text-gold"
+          >
+            <span className="min-w-0 truncate text-foreground">
+              {row.event.homeTeam} — {row.event.awayTeam}
+              <span className="ml-1.5 text-xs text-muted-foreground">{favorite.name}</span>
+            </span>
+            <span className="shrink-0 font-mono text-xs tabular-nums text-foreground">
+              {formatCurrency(row.market.matchedVolume)}
+            </span>
+          </Link>
+        );
+      })}
     </div>
   );
 }

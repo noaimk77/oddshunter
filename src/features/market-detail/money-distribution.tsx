@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { Market } from "@/types";
 
-const COLORS = ["#10b981", "#22d3ee", "#a78bfa"];
+const COLORS = ["#f5b800", "#38bdf8", "#ff8a00"];
 
 export function MoneyDistribution({ market }: { market: Market }) {
   return (

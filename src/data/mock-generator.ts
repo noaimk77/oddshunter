@@ -1,23 +1,28 @@
-import { buildFixtureSeeds, type FixtureSeed } from "./fixtures";
+import { buildFixtureSeeds, LEAGUE_POOLS, type FixtureSeed, type LeaguePool } from "./fixtures";
 import { seededRandom, randRange, weightedPick } from "./rng";
 import { formatCurrency } from "@/lib/format";
 import { signalFromScore } from "@/lib/signal";
 import type {
   Alert,
+  AlertTrigger,
   AnalyticsSummary,
+  AnomalyMetrics,
   AnomalyReason,
+  Competition,
   Event,
   Liquidity,
+  LiquidityMetrics,
   Market,
   MarketActivityPoint,
   MarketPulseBucket,
   MarketRow,
+  MarketTimelineEvent,
+  MarketType,
   OddsSnapshot,
   OverviewKpis,
   Runner,
   RunnerPosition,
   SignalLevel,
-  Sport,
   VolumeSnapshot,
 } from "@/types";
 
@@ -36,7 +41,7 @@ interface ScoreProfile {
   baseVolumeRange: [number, number];
 }
 
-const PROFILES: Record<Exclude<SignalLevel, "normal"> | "normal", ScoreProfile> = {
+const PROFILES: Record<SignalLevel, ScoreProfile> = {
   normal: {
     level: "normal",
     scoreRange: [4, 24],
@@ -139,13 +144,24 @@ function tierFor(value: number, thresholds: [number, SignalLevel][]): SignalLeve
   return level;
 }
 
-function buildRunners(marketId: string, home: string, away: string, hasDraw: boolean): Runner[] {
-  const runners: Runner[] = [
-    { id: `${marketId}-home`, name: home, position: "home" as RunnerPosition },
-  ];
-  if (hasDraw) runners.push({ id: `${marketId}-draw`, name: "Draw", position: "draw" as RunnerPosition });
-  runners.push({ id: `${marketId}-away`, name: away, position: "away" as RunnerPosition });
+interface RunnerSpec {
+  id: string;
+  name: string;
+  position: RunnerPosition;
+}
+
+function buildMatchOddsRunners(marketId: string, home: string, away: string, hasDraw: boolean): RunnerSpec[] {
+  const runners: RunnerSpec[] = [{ id: `${marketId}-home`, name: home, position: "home" }];
+  if (hasDraw) runners.push({ id: `${marketId}-draw`, name: "Draw", position: "draw" });
+  runners.push({ id: `${marketId}-away`, name: away, position: "away" });
   return runners;
+}
+
+function buildOverUnderRunners(marketId: string): RunnerSpec[] {
+  return [
+    { id: `${marketId}-over`, name: "Over 2.5", position: "over" },
+    { id: `${marketId}-under`, name: "Under 2.5", position: "under" },
+  ];
 }
 
 interface GeneratedMetrics {
@@ -156,12 +172,15 @@ interface GeneratedMetrics {
   liquidity: Liquidity;
   matchedVolume: number;
   volumeDelta15m: number;
-  favorite: "home" | "away";
+  favoritePosition: RunnerPosition;
 }
 
 /** Exact figures called out in the product brief for the three flagship examples. */
-const FLAGSHIP_OVERRIDES: Record<string, Partial<GeneratedMetrics> & { openingFavorite: number; currentFavorite: number }> = {
-  "py-di-0": {
+const FLAGSHIP_OVERRIDES: Record<
+  string,
+  Partial<GeneratedMetrics> & { openingFavorite: number; currentFavorite: number }
+> = {
+  "vantera-li-0": {
     score: 91,
     oddsDropPct: 26,
     volumeAccelPct: 312,
@@ -169,11 +188,11 @@ const FLAGSHIP_OVERRIDES: Record<string, Partial<GeneratedMetrics> & { openingFa
     liquidity: "low",
     matchedVolume: 37420,
     volumeDelta15m: 18240,
-    favorite: "home",
+    favoritePosition: "home",
     openingFavorite: 2.46,
     currentFavorite: 1.82,
   },
-  "ar-pn-0": {
+  "aurelia-2d-0": {
     score: 87,
     oddsDropPct: 21.9,
     volumeAccelPct: 245,
@@ -181,11 +200,11 @@ const FLAGSHIP_OVERRIDES: Record<string, Partial<GeneratedMetrics> & { openingFa
     liquidity: "low",
     matchedVolume: 51780,
     volumeDelta15m: 12430,
-    favorite: "home",
+    favoritePosition: "home",
     openingFavorite: 3.1,
     currentFavorite: 2.42,
   },
-  "fi-yk-0": {
+  "norlund-1d-0": {
     score: 68,
     oddsDropPct: 12.7,
     volumeAccelPct: 95,
@@ -193,15 +212,18 @@ const FLAGSHIP_OVERRIDES: Record<string, Partial<GeneratedMetrics> & { openingFa
     liquidity: "medium",
     matchedVolume: 14280,
     volumeDelta15m: 2140,
-    favorite: "home",
+    favoritePosition: "home",
     openingFavorite: 2.05,
     currentFavorite: 1.79,
   },
 };
 
-function generateMetrics(rand: () => number, marketId: string): GeneratedMetrics {
+function generateMetrics(rand: () => number, marketId: string, favoritePositions: RunnerPosition[]): GeneratedMetrics {
   const override = FLAGSHIP_OVERRIDES[marketId];
-  const favorite = weightedPick(rand, [["home", 55], ["away", 45]] as [("home" | "away"), number][]);
+  const favoritePosition = weightedPick(
+    rand,
+    favoritePositions.map((p, i) => [p, i === 0 ? 55 : 45] as [RunnerPosition, number])
+  );
   if (override) {
     return {
       score: override.score!,
@@ -211,7 +233,7 @@ function generateMetrics(rand: () => number, marketId: string): GeneratedMetrics
       liquidity: override.liquidity!,
       matchedVolume: override.matchedVolume!,
       volumeDelta15m: override.volumeDelta15m!,
-      favorite: override.favorite as "home" | "away",
+      favoritePosition: override.favoritePosition as RunnerPosition,
     };
   }
   const profile = weightedPick(rand, PROFILE_WEIGHTS);
@@ -222,16 +244,22 @@ function generateMetrics(rand: () => number, marketId: string): GeneratedMetrics
   const liquidity = weightedPick(rand, profile.liquidity);
   const matchedVolume = Math.round(randRange(rand, profile.baseVolumeRange[0], profile.baseVolumeRange[1]));
   const volumeDelta15m = Math.round(matchedVolume * randRange(rand, 0.08, 0.24));
-  return { score, oddsDropPct, volumeAccelPct, concentrationPct, liquidity, matchedVolume, volumeDelta15m, favorite };
+  return { score, oddsDropPct, volumeAccelPct, concentrationPct, liquidity, matchedVolume, volumeDelta15m, favoritePosition };
 }
 
 function buildOddsAndHistory(
   rand: () => number,
-  runners: Runner[],
+  runners: RunnerSpec[],
   metrics: GeneratedMetrics,
   marketId: string,
   nowMs: number
-): { openingOdds: Record<string, number>; currentOdds: Record<string, number>; oddsHistory: OddsSnapshot[] } {
+): {
+  openingOdds: Record<string, number>;
+  currentOdds: Record<string, number>;
+  peakOdds: Record<string, number>;
+  lowOdds: Record<string, number>;
+  oddsHistory: OddsSnapshot[];
+} {
   const override = FLAGSHIP_OVERRIDES[marketId];
   const openingOdds: Record<string, number> = {};
   const currentOdds: Record<string, number> = {};
@@ -239,14 +267,14 @@ function buildOddsAndHistory(
   for (const runner of runners) {
     if (runner.position === "draw") {
       openingOdds[runner.id] = round2(randRange(rand, 2.9, 4.1));
-    } else if (runner.position === metrics.favorite) {
+    } else if (runner.position === metrics.favoritePosition) {
       openingOdds[runner.id] = override ? override.openingFavorite : round2(randRange(rand, 1.55, 2.6));
     } else {
       openingOdds[runner.id] = round2(randRange(rand, 2.6, 5.2));
     }
   }
 
-  const favoriteRunner = runners.find((r) => r.position === metrics.favorite)!;
+  const favoriteRunner = runners.find((r) => r.position === metrics.favoritePosition)!;
   for (const runner of runners) {
     if (runner.id === favoriteRunner.id) {
       currentOdds[runner.id] = override
@@ -261,6 +289,9 @@ function buildOddsAndHistory(
   const POINTS = 96;
   const stepMs = (24 * 60 * 60 * 1000) / POINTS;
   const oddsHistory: OddsSnapshot[] = [];
+  const peakOdds: Record<string, number> = { ...openingOdds };
+  const lowOdds: Record<string, number> = { ...openingOdds };
+
   for (let i = 0; i < POINTS; i++) {
     const t = i / (POINTS - 1);
     const ts = nowMs - (POINTS - 1 - i) * stepMs;
@@ -270,7 +301,10 @@ function buildOddsAndHistory(
       const open = openingOdds[runner.id];
       const ease = Math.pow(t, 1.4);
       const noise = i === POINTS - 1 ? 0 : (rand() - 0.5) * open * 0.015;
-      values[runner.id] = Math.max(1.01, round2(open + (target - open) * ease + noise));
+      const value = Math.max(1.01, round2(open + (target - open) * ease + noise));
+      values[runner.id] = value;
+      if (value > peakOdds[runner.id]) peakOdds[runner.id] = value;
+      if (value < lowOdds[runner.id]) lowOdds[runner.id] = value;
     }
     if (i === POINTS - 1) {
       for (const runner of runners) values[runner.id] = currentOdds[runner.id];
@@ -278,7 +312,7 @@ function buildOddsAndHistory(
     oddsHistory.push({ timestamp: new Date(ts).toISOString(), values });
   }
 
-  return { openingOdds, currentOdds, oddsHistory };
+  return { openingOdds, currentOdds, peakOdds, lowOdds, oddsHistory };
 }
 
 function buildVolumeHistory(rand: () => number, metrics: GeneratedMetrics, nowMs: number): VolumeSnapshot[] {
@@ -304,9 +338,9 @@ function buildVolumeHistory(rand: () => number, metrics: GeneratedMetrics, nowMs
   return history;
 }
 
-function buildMoneyDistribution(runners: Runner[], metrics: GeneratedMetrics): Record<string, number> {
+function buildMoneyDistribution(runners: RunnerSpec[], metrics: GeneratedMetrics): Record<string, number> {
   const dist: Record<string, number> = {};
-  const favoriteRunner = runners.find((r) => r.position === metrics.favorite)!;
+  const favoriteRunner = runners.find((r) => r.position === metrics.favoritePosition)!;
   const others = runners.filter((r) => r.id !== favoriteRunner.id);
   dist[favoriteRunner.id] = Math.round(metrics.concentrationPct);
   const remainder = 100 - dist[favoriteRunner.id];
@@ -318,6 +352,17 @@ function buildMoneyDistribution(runners: Runner[], metrics: GeneratedMetrics): R
     dist[others.find((r) => r.position !== "draw")!.id] = remainder - drawShare;
   }
   return dist;
+}
+
+function buildAnomalyBreakdown(metrics: GeneratedMetrics): AnomalyMetrics {
+  const liquidityAnomaly = metrics.liquidity === "low" ? 78 + metrics.score * 0.15 : metrics.liquidity === "medium" ? 40 : 14;
+  return {
+    priceAnomaly: Math.min(100, Math.round(metrics.oddsDropPct * 3.1 + 8)),
+    volumeAnomaly: Math.min(100, Math.round(metrics.volumeAccelPct * 0.26 + 6)),
+    velocity: Math.min(100, Math.round(metrics.volumeAccelPct * 0.3 + metrics.oddsDropPct * 0.8)),
+    concentration: Math.min(100, Math.round(metrics.concentrationPct * 1.15)),
+    liquidityAnomaly: Math.min(100, Math.round(liquidityAnomaly)),
+  };
 }
 
 function buildAnomalyReasons(metrics: GeneratedMetrics): AnomalyReason[] {
@@ -385,162 +430,284 @@ function buildAnomalyReasons(metrics: GeneratedMetrics): AnomalyReason[] {
   ];
 }
 
-function generateMarketRow(seed: FixtureSeed): MarketRow {
-  const marketId = seed.id;
-  const eventId = `evt-${seed.id}`;
-  const rand = seededRandom(marketId);
+function buildTimeline(
+  rand: () => number,
+  volumeHistory: VolumeSnapshot[],
+  oddsHistory: OddsSnapshot[],
+  favoriteRunnerId: string,
+  level: SignalLevel
+): MarketTimelineEvent[] {
+  const recent = volumeHistory.slice(-16);
+  const recentOdds = oddsHistory.slice(-16);
+  const avg = recent.reduce((s, d) => s + d.volume, 0) / recent.length;
+  const events: MarketTimelineEvent[] = [];
 
-  const runners = buildRunners(marketId, seed.home, seed.away, seed.pool.hasDraw);
-  const metrics = generateMetrics(rand, marketId);
-  const { openingOdds, currentOdds, oddsHistory } = buildOddsAndHistory(rand, runners, metrics, marketId, MOCK_NOW);
-  const volumeHistory = buildVolumeHistory(rand, metrics, MOCK_NOW);
+  recent.forEach((bucket, i) => {
+    if (bucket.volume > avg * 1.6 && rand() > 0.3) {
+      events.push({
+        id: `tl-${bucket.timestamp}-vol`,
+        timestamp: bucket.timestamp,
+        type: bucket.volume > avg * 2.4 ? "volume-spike" : "volume",
+        label: `${formatCurrency(bucket.volume)} matched`,
+        severity: bucket.volume > avg * 2.4 ? "high" : "watch",
+      });
+    }
+    if (i > 0) {
+      const prevOdds = recentOdds[i - 1]?.values[favoriteRunnerId];
+      const currOdds = recentOdds[i]?.values[favoriteRunnerId];
+      if (prevOdds && currOdds && Math.abs(prevOdds - currOdds) / prevOdds > 0.02) {
+        events.push({
+          id: `tl-${bucket.timestamp}-odds`,
+          timestamp: bucket.timestamp,
+          type: "odds-move",
+          label: `Odds ${prevOdds.toFixed(2)} → ${currOdds.toFixed(2)}`,
+          severity: "watch",
+        });
+      }
+    }
+  });
+
+  if (level === "high" || level === "extreme") {
+    events.push({
+      id: `tl-signal`,
+      timestamp: volumeHistory[volumeHistory.length - 1].timestamp,
+      type: "signal",
+      label: `${level.toUpperCase()} SIGNAL`,
+      severity: level,
+    });
+  }
+
+  return events.slice(-7);
+}
+
+function buildLiquidityMetrics(metrics: GeneratedMetrics): LiquidityMetrics {
+  return {
+    level: metrics.liquidity,
+    matchedVolume: metrics.matchedVolume,
+    volumeVelocity: round2(metrics.volumeDelta15m / 15),
+    concentration: metrics.concentrationPct,
+  };
+}
+
+interface GenerateMarketParams {
+  marketId: string;
+  eventId: string;
+  type: MarketType;
+  name: string;
+  runners: RunnerSpec[];
+  seedKey: string;
+  nowMs: number;
+}
+
+function generateMarket({ marketId, eventId, type, name, runners, seedKey, nowMs }: GenerateMarketParams): Market {
+  const rand = seededRandom(seedKey);
+  // "Draw" can never be the side money is backing — only a two-runner
+  // head-to-head split (home/away, over/under) is a valid favorite.
+  const favoriteCandidates = runners.filter((r) => r.position !== "draw").map((r) => r.position);
+  const metrics = generateMetrics(rand, marketId, favoriteCandidates);
+  const { openingOdds, currentOdds, peakOdds, lowOdds, oddsHistory } = buildOddsAndHistory(
+    rand,
+    runners,
+    metrics,
+    marketId,
+    nowMs
+  );
+  const volumeHistory = buildVolumeHistory(rand, metrics, nowMs);
   const moneyDistribution = buildMoneyDistribution(runners, metrics);
-  if (marketId === "py-di-0") {
+  if (marketId === "vantera-li-0") {
     moneyDistribution[`${marketId}-home`] = 72;
     moneyDistribution[`${marketId}-draw`] = 11;
     moneyDistribution[`${marketId}-away`] = 17;
   }
   const reasons = buildAnomalyReasons(metrics);
+  const breakdown = buildAnomalyBreakdown(metrics);
   const level = signalFromScore(metrics.score);
+  const favoriteRunner = runners.find((r) => r.position === metrics.favoritePosition)!;
+  const timeline = buildTimeline(rand, volumeHistory, oddsHistory, favoriteRunner.id, level);
+  const runnerList: Runner[] = runners.map((r) => ({ id: r.id, name: r.name, position: r.position }));
 
-  const startTime = new Date(MOCK_NOW + seed.startOffsetMinutes * 60_000).toISOString();
-  const status: Event["status"] = seed.startOffsetMinutes <= 0 && seed.startOffsetMinutes > -110 ? "live" : seed.startOffsetMinutes > 0 ? "upcoming" : "closed";
+  return {
+    id: marketId,
+    eventId,
+    type,
+    name,
+    status: "open",
+    runners: runnerList,
+    openingOdds,
+    currentOdds,
+    peakOdds,
+    lowOdds,
+    matchedVolume: metrics.matchedVolume,
+    volumeDelta15m: metrics.volumeDelta15m,
+    liquidity: metrics.liquidity,
+    liquidityMetrics: buildLiquidityMetrics(metrics),
+    moneyDistribution,
+    oddsHistory,
+    volumeHistory,
+    timeline,
+    signal: { level, score: metrics.score, reasons, breakdown },
+    lastUpdated: new Date(nowMs).toISOString(),
+  };
+}
+
+function computeMovementPercent(market: Market): number {
+  let movementPercent = 0;
+  for (const runner of market.runners) {
+    const open = market.openingOdds[runner.id];
+    const cur = market.currentOdds[runner.id];
+    const pct = ((cur - open) / open) * 100;
+    if (Math.abs(pct) > Math.abs(movementPercent)) movementPercent = pct;
+  }
+  return round2(movementPercent);
+}
+
+function poolCompetitionId(pool: LeaguePool): string {
+  return pool.id;
+}
+
+function generateEventMarkets(seed: FixtureSeed): { event: Event; markets: Market[] } {
+  const eventId = `evt-${seed.id}`;
+  const nowMs = MOCK_NOW;
+  const eventRand = seededRandom(`event-${seed.id}`);
+
+  const primaryRunners = buildMatchOddsRunners(seed.id, seed.home, seed.away, seed.pool.hasDraw);
+  const primaryMarket = generateMarket({
+    marketId: seed.id,
+    eventId,
+    type: seed.pool.marketType,
+    name:
+      seed.pool.marketType === "match-odds"
+        ? "Match Odds"
+        : seed.pool.marketType === "handicap"
+          ? "Handicap"
+          : "Match Odds",
+    runners: primaryRunners,
+    seedKey: seed.id,
+    nowMs,
+  });
+
+  const markets: Market[] = [primaryMarket];
+
+  // Roughly half of football fixtures also carry a secondary Over/Under
+  // market, so the scanner and Moneyway feel like they're covering more
+  // than one market type per event.
+  if (seed.pool.sport === "football" && eventRand() < 0.45) {
+    const ouId = `${seed.id}-ou25`;
+    const ouRunners = buildOverUnderRunners(seed.id);
+    markets.push(
+      generateMarket({
+        marketId: ouId,
+        eventId,
+        type: "over-under",
+        name: "Over/Under 2.5 Goals",
+        runners: ouRunners,
+        seedKey: ouId,
+        nowMs,
+      })
+    );
+  }
+
+  const startTime = MOCK_NOW + seed.startOffsetMinutes * 60_000;
+  const status: Event["status"] =
+    seed.startOffsetMinutes <= 0 && seed.startOffsetMinutes > -110 ? "live" : seed.startOffsetMinutes > 0 ? "upcoming" : "finished";
 
   const event: Event = {
     id: eventId,
     sport: seed.pool.sport,
     country: seed.pool.country,
-    league: seed.pool.league,
+    competitionId: poolCompetitionId(seed.pool),
+    competition: seed.pool.competition,
     homeTeam: seed.home,
     awayTeam: seed.away,
-    startTime,
+    kickoff: new Date(startTime).toISOString(),
     status,
+    marketIds: markets.map((m) => m.id),
   };
 
-  const marketName =
-    seed.pool.marketType === "match-odds"
-      ? "Match Odds"
-      : seed.pool.marketType === "handicap"
-        ? "Handicap"
-        : seed.pool.marketType === "over-under"
-          ? "Over / Under"
-          : "Correct Score";
-
-  const market: Market = {
-    id: marketId,
-    eventId,
-    type: seed.pool.marketType,
-    name: marketName,
-    runners,
-    openingOdds,
-    currentOdds,
-    matchedVolume: metrics.matchedVolume,
-    volumeDelta15m: metrics.volumeDelta15m,
-    liquidity: metrics.liquidity,
-    moneyDistribution,
-    oddsHistory,
-    volumeHistory,
-    signal: { level, score: metrics.score, reasons },
-  };
-
-  let movementPercent = 0;
-  for (const runner of runners) {
-    const open = openingOdds[runner.id];
-    const cur = currentOdds[runner.id];
-    const pct = ((cur - open) / open) * 100;
-    if (Math.abs(pct) > Math.abs(movementPercent)) movementPercent = pct;
-  }
-
-  return { event, market, movementPercent: round2(movementPercent) };
+  return { event, markets };
 }
 
 function buildAlerts(rows: MarketRow[]): Alert[] {
   const ranked = [...rows].sort((a, b) => b.market.signal.score - a.market.signal.score).slice(0, 16);
   const alerts: Alert[] = [];
 
-  const fixedTemplates: Array<{ level: SignalLevel; title: string; description: (r: MarketRow) => string; type: Alert["type"] }> = [
-    {
-      level: "extreme",
-      title: "EXTREME",
-      type: "odds-drop",
-      description: () => "Odds dropped 28% in 7 minutes",
-    },
-    {
-      level: "high",
-      title: "HIGH VOLUME",
-      type: "volume-spike",
-      description: () => "€22,000 matched in 10 minutes",
-    },
-    {
-      level: "high",
-      title: "MONEY SHIFT",
-      type: "money-shift",
-      description: () => "74% of matched money moved to Home",
-    },
+  const fixedTemplates: Array<{ severity: SignalLevel; title: string; trigger: AlertTrigger; description: string }> = [
+    { severity: "extreme", title: "EXTREME", trigger: "odds-drop", description: "Odds dropped 28% in 7 minutes" },
+    { severity: "high", title: "HIGH VOLUME", trigger: "volume-spike", description: "€22,000 matched in 10 minutes" },
+    { severity: "high", title: "MONEY SHIFT", trigger: "money-shift", description: "74% of matched money moved to Home" },
   ];
 
   ranked.forEach((row, i) => {
     const rand = seededRandom(`alert-${row.market.id}`);
     const minsAgo = Math.round(randRange(rand, 4, 340));
     const timestamp = new Date(MOCK_NOW - minsAgo * 60_000).toISOString();
+    const match = `${row.event.homeTeam} vs ${row.event.awayTeam}`;
 
     if (i < fixedTemplates.length) {
       const t = fixedTemplates[i];
       alerts.push({
         id: `alert-${row.market.id}-fixed`,
         timestamp,
-        level: t.level,
-        type: t.type,
+        sport: row.event.sport,
+        competition: row.event.competition,
+        match,
+        market: row.market.name,
+        trigger: t.trigger,
         title: t.title,
-        description: t.description(row),
+        description: t.description,
+        value: t.description,
+        score: row.market.signal.score,
+        severity: t.severity,
         eventId: row.event.id,
         marketId: row.market.id,
-        eventLabel: `${row.event.homeTeam} vs ${row.event.awayTeam}`,
-        league: `${row.event.country} · ${row.event.league}`,
-        value: t.description(row),
-        score: row.market.signal.score,
       });
       return;
     }
 
     const reasons = row.market.signal.reasons;
-    const dominant = [...reasons].sort((a, b) => {
-      const order: SignalLevel[] = ["normal", "watch", "elevated", "high", "extreme"];
-      return order.indexOf(b.severity) - order.indexOf(a.severity);
-    })[0];
+    const order: SignalLevel[] = ["normal", "watch", "elevated", "high", "extreme"];
+    const dominant = [...reasons].sort((a, b) => order.indexOf(b.severity) - order.indexOf(a.severity))[0];
 
-    let type: Alert["type"] = "high-activity";
+    let trigger: AlertTrigger = "high-activity";
     let title = "HIGH ACTIVITY";
-    let description = `Sharp increase in matched volume and odds movement detected`;
+    let description = "Sharp increase in matched volume and odds movement detected";
 
     if (dominant.key === "odds-drop") {
-      type = "odds-drop";
+      trigger = "odds-drop";
       title = row.market.signal.level === "extreme" ? "EXTREME" : "SHARP MOVEMENT";
       description = `Odds dropped ${dominant.value} in ${Math.round(randRange(rand, 5, 40))} minutes`;
     } else if (dominant.key === "volume-acceleration" || dominant.key === "recent-volume") {
-      type = "volume-spike";
+      trigger = "volume-spike";
       title = "HIGH VOLUME";
       description = `${formatCurrency(row.market.volumeDelta15m)} matched in ${Math.round(randRange(rand, 5, 25))} minutes`;
     } else if (dominant.key === "concentration") {
-      type = "money-shift";
+      trigger = "money-shift";
       title = "MONEY SHIFT";
-      const favoriteRunner = row.market.runners.find((r) => row.market.moneyDistribution[r.id] === Math.max(...Object.values(row.market.moneyDistribution)));
+      const favoriteRunner = row.market.runners.find(
+        (r) => row.market.moneyDistribution[r.id] === Math.max(...Object.values(row.market.moneyDistribution))
+      );
       description = `${dominant.value} of matched money moved to ${favoriteRunner?.name ?? "favorite"}`;
+    } else if (dominant.key === "liquidity") {
+      trigger = "liquidity-shift";
+      title = "LIQUIDITY SHIFT";
+      description = `+${Math.round(randRange(rand, 120, 280))}% drop in available depth`;
     }
 
     alerts.push({
       id: `alert-${row.market.id}`,
       timestamp,
-      level: row.market.signal.level,
-      type,
+      sport: row.event.sport,
+      competition: row.event.competition,
+      match,
+      market: row.market.name,
+      trigger,
       title,
       description,
-      eventId: row.event.id,
-      marketId: row.market.id,
-      eventLabel: `${row.event.homeTeam} vs ${row.event.awayTeam}`,
-      league: `${row.event.country} · ${row.event.league}`,
       value: description,
       score: row.market.signal.score,
+      severity: row.market.signal.level,
+      eventId: row.event.id,
+      marketId: row.market.id,
     });
   });
 
@@ -563,17 +730,17 @@ function buildMarketActivity(): MarketActivityPoint[] {
 
 function buildAnalytics(rows: MarketRow[]): AnalyticsSummary {
   const severityCounts = new Map<SignalLevel, number>();
-  const leagueCounts = new Map<string, number>();
-  const sportVolume = new Map<Sport, number>();
+  const competitionCounts = new Map<string, number>();
   let totalMovement = 0;
+  let extremeSignals = 0;
 
   for (const row of rows) {
     const level = row.market.signal.level;
     severityCounts.set(level, (severityCounts.get(level) ?? 0) + 1);
+    if (level === "extreme") extremeSignals += 1;
     if (level === "high" || level === "extreme" || level === "elevated") {
-      leagueCounts.set(row.event.league, (leagueCounts.get(row.event.league) ?? 0) + 1);
+      competitionCounts.set(row.event.competition, (competitionCounts.get(row.event.competition) ?? 0) + 1);
     }
-    sportVolume.set(row.event.sport, (sportVolume.get(row.event.sport) ?? 0) + row.market.matchedVolume);
     totalMovement += Math.abs(row.movementPercent);
   }
 
@@ -590,40 +757,45 @@ function buildAnalytics(rows: MarketRow[]): AnalyticsSummary {
   return {
     marketsMonitored: 2847,
     signalsGenerated: signalsByDay.reduce((s, d) => s + d.count, 0),
-    averageOddsMovement: round2(totalMovement / rows.length),
-    volumeTracked: 18_400_000,
+    extremeSignals,
+    averageMovement: round2(totalMovement / rows.length),
+    volumeMonitored: 18_400_000,
     signalsByDay,
-    signalsByLeague: [...leagueCounts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 6)
-      .map(([league, count]) => ({ league, count })),
     signalsBySeverity: (["normal", "watch", "elevated", "high", "extreme"] as SignalLevel[]).map((level) => ({
       level,
       count: severityCounts.get(level) ?? 0,
     })),
-    volumeDistribution: [...sportVolume.entries()].map(([sport, volume]) => ({ sport, volume })),
+    signalsByCompetition: [...competitionCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([competition, count]) => ({ competition, count })),
+    largestMovements: [...rows].sort((a, b) => Math.abs(b.movementPercent) - Math.abs(a.movementPercent)).slice(0, 6),
+    highestVolumeMarkets: [...rows].sort((a, b) => b.market.matchedVolume - a.market.matchedVolume).slice(0, 6),
   };
 }
 
 const OVERVIEW_KPIS: OverviewKpis = {
-  liveMarkets: 2847,
-  liveMarketsDelta: 4.6,
+  marketsMonitored: 2847,
+  marketsMonitoredDelta: 4.6,
   highActivity: 38,
   highActivityDelta: 12.1,
   majorMovements: 12,
   majorMovementsDelta: -3.4,
   volumeTracked: 18_400_000,
   volumeTrackedDelta: 8.9,
+  signalsDetected: 207,
+  signalsDetectedDelta: 15.8,
 };
 
 const MARKET_PULSE: MarketPulseBucket[] = [
-  { level: "normal", label: "Normal Markets", percent: 72 },
-  { level: "elevated", label: "Elevated Activity", percent: 18 },
-  { level: "high", label: "High Activity", percent: 7 },
-  { level: "extreme", label: "Extreme Activity", percent: 3 },
+  { level: "normal", label: "Normal", percent: 72 },
+  { level: "elevated", label: "Elevated", percent: 18 },
+  { level: "high", label: "High", percent: 7 },
+  { level: "extreme", label: "Extreme", percent: 3 },
 ];
 
 interface MockDataset {
+  competitions: Competition[];
   rows: MarketRow[];
   alerts: Alert[];
   kpis: OverviewKpis;
@@ -632,13 +804,29 @@ interface MockDataset {
   analytics: AnalyticsSummary;
 }
 
+function buildCompetitions(): Competition[] {
+  return LEAGUE_POOLS.map((pool) => ({
+    id: pool.id,
+    sport: pool.sport,
+    country: pool.country,
+    name: pool.competition,
+  }));
+}
+
 function buildDataset(): MockDataset {
   const seeds = buildFixtureSeeds();
-  const rows = seeds.map(generateMarketRow);
+  const rows: MarketRow[] = [];
+  for (const seed of seeds) {
+    const { event, markets } = generateEventMarkets(seed);
+    for (const market of markets) {
+      rows.push({ event, market, movementPercent: computeMovementPercent(market) });
+    }
+  }
   const alerts = buildAlerts(rows);
   const marketActivity = buildMarketActivity();
   const analytics = buildAnalytics(rows);
-  return { rows, alerts, kpis: OVERVIEW_KPIS, marketPulse: MARKET_PULSE, marketActivity, analytics };
+  const competitions = buildCompetitions();
+  return { competitions, rows, alerts, kpis: OVERVIEW_KPIS, marketPulse: MARKET_PULSE, marketActivity, analytics };
 }
 
 export const MOCK_DATASET: MockDataset = buildDataset();

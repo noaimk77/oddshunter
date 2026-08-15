@@ -1,23 +1,34 @@
 import { marketDataProvider } from "@/services";
 import { PageHeader } from "@/components/shared/page-header";
+import { DemoDataBadge } from "@/components/shared/demo-data-badge";
+import { LiveDataUnavailable } from "@/components/shared/live-data-unavailable";
 import { ScannerView } from "@/features/scanner/scanner-view";
 
 export default async function ScannerPage() {
-  const [rows, filterOptions] = await Promise.all([
-    marketDataProvider.listMarkets(),
-    marketDataProvider.getFilterOptions(),
-  ]);
-
-  const marketTypes = [...new Set(rows.map((r) => r.market.name))];
+  const status = await marketDataProvider.getStatus();
+  const isDemo = status.providerName === "mock-dev";
 
   return (
     <div>
       <PageHeader
-        eyebrow="Live Scanner"
-        title="Live Market Scanner"
-        description="Monitoring thousands of betting markets for unusual price and volume activity."
+        eyebrow="Scanner"
+        title={
+          <span className="flex flex-wrap items-center gap-3">
+            Live Market Scanner
+            {isDemo && <DemoDataBadge />}
+          </span>
+        }
+        description="Monitoring betting markets for unusual price and volume activity."
       />
-      <ScannerView initialRows={rows} filterOptions={filterOptions} marketTypes={marketTypes} />
+      {status.available ? <ScannerBody /> : <LiveDataUnavailable />}
     </div>
   );
+}
+
+async function ScannerBody() {
+  const [rows, filterOptions] = await Promise.all([
+    marketDataProvider.listMarkets(),
+    marketDataProvider.getFilterOptions(),
+  ]);
+  return <ScannerView initialRows={rows} filterOptions={filterOptions} />;
 }
