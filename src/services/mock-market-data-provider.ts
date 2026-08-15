@@ -72,7 +72,7 @@ function matchesFilters(row: MarketRow, filters: MarketFilters): boolean {
 
 export class MockMarketDataProvider implements MarketDataProvider {
   async getStatus() {
-    return { available: true, providerName: "mock-dev" };
+    return { available: true, providerName: "mock-dev", hasVolumeData: true };
   }
 
   async getOverviewKpis() {

@@ -168,15 +168,19 @@ export interface MarketPulseBucket {
 
 export interface OverviewKpis {
   marketsMonitored: number;
-  marketsMonitoredDelta: number;
+  // "vs yesterday" deltas are only meaningful once a provider actually has
+  // a full day of real history behind it — undefined (not 0) when there's
+  // nothing honest to compare against yet. KpiCard already renders no
+  // delta row at all when a value is undefined.
+  marketsMonitoredDelta?: number;
   highActivity: number;
-  highActivityDelta: number;
+  highActivityDelta?: number;
   majorMovements: number;
-  majorMovementsDelta: number;
+  majorMovementsDelta?: number;
   volumeTracked: number;
-  volumeTrackedDelta: number;
+  volumeTrackedDelta?: number;
   signalsDetected: number;
-  signalsDetectedDelta: number;
+  signalsDetectedDelta?: number;
 }
 
 export interface MarketActivityPoint {

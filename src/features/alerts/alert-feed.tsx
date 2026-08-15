@@ -6,7 +6,6 @@ import { SIGNAL_META } from "@/lib/signal";
 import { formatRelativeTime, formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Alert } from "@/types";
-import { MOCK_NOW } from "@/data/mock-generator";
 
 const TRIGGER_ICON: Record<Alert["trigger"], typeof Zap> = {
   "odds-drop": TrendingDown,
@@ -45,7 +44,7 @@ export function AlertFeed({ alerts }: { alerts: Alert[] }) {
 
               <div className="shrink-0 text-right">
                 <p className="font-mono text-xs text-muted-foreground" title={formatTime(alert.timestamp)}>
-                  {formatRelativeTime(alert.timestamp, MOCK_NOW)}
+                  {formatRelativeTime(alert.timestamp)}
                 </p>
                 <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-foreground">
                   {alert.score}

@@ -11,12 +11,20 @@ const LIQUIDITY_COPY: Record<Market["liquidity"], { color: string; note: string 
   high: { color: "text-positive", note: "Deep, well-supplied order book." },
 };
 
-export function StatBlocks({ market, movementPercent }: { market: Market; movementPercent: number }) {
+export function StatBlocks({
+  market,
+  movementPercent,
+  hasVolumeData = true,
+}: {
+  market: Market;
+  movementPercent: number;
+  hasVolumeData?: boolean;
+}) {
   const favorite = getFavoriteRunner(market);
   const liquidity = LIQUIDITY_COPY[market.liquidity];
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className={cn("grid grid-cols-1 gap-4 sm:grid-cols-2", hasVolumeData && "xl:grid-cols-4")}>
       <FadeIn className="rounded-lg border border-border/70 bg-card/40 p-5">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Odds Movement</p>
         <div className="mt-2.5 flex items-baseline gap-2 font-mono text-2xl font-semibold tabular-nums text-foreground">
@@ -35,30 +43,34 @@ export function StatBlocks({ market, movementPercent }: { market: Market; moveme
         </div>
       </FadeIn>
 
-      <FadeIn delay={0.06} className="rounded-lg border border-border/70 bg-card/40 p-5">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Matched Volume</p>
-        <p className="mt-2.5 font-mono text-2xl font-semibold tabular-nums text-foreground">
-          {formatCurrency(market.matchedVolume)}
-        </p>
-        <p className="mt-2.5 text-xs font-medium text-gold">+{formatCurrency(market.volumeDelta15m)} last 15m</p>
-      </FadeIn>
+      {hasVolumeData && (
+        <>
+          <FadeIn delay={0.06} className="rounded-lg border border-border/70 bg-card/40 p-5">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Matched Volume</p>
+            <p className="mt-2.5 font-mono text-2xl font-semibold tabular-nums text-foreground">
+              {formatCurrency(market.matchedVolume)}
+            </p>
+            <p className="mt-2.5 text-xs font-medium text-gold">+{formatCurrency(market.volumeDelta15m)} last 15m</p>
+          </FadeIn>
 
-      <FadeIn delay={0.12} className="rounded-lg border border-border/70 bg-card/40 p-5">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Volume Velocity</p>
-        <p className="mt-2.5 font-mono text-2xl font-semibold tabular-nums text-foreground">
-          {formatCurrency(market.liquidityMetrics.volumeVelocity)}
-          <span className="text-sm font-normal text-muted-foreground">/min</span>
-        </p>
-        <p className="mt-2.5 text-xs text-muted-foreground">Matched volume per minute, trailing window.</p>
-      </FadeIn>
+          <FadeIn delay={0.12} className="rounded-lg border border-border/70 bg-card/40 p-5">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Volume Velocity</p>
+            <p className="mt-2.5 font-mono text-2xl font-semibold tabular-nums text-foreground">
+              {formatCurrency(market.liquidityMetrics.volumeVelocity)}
+              <span className="text-sm font-normal text-muted-foreground">/min</span>
+            </p>
+            <p className="mt-2.5 text-xs text-muted-foreground">Matched volume per minute, trailing window.</p>
+          </FadeIn>
 
-      <FadeIn delay={0.18} className="rounded-lg border border-border/70 bg-card/40 p-5">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Market Liquidity</p>
-        <p className={cn("mt-2.5 font-mono text-2xl font-semibold uppercase tabular-nums", liquidity.color)}>
-          {market.liquidity}
-        </p>
-        <p className="mt-2.5 text-xs text-muted-foreground">{liquidity.note}</p>
-      </FadeIn>
+          <FadeIn delay={0.18} className="rounded-lg border border-border/70 bg-card/40 p-5">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Market Liquidity</p>
+            <p className={cn("mt-2.5 font-mono text-2xl font-semibold uppercase tabular-nums", liquidity.color)}>
+              {market.liquidity}
+            </p>
+            <p className="mt-2.5 text-xs text-muted-foreground">{liquidity.note}</p>
+          </FadeIn>
+        </>
+      )}
     </div>
   );
 }

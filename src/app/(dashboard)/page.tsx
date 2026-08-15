@@ -9,6 +9,17 @@ import { MarketActivityChart } from "@/features/overview/market-activity-chart";
 import { MarketPulse } from "@/features/overview/market-pulse";
 import { LiveMarketFeed } from "@/features/overview/live-market-feed";
 import { TopMovementsTable } from "@/features/overview/top-movements-table";
+import { formatTime } from "@/lib/format";
+
+function NoVolumeDataNote() {
+  return (
+    <div className="flex h-full min-h-[180px] flex-col items-center justify-center px-6 text-center">
+      <p className="text-sm text-muted-foreground">
+        This data source doesn&apos;t provide matched-volume figures — nothing is shown here rather than a fabricated number.
+      </p>
+    </div>
+  );
+}
 
 export default async function OverviewPage() {
   const status = await marketDataProvider.getStatus();
@@ -27,6 +38,9 @@ export default async function OverviewPage() {
             ? "This dashboard is running on a simulated dataset for preview purposes — no real market connection yet. Every figure below is synthetic."
             : "Odds Hunter is watching price movement, matched volume, and money flow across every market it monitors."}
         </p>
+        {!isDemo && status.lastUpdated && (
+          <p className="mt-1 text-xs text-muted-foreground/70">Updated at {formatTime(status.lastUpdated)}</p>
+        )}
       </div>
       <OddsHunterMascot variant="compact" className="hidden shrink-0 sm:block" />
     </div>
@@ -78,15 +92,17 @@ export default async function OverviewPage() {
           icon={<Zap className="h-4 w-4 text-muted-foreground/50" strokeWidth={1.75} />}
           index={2}
         />
-        <KpiCard
-          label="Volume Tracked"
-          value={kpis.volumeTracked}
-          formatKind="compact-currency"
-          delta={kpis.volumeTrackedDelta}
-          deltaLabel="vs yesterday"
-          icon={<Euro className="h-4 w-4 text-muted-foreground/50" strokeWidth={1.75} />}
-          index={3}
-        />
+        {status.hasVolumeData && (
+          <KpiCard
+            label="Volume Tracked"
+            value={kpis.volumeTracked}
+            formatKind="compact-currency"
+            delta={kpis.volumeTrackedDelta}
+            deltaLabel="vs yesterday"
+            icon={<Euro className="h-4 w-4 text-muted-foreground/50" strokeWidth={1.75} />}
+            index={3}
+          />
+        )}
         <KpiCard
           label="Signals Detected"
           value={kpis.signalsDetected}
@@ -99,7 +115,7 @@ export default async function OverviewPage() {
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
         <SectionCard title="Market Activity" description="Global matched volume, last 24 hours" className="xl:col-span-2">
-          <MarketActivityChart data={marketActivity} />
+          {status.hasVolumeData ? <MarketActivityChart data={marketActivity} /> : <NoVolumeDataNote />}
         </SectionCard>
         <SectionCard title="Market Pulse" description="Distribution of markets by signal level">
           <MarketPulse buckets={marketPulse} />
@@ -113,14 +129,14 @@ export default async function OverviewPage() {
           className="xl:col-span-2"
           bodyClassName="p-0"
         >
-          <TopMovementsTable rows={topMovements} />
+          <TopMovementsTable rows={topMovements} hasVolumeData={status.hasVolumeData} />
         </SectionCard>
         <SectionCard
           title="Activity Feed"
           description={isDemo ? "Simulated market events, generated locally for preview" : "Recent activity across every monitored market"}
           bodyClassName="p-2"
         >
-          <LiveMarketFeed initialFeed={liveFeed} />
+          <LiveMarketFeed initialFeed={liveFeed} isDemo={isDemo} />
         </SectionCard>
       </div>
     </div>

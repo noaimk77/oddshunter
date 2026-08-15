@@ -192,9 +192,17 @@ model Notification {
 // ---------------------------------------------------------------------------
 
 model Provider {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  createdAt DateTime @default(now())
+  id            String    @id @default(cuid())
+  name          String    @unique
+  createdAt     DateTime  @default(now())
+  /// Real timestamp of the last successful sync from this provider's API —
+  /// shown to users as "Updated at X", never fabricated or left implicit.
+  lastSyncedAt  DateTime?
+  /// Requests spent against this provider's daily quota, reset by the sync
+  /// job itself when the UTC day rolls over — a safety rail so an accidental
+  /// double-trigger can't silently burn the whole free-tier budget.
+  requestsToday Int       @default(0)
+  requestsDate  String? // YYYY-MM-DD (UTC) the requestsToday counter applies to
 
   competitions Competition[]
 }

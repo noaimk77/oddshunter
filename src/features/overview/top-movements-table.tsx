@@ -8,7 +8,7 @@ import { formatCurrency, formatOdds, formatTime } from "@/lib/format";
 import { getFavoriteRunner } from "@/lib/market";
 import type { MarketRow } from "@/types";
 
-export function TopMovementsTable({ rows }: { rows: MarketRow[] }) {
+export function TopMovementsTable({ rows, hasVolumeData = true }: { rows: MarketRow[]; hasVolumeData?: boolean }) {
   return (
     <Table>
       <TableHeader>
@@ -21,8 +21,12 @@ export function TopMovementsTable({ rows }: { rows: MarketRow[] }) {
           <TableHead className="text-right text-xs text-muted-foreground">Opening</TableHead>
           <TableHead className="text-right text-xs text-muted-foreground">Current</TableHead>
           <TableHead className="text-right text-xs text-muted-foreground">Movement</TableHead>
-          <TableHead className="text-right text-xs text-muted-foreground">Volume</TableHead>
-          <TableHead className="text-right text-xs text-muted-foreground">Vol. Δ</TableHead>
+          {hasVolumeData && (
+            <>
+              <TableHead className="text-right text-xs text-muted-foreground">Volume</TableHead>
+              <TableHead className="text-right text-xs text-muted-foreground">Vol. Δ</TableHead>
+            </>
+          )}
           <TableHead className="text-xs text-muted-foreground">Signal</TableHead>
           <TableHead className="text-right text-xs text-muted-foreground">Score</TableHead>
           <TableHead className="w-8" />
@@ -52,12 +56,16 @@ export function TopMovementsTable({ rows }: { rows: MarketRow[] }) {
               <TableCell className="text-right">
                 <Movement percent={row.movementPercent} className="justify-end" />
               </TableCell>
-              <TableCell className="text-right font-mono text-sm tabular-nums text-foreground">
-                {formatCurrency(row.market.matchedVolume)}
-              </TableCell>
-              <TableCell className="text-right font-mono text-xs tabular-nums text-gold/90">
-                +{formatCurrency(row.market.volumeDelta15m)}
-              </TableCell>
+              {hasVolumeData && (
+                <>
+                  <TableCell className="text-right font-mono text-sm tabular-nums text-foreground">
+                    {formatCurrency(row.market.matchedVolume)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs tabular-nums text-gold/90">
+                    +{formatCurrency(row.market.volumeDelta15m)}
+                  </TableCell>
+                </>
+              )}
               <TableCell>
                 <SignalBadge level={row.market.signal.level} />
               </TableCell>

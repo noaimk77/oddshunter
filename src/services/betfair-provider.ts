@@ -91,10 +91,10 @@ export class BetfairProvider implements MarketDataProvider {
   async getStatus() {
     try {
       await this.getSessionToken();
-      return { available: true as const, providerName: "betfair" };
+      return { available: true as const, providerName: "betfair", hasVolumeData: true };
     } catch (err) {
       console.error("[betfair] session check failed", err);
-      return { available: false as const, providerName: "betfair" };
+      return { available: false as const, providerName: "betfair", hasVolumeData: true };
     }
   }
 

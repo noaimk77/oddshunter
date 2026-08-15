@@ -50,6 +50,16 @@ export type MoneywaySort =
 export interface ProviderStatus {
   available: boolean;
   providerName: string;
+  /** Real timestamp of the last successful sync from the underlying source, when known — never fabricated. */
+  lastUpdated?: string;
+  /**
+   * Whether this provider has real matched-volume/liquidity/money-flow
+   * data. Betfair Exchange (peer-to-peer) has this; bookmaker-odds
+   * aggregators like API-Football don't — there's no invented substitute
+   * when this is false, pages must show an explicit "not available" state
+   * instead of a chart of zeros.
+   */
+  hasVolumeData: boolean;
 }
 
 /**

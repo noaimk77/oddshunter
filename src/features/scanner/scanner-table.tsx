@@ -20,7 +20,7 @@ const LIQUIDITY_LABEL: Record<MarketRow["market"]["liquidity"], string> = {
   high: "High",
 };
 
-export function ScannerTable({ rows }: { rows: MarketRow[] }) {
+export function ScannerTable({ rows, hasVolumeData = true }: { rows: MarketRow[]; hasVolumeData?: boolean }) {
   if (rows.length === 0) {
     return (
       <EmptyState
@@ -43,10 +43,14 @@ export function ScannerTable({ rows }: { rows: MarketRow[] }) {
             <TableHead className="text-right text-xs text-muted-foreground">Open</TableHead>
             <TableHead className="text-right text-xs text-muted-foreground">Current</TableHead>
             <TableHead className="text-right text-xs text-muted-foreground">Movement</TableHead>
-            <TableHead className="text-right text-xs text-muted-foreground">Matched</TableHead>
-            <TableHead className="text-right text-xs text-muted-foreground">Vol. Δ</TableHead>
-            <TableHead className="text-right text-xs text-muted-foreground">Money %</TableHead>
-            <TableHead className="text-xs text-muted-foreground">Liquidity</TableHead>
+            {hasVolumeData && (
+              <>
+                <TableHead className="text-right text-xs text-muted-foreground">Matched</TableHead>
+                <TableHead className="text-right text-xs text-muted-foreground">Vol. Δ</TableHead>
+                <TableHead className="text-right text-xs text-muted-foreground">Money %</TableHead>
+                <TableHead className="text-xs text-muted-foreground">Liquidity</TableHead>
+              </>
+            )}
             <TableHead className="text-xs text-muted-foreground">Signal</TableHead>
             <TableHead className="text-right text-xs text-muted-foreground">Score</TableHead>
             <TableHead className="w-8" />
@@ -82,20 +86,24 @@ export function ScannerTable({ rows }: { rows: MarketRow[] }) {
                     <Movement percent={row.movementPercent} className="justify-end" />
                   </FlashCell>
                 </TableCell>
-                <TableCell className="text-right font-mono text-sm tabular-nums text-foreground">
-                  <FlashCell watchValue={row.market.matchedVolume}>{formatCurrency(row.market.matchedVolume)}</FlashCell>
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs tabular-nums text-gold/90">
-                  <FlashCell watchValue={row.market.volumeDelta15m}>+{formatCurrency(row.market.volumeDelta15m)}</FlashCell>
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs tabular-nums text-muted-foreground">
-                  {row.market.moneyDistribution[leadingMoney.id]}%
-                </TableCell>
-                <TableCell>
-                  <span className={cn("text-xs", row.market.liquidity === "low" ? "text-signal-high" : "text-muted-foreground")}>
-                    {LIQUIDITY_LABEL[row.market.liquidity]}
-                  </span>
-                </TableCell>
+                {hasVolumeData && (
+                  <>
+                    <TableCell className="text-right font-mono text-sm tabular-nums text-foreground">
+                      <FlashCell watchValue={row.market.matchedVolume}>{formatCurrency(row.market.matchedVolume)}</FlashCell>
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs tabular-nums text-gold/90">
+                      <FlashCell watchValue={row.market.volumeDelta15m}>+{formatCurrency(row.market.volumeDelta15m)}</FlashCell>
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs tabular-nums text-muted-foreground">
+                      {row.market.moneyDistribution[leadingMoney.id]}%
+                    </TableCell>
+                    <TableCell>
+                      <span className={cn("text-xs", row.market.liquidity === "low" ? "text-signal-high" : "text-muted-foreground")}>
+                        {LIQUIDITY_LABEL[row.market.liquidity]}
+                      </span>
+                    </TableCell>
+                  </>
+                )}
                 <TableCell>
                   <SignalBadge level={row.market.signal.level} />
                 </TableCell>

@@ -3,8 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeftRight, TrendingDown, Zap } from "lucide-react";
-import { marketDataProvider } from "@/services";
-import type { MarketTick } from "@/services";
+// Deliberately NOT importing from "@/services" (the barrel) here — that
+// module also constructs ApiFootballProvider/BetfairProvider, which pull in
+// the Postgres driver (Node-only: fs/net/tls/dns). Any Client Component
+// that imports the barrel drags that whole graph into the browser bundle
+// and fails to compile. Ticking is a demo-only, client-only animation, so
+// it imports the mock provider directly instead — safe to bundle, and the
+// only implementation that does real client-side tick work anyway.
+import { MockMarketDataProvider } from "@/services/mock-market-data-provider";
+import type { MarketTick } from "@/services/market-data-provider";
 import { getFavoriteRunner, getLeadingMoneyRunner } from "@/lib/market";
 import { formatCurrency, formatOdds, formatRelativeTime } from "@/lib/format";
 import { SIGNAL_META } from "@/lib/signal";
@@ -60,12 +67,17 @@ function synthesizeFeedEvent(tick: MarketTick): FeedEvent {
   };
 }
 
-export function LiveMarketFeed({ initialFeed }: { initialFeed: FeedEvent[] }) {
+export function LiveMarketFeed({ initialFeed, isDemo }: { initialFeed: FeedEvent[]; isDemo: boolean }) {
   const [feed, setFeed] = useState(initialFeed);
   const tickCounter = useRef(0);
 
   useEffect(() => {
-    const unsubscribe = marketDataProvider.subscribeToTicks((ticks) => {
+    // Real providers have no client-side tick simulation to subscribe to —
+    // their data only changes when the server-side sync job runs. Only the
+    // mock provider animates here, and only when it's actually the active
+    // source (never fabricate movement on top of real data).
+    if (!isDemo) return;
+    const unsubscribe = new MockMarketDataProvider().subscribeToTicks((ticks) => {
       tickCounter.current += 1;
       // One feed entry per tick cycle keeps the feed legible instead of
       // flooding it with every simultaneous market nudge.
@@ -74,7 +86,7 @@ export function LiveMarketFeed({ initialFeed }: { initialFeed: FeedEvent[] }) {
       setFeed((prev) => [synthesizeFeedEvent(featured), ...prev].slice(0, 18));
     });
     return unsubscribe;
-  }, []);
+  }, [isDemo]);
 
   return (
     <div className="max-h-[22rem] space-y-1 overflow-y-auto pr-1">

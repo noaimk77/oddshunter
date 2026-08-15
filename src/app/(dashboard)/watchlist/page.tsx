@@ -20,12 +20,12 @@ export default async function WatchlistPage() {
         }
         description="Markets you're tracking closely, saved to your account."
       />
-      {status.available ? <WatchlistBody /> : <LiveDataUnavailable />}
+      {status.available ? <WatchlistBody hasVolumeData={status.hasVolumeData} /> : <LiveDataUnavailable />}
     </div>
   );
 }
 
-async function WatchlistBody() {
+async function WatchlistBody({ hasVolumeData }: { hasVolumeData: boolean }) {
   const rows = await marketDataProvider.listMarkets();
-  return <WatchlistView allRows={rows} />;
+  return <WatchlistView allRows={rows} hasVolumeData={hasVolumeData} />;
 }

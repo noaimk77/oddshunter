@@ -20,7 +20,16 @@ export default async function MoneywayPage() {
         }
         description="Where the matched money is flowing across every monitored selection."
       />
-      {status.available ? <MoneywayBody /> : <LiveDataUnavailable />}
+      {!status.available ? (
+        <LiveDataUnavailable />
+      ) : !status.hasVolumeData ? (
+        <LiveDataUnavailable
+          title="Moneyway data isn't available with this data source"
+          description="Moneyway needs real matched-volume and liquidity data, which bookmaker-odds providers like API-Football don't report. This isn't a bug — there's simply nothing real to show here with the current data source."
+        />
+      ) : (
+        <MoneywayBody />
+      )}
     </div>
   );
 }

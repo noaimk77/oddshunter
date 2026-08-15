@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { MarketRow } from "@/types";
 
-export function WatchlistView({ allRows }: { allRows: MarketRow[] }) {
+export function WatchlistView({ allRows, hasVolumeData }: { allRows: MarketRow[]; hasVolumeData: boolean }) {
   const { ids, hydrated, error } = useWatchlist();
 
   const watchedRows = useMemo(() => allRows.filter((row) => ids.includes(row.market.id)), [allRows, ids]);
@@ -51,7 +51,7 @@ export function WatchlistView({ allRows }: { allRows: MarketRow[] }) {
   return (
     <div>
       {errorBanner}
-      <ScannerTable rows={watchedRows} />
+      <ScannerTable rows={watchedRows} hasVolumeData={hasVolumeData} />
     </div>
   );
 }

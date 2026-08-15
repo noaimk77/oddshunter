@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { marketDataProvider } from "@/services";
-import type { FilterOptions } from "@/services";
+// Not importing the "@/services" barrel here — it also constructs
+// ApiFootballProvider/BetfairProvider, which pull in the Postgres driver
+// (Node-only: fs/net/tls/dns) and can't be bundled for the browser. Ticking
+// is a demo-only, client-only animation, so it imports the mock provider
+// directly instead of the shared singleton.
+import { MockMarketDataProvider } from "@/services/mock-market-data-provider";
+import type { FilterOptions } from "@/services/market-data-provider";
 import type { MarketRow } from "@/types";
-import { MOCK_NOW } from "@/data/mock-generator";
 import { FiltersBar } from "./filters-bar";
 import { SignalTabs } from "./signal-tabs";
 import { ScannerTable } from "./scanner-table";
@@ -13,17 +17,30 @@ import { DEFAULT_FILTERS, TIME_WINDOW_MS, type ScannerFilterState } from "./filt
 export function ScannerView({
   initialRows,
   filterOptions,
+  isDemo,
+  hasVolumeData,
 }: {
   initialRows: MarketRow[];
   filterOptions: FilterOptions;
+  isDemo: boolean;
+  hasVolumeData: boolean;
 }) {
   const [rows, setRows] = useState(initialRows);
   const [filters, setFiltersState] = useState<ScannerFilterState>(DEFAULT_FILTERS);
 
   const setFilters = (patch: Partial<ScannerFilterState>) => setFiltersState((prev) => ({ ...prev, ...patch }));
 
+  // Lazy initializer runs once on first render only — the accepted escape
+  // hatch for a one-time "now" snapshot (setState-in-effect is flagged by
+  // the hooks linter as an extra render for no reason).
+  const [now] = useState<number>(() => Date.now());
+
   useEffect(() => {
-    const unsubscribe = marketDataProvider.subscribeToTicks((ticks) => {
+    // Real providers only change when the server-side sync job runs — no
+    // client-side ticking to subscribe to, and simulating one would mean
+    // animating numbers that haven't actually moved.
+    if (!isDemo) return;
+    const unsubscribe = new MockMarketDataProvider().subscribeToTicks((ticks) => {
       setRows((prev) => {
         const next = [...prev];
         for (const tick of ticks) {
@@ -34,10 +51,9 @@ export function ScannerView({
       });
     });
     return unsubscribe;
-  }, []);
+  }, [isDemo]);
 
   const filteredRows = useMemo(() => {
-    const now = MOCK_NOW;
     return rows.filter((row) => {
       if (filters.sport !== "all" && row.event.sport !== filters.sport) return false;
       if (filters.country !== "all" && row.event.country !== filters.country) return false;
@@ -69,7 +85,7 @@ export function ScannerView({
       }
       return true;
     });
-  }, [rows, filters]);
+  }, [rows, filters, now]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: rows.length, watch: 0, elevated: 0, high: 0, extreme: 0, normal: 0 };
@@ -86,7 +102,7 @@ export function ScannerView({
           <span className="font-mono tabular-nums text-foreground">{filteredRows.length}</span> markets
         </p>
       </div>
-      <ScannerTable rows={filteredRows} />
+      <ScannerTable rows={filteredRows} hasVolumeData={hasVolumeData} />
     </div>
   );
 }

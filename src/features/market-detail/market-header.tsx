@@ -9,7 +9,7 @@ import { DemoDataBadge } from "@/components/shared/demo-data-badge";
 import { Badge } from "@/components/ui/badge";
 import type { Event, Market } from "@/types";
 
-export function MarketHeader({ event, market }: { event: Event; market: Market }) {
+export function MarketHeader({ event, market, isDemo }: { event: Event; market: Market; isDemo: boolean }) {
   return (
     <div>
       <Link
@@ -26,7 +26,7 @@ export function MarketHeader({ event, market }: { event: Event; market: Market }
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               {event.country} · {event.competition}
             </p>
-            <DemoDataBadge size="sm" />
+            {isDemo && <DemoDataBadge size="sm" />}
           </div>
           <h1 className="mt-2 flex flex-wrap items-baseline gap-x-3 text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]">
             {event.homeTeam}

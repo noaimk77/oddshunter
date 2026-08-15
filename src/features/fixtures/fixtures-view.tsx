@@ -8,7 +8,6 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { LiveIndicator } from "@/components/shared/live-indicator";
 import { SPORT_LABELS } from "@/features/scanner/filter-types";
 import { formatClock, formatCurrency } from "@/lib/format";
-import { MOCK_NOW } from "@/data/mock-generator";
 import { cn } from "@/lib/utils";
 import type { Event, MarketRow, Sport } from "@/types";
 import { CalendarX } from "lucide-react";
@@ -49,6 +48,11 @@ export function FixturesView({ rows }: { rows: MarketRow[] }) {
   const [dayTab, setDayTab] = useState<DayTab>("today");
   const [sport, setSport] = useState<Sport | "all">("all");
 
+  // Lazy initializer runs once on first render only — the accepted escape
+  // hatch for a one-time "now" snapshot (setState-in-effect is flagged by
+  // the hooks linter as an extra render for no reason).
+  const [now] = useState<number>(() => Date.now());
+
   const groups = useMemo(() => groupByEvent(rows), [rows]);
 
   const filtered = useMemo(() => {
@@ -58,9 +62,9 @@ export function FixturesView({ rows }: { rows: MarketRow[] }) {
       if (dayTab === "live") return g.event.status === "live";
       if (dayTab === "upcoming") return g.event.status === "upcoming";
       if (dayTab === "finished") return g.event.status === "finished";
-      return Math.abs(kickoffMs - MOCK_NOW) <= DAY_MS;
+      return Math.abs(kickoffMs - now) <= DAY_MS;
     });
-  }, [groups, sport, dayTab]);
+  }, [groups, sport, dayTab, now]);
 
   const byCompetition = useMemo(() => {
     const map = new Map<string, EventGroup[]>();

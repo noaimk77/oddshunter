@@ -11,7 +11,7 @@ import type { FilterOptions, MarketDataProvider, MarketTick } from "./market-dat
  */
 export class UnavailableMarketDataProvider implements MarketDataProvider {
   async getStatus() {
-    return { available: false, providerName: "none" };
+    return { available: false, providerName: "none", hasVolumeData: false };
   }
 
   async getOverviewKpis(): Promise<OverviewKpis> {

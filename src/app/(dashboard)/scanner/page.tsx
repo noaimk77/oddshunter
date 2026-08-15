@@ -20,15 +20,19 @@ export default async function ScannerPage() {
         }
         description="Monitoring betting markets for unusual price and volume activity."
       />
-      {status.available ? <ScannerBody /> : <LiveDataUnavailable />}
+      {status.available ? (
+        <ScannerBody isDemo={isDemo} hasVolumeData={status.hasVolumeData} />
+      ) : (
+        <LiveDataUnavailable />
+      )}
     </div>
   );
 }
 
-async function ScannerBody() {
+async function ScannerBody({ isDemo, hasVolumeData }: { isDemo: boolean; hasVolumeData: boolean }) {
   const [rows, filterOptions] = await Promise.all([
     marketDataProvider.listMarkets(),
     marketDataProvider.getFilterOptions(),
   ]);
-  return <ScannerView initialRows={rows} filterOptions={filterOptions} />;
+  return <ScannerView initialRows={rows} filterOptions={filterOptions} isDemo={isDemo} hasVolumeData={hasVolumeData} />;
 }
