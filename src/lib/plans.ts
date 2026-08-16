@@ -78,11 +78,13 @@ export async function getPlanDisplays(): Promise<PlanDisplay[]> {
   return results;
 }
 
+const INTERVAL_LABEL_FR: Record<string, string> = { day: "jour", week: "semaine", month: "mois", year: "an" };
+
 export function formatPlanPrice(plan: PlanDisplay): string {
-  const amount = (plan.amount / 100).toLocaleString("en-US", {
+  const amount = (plan.amount / 100).toLocaleString("fr-FR", {
     style: "currency",
     currency: plan.currency.toUpperCase(),
     minimumFractionDigits: plan.amount % 100 === 0 ? 0 : 2,
   });
-  return plan.interval ? `${amount}/${plan.interval}` : `${amount} one-time`;
+  return plan.interval ? `${amount}/${INTERVAL_LABEL_FR[plan.interval] ?? plan.interval}` : `${amount} (paiement unique)`;
 }

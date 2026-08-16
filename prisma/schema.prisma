@@ -203,6 +203,11 @@ model Provider {
   /// double-trigger can't silently burn the whole free-tier budget.
   requestsToday Int       @default(0)
   requestsDate  String? // YYYY-MM-DD (UTC) the requestsToday counter applies to
+  /// Odds pagination cursor for /odds?date=, keyed by date string (today's
+  /// pool shrinks all day as matches kick off and lose pre-match odds, so
+  /// tomorrow's date is paged too — this is a `{ [date]: lastPage }` map
+  /// rather than a single field so both cursors persist independently.
+  oddsCursor    Json?
 
   competitions Competition[]
   syncLogs     SyncLog[]

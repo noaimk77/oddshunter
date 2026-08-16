@@ -15,7 +15,7 @@ function ResetSuccessNotice() {
   if (searchParams.get("reset") !== "success") return null;
   return (
     <p className="mt-4 rounded-md border border-positive/20 bg-positive/10 px-3 py-2 text-xs text-positive">
-      Your password was reset. Log in with your new password.
+      Ton mot de passe a été réinitialisé. Connecte-toi avec ton nouveau mot de passe.
     </p>
   );
 }
@@ -25,8 +25,8 @@ export default function LoginPage() {
 
   return (
     <div className="rounded-lg border border-border/70 bg-card/50 p-6">
-      <h1 className="text-lg font-semibold text-foreground">Log in</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Welcome back to Odds Hunter.</p>
+      <h1 className="text-lg font-semibold text-foreground">Connexion</h1>
+      <p className="mt-1 text-sm text-muted-foreground">Content de te revoir sur Odds Hunter.</p>
 
       <Suspense fallback={null}>
         <ResetSuccessNotice />
@@ -40,9 +40,9 @@ export default function LoginPage() {
         </div>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">Mot de passe</Label>
             <Link href="/forgot-password" className="text-xs text-muted-foreground hover:text-gold">
-              Forgot password?
+              Mot de passe oublié ?
             </Link>
           </div>
           <Input id="password" name="password" type="password" autoComplete="current-password" required />
@@ -50,14 +50,14 @@ export default function LoginPage() {
         </div>
         {state.error && <p className="text-xs text-signal-extreme">{state.error}</p>}
         <Button type="submit" disabled={pending} className="w-full">
-          {pending ? "Logging in…" : "Log in"}
+          {pending ? "Connexion…" : "Se connecter"}
         </Button>
       </form>
 
       <p className="mt-5 text-center text-sm text-muted-foreground">
-        No account yet?{" "}
+        Pas encore de compte ?{" "}
         <Link href="/register" className="font-medium text-gold hover:underline">
-          Create one
+          En créer un
         </Link>
       </p>
     </div>

@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import { Activity, Bell, Radar } from "lucide-react";
+import { MessageCircle, ShieldCheck, Sparkles } from "lucide-react";
 import { Wordmark } from "@/components/shared/wordmark";
 import { OddsHunterMascot } from "@/components/shared/odds-hunter-mascot";
 
 const CAPABILITIES = [
-  { icon: Radar, label: "Market scanning across every monitored competition" },
-  { icon: Activity, label: "Odds movement, matched volume, and money flow" },
-  { icon: Bell, label: "Custom alert rules on price and volume anomalies" },
+  { icon: MessageCircle, label: "Groupe VIP animé au quotidien sur Telegram" },
+  { icon: Sparkles, label: "Bot automatisé pour ne rien manquer" },
+  { icon: ShieldCheck, label: "Abonnement résiliable à tout moment" },
 ];
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
@@ -32,7 +32,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
 
         <div className="relative space-y-3">
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Market intelligence terminal
+            Odds Hunter
           </p>
           <ul className="space-y-2.5">
             {CAPABILITIES.map(({ icon: Icon, label }) => (

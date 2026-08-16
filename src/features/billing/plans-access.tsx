@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatPlanPrice, type PlanDisplay } from "@/lib/plans";
 
-const PLAN_LABEL: Record<PlanDisplay["type"], string> = { VIP: "VIP Access", BOT: "Bot Access" };
+const PLAN_LABEL: Record<PlanDisplay["type"], string> = { VIP: "Groupe VIP", BOT: "Bot" };
+const STATUS_LABEL: Record<string, string> = { ACTIVE: "Actif", PAST_DUE: "Paiement en retard", CANCELED: "Résilié", INCOMPLETE: "Incomplet" };
 
 function PlanCard({
   plan,
@@ -35,9 +36,9 @@ function PlanCard({
         window.location.href = data.url;
         return;
       }
-      setError(data?.error ?? "Something went wrong starting checkout.");
+      setError(data?.error ?? "Une erreur est survenue au démarrage du paiement.");
     } catch {
-      setError("Couldn't reach the server. Check your connection and try again.");
+      setError("Impossible de contacter le serveur. Vérifie ta connexion.");
     } finally {
       setLoading(false);
     }
@@ -56,7 +57,7 @@ function PlanCard({
                 : "border-signal-high/20 bg-signal-high/10 text-signal-high"
             )}
           >
-            {status}
+            {STATUS_LABEL[status] ?? status}
           </Badge>
         )}
       </div>
@@ -64,11 +65,11 @@ function PlanCard({
       <p className="mt-2 text-sm text-muted-foreground">{plan.description}</p>
 
       {isActive ? (
-        <p className="mt-4 text-xs text-positive">Active — manage it with &quot;Manage billing&quot; below.</p>
+        <p className="mt-4 text-xs text-positive">Actif — gère-le avec « Gérer la facturation » ci-dessous.</p>
       ) : (
         <>
           <Button className="mt-4 w-full" disabled={!billingConfigured || loading} onClick={handleCheckout}>
-            {!billingConfigured ? "Billing not configured" : loading ? "Redirecting…" : `Get ${PLAN_LABEL[plan.type]}`}
+            {!billingConfigured ? "Facturation non configurée" : loading ? "Redirection…" : `Rejoindre — ${PLAN_LABEL[plan.type]}`}
           </Button>
           {error && (
             <p role="alert" className="mt-2 text-xs text-signal-extreme">
@@ -105,16 +106,16 @@ export function PlansAccess({
         window.location.href = data.url;
         return;
       }
-      setPortalError(data?.error ?? "Something went wrong opening the billing portal.");
+      setPortalError(data?.error ?? "Une erreur est survenue à l'ouverture du portail de facturation.");
     } catch {
-      setPortalError("Couldn't reach the server. Check your connection and try again.");
+      setPortalError("Impossible de contacter le serveur. Vérifie ta connexion.");
     } finally {
       setPortalLoading(false);
     }
   };
 
   if (plans.length === 0) {
-    return <p className="text-sm text-muted-foreground">No plans are configured yet.</p>;
+    return <p className="text-sm text-muted-foreground">Aucun abonnement n&apos;est configuré pour l&apos;instant.</p>;
   }
 
   return (
@@ -127,7 +128,7 @@ export function PlansAccess({
       {hasCustomer && (
         <div className="mt-4">
           <Button variant="outline" disabled={portalLoading} onClick={handlePortal}>
-            {portalLoading ? "Opening…" : "Manage billing"}
+            {portalLoading ? "Ouverture…" : "Gérer la facturation"}
           </Button>
           {portalError && (
             <p role="alert" className="mt-2 text-xs text-signal-extreme">

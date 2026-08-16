@@ -134,7 +134,7 @@
     @apply border-border outline-ring/50;
   }
   html {
-    @apply font-sans;
+    @apply font-sans scroll-smooth;
     color-scheme: dark;
   }
   body {
@@ -195,6 +195,46 @@
   }
   .mascot-glow {
     filter: drop-shadow(0 0 24px color-mix(in oklab, var(--gold) 35%, transparent));
+  }
+  .ambient-glow {
+    animation: ambient-glow 8s ease-in-out infinite;
+  }
+  @keyframes ambient-glow {
+    0%,
+    100% {
+      opacity: 0.5;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.9;
+      transform: scale(1.08);
+    }
+  }
+  .ambient-glow-slow {
+    animation: ambient-glow-slow 13s ease-in-out infinite;
+  }
+  @keyframes ambient-glow-slow {
+    0%,
+    100% {
+      opacity: 0.3;
+      transform: translate(0, 0) scale(1);
+    }
+    50% {
+      opacity: 0.6;
+      transform: translate(20px, -12px) scale(1.15);
+    }
+  }
+  .float-y {
+    animation: float-y 6s ease-in-out infinite;
+  }
+  @keyframes float-y {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-6px);
+    }
   }
 }
 

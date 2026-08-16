@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 
-const PUBLIC_PATHS = new Set(["/login", "/register", "/forgot-password", "/reset-password"]);
+const PUBLIC_PATHS = new Set(["/", "/login", "/register", "/forgot-password", "/reset-password", "/mentions-legales"]);
 const PUBLIC_API_PREFIXES = ["/api/auth", "/api/stripe/webhook"];
 
 /**
