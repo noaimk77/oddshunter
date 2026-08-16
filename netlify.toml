@@ -1,0 +1,10 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[functions]
+  node_bundler = "nft"
+  included_files = [".next/standalone/**"]
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
