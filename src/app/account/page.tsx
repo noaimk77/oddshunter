@@ -1,10 +1,11 @@
-import { Building2, Mail, ShieldCheck } from "lucide-react";
+import { Building2, Mail, MessageCircle, ShieldCheck } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/guards";
 import { isStripeConfigured } from "@/lib/stripe";
 import { getPlanDisplays } from "@/lib/plans";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
+import { Button } from "@/components/ui/button";
 import { ChangePasswordForm } from "@/features/account/change-password-form";
 import { LogoutButton } from "@/features/account/logout-button";
 import { PlansAccess } from "@/features/billing/plans-access";
@@ -84,6 +85,23 @@ export default async function AccountPage() {
               hasCustomer={Boolean(user.stripeCustomerId)}
             />
           </SectionCard>
+
+          {entitlements.VIP === "ACTIVE" && process.env.TELEGRAM_VIP_INVITE_LINK && (
+            <SectionCard
+              title="Canal VIP"
+              description="Lien d'invitation privé — réservé aux abonnés VIP actifs, ne le partage pas."
+              className="lg:col-span-3"
+            >
+              <Button
+                size="lg"
+                render={<a href={process.env.TELEGRAM_VIP_INVITE_LINK} target="_blank" rel="noopener noreferrer" />}
+                nativeButton={false}
+                className="gap-2"
+              >
+                <MessageCircle className="h-4 w-4" /> Rejoindre le canal Telegram VIP
+              </Button>
+            </SectionCard>
+          )}
         </div>
       </main>
       <LandingFooter />

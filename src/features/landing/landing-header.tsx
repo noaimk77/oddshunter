@@ -24,13 +24,12 @@ export function LandingHeader({ isAuthenticated }: { isAuthenticated: boolean })
       )}
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-        <Link href="/">
+        <Link href="/" className="flex" aria-label="Accueil Oddshunter">
           <Wordmark />
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-muted-foreground sm:flex">
           <a href="#reseaux" className="transition-colors hover:text-foreground">Réseaux</a>
-          <a href="#vip" className="transition-colors hover:text-foreground">VIP</a>
-          <a href="#bot" className="transition-colors hover:text-foreground">Bot</a>
+          <a href="#abonnement" className="transition-colors hover:text-foreground">Abonnement</a>
           <a href="#faq" className="transition-colors hover:text-foreground">FAQ</a>
         </nav>
         <div className="flex items-center gap-2">
@@ -40,7 +39,13 @@ export function LandingHeader({ isAuthenticated }: { isAuthenticated: boolean })
             </Button>
           ) : (
             <>
-              <Button size="sm" variant="ghost" render={<Link href="/login" />} nativeButton={false}>
+              <Button
+                size="sm"
+                variant="ghost"
+                render={<Link href="/login" />}
+                nativeButton={false}
+                className="hidden min-[390px]:flex"
+              >
                 Connexion
               </Button>
               <Button size="sm" render={<Link href="/register" />} nativeButton={false}>

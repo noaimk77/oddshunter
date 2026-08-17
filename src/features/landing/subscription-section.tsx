@@ -94,7 +94,7 @@ export function SubscriptionSection({
   billingConfigured: boolean;
 }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/70 bg-card/40">
+    <div id="abonnement" className="scroll-mt-20 overflow-hidden rounded-2xl border border-border/70 bg-card/40">
       <div className="border-b border-border/70 p-6 text-center sm:p-8">
         <h2 className="text-2xl font-semibold text-foreground">Abonnement</h2>
         <p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground">
