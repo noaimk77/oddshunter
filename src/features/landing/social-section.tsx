@@ -2,23 +2,22 @@ import { Mail } from "lucide-react";
 import { X } from "lucide-react";
 import { TelegramIcon, InstagramIcon, TikTokIcon, YouTubeIcon } from "./social-icons";
 import { Reveal } from "./reveal";
+import type { Dictionary } from "@/i18n/dictionaries/fr";
 
-const LINKS = [
-  { name: "Telegram", detail: "Canal principal", href: "https://t.me/oddshunter98", Icon: TelegramIcon, accent: true },
-  { name: "Instagram", detail: "@odds.hunter98", href: "https://www.instagram.com/odds.hunter98/", Icon: InstagramIcon },
-  { name: "TikTok", detail: "@odds.hunter98", href: "https://www.tiktok.com/@odds.hunter98", Icon: TikTokIcon },
-  { name: "X", detail: "@odds_hunter98", href: "https://x.com/odds_hunter98", Icon: X },
-  { name: "YouTube", detail: "@odds.hunter98", href: "https://www.youtube.com/@odds.hunter98", Icon: YouTubeIcon },
-  { name: "Email", detail: "oddshunter98@gmail.com", href: "mailto:oddshunter98@gmail.com", Icon: Mail },
-];
+export function SocialSection({ t }: { t: Dictionary["social"] }) {
+  const LINKS = [
+    { name: "Telegram", detail: t.channelMain, href: "https://t.me/oddshunter98", Icon: TelegramIcon, accent: true },
+    { name: "Instagram", detail: "@odds.hunter98", href: "https://www.instagram.com/odds.hunter98/", Icon: InstagramIcon },
+    { name: "TikTok", detail: "@odds.hunter98", href: "https://www.tiktok.com/@odds.hunter98", Icon: TikTokIcon },
+    { name: "X", detail: "@odds_hunter98", href: "https://x.com/odds_hunter98", Icon: X },
+    { name: "YouTube", detail: "@odds.hunter98", href: "https://www.youtube.com/@odds.hunter98", Icon: YouTubeIcon },
+    { name: "Email", detail: "oddshunter98@gmail.com", href: "mailto:oddshunter98@gmail.com", Icon: Mail },
+  ];
 
-export function SocialSection() {
   return (
     <div className="h-full rounded-2xl border border-border/70 bg-card/40 p-6 sm:p-8">
-      <h3 className="text-lg font-bold text-foreground">Réseaux sociaux</h3>
-      <p className="mt-1.5 text-sm text-muted-foreground">
-        Le canal Telegram est le point de contact principal. Le reste, c&apos;est pour suivre le quotidien.
-      </p>
+      <h3 className="text-lg font-bold text-foreground">{t.sectionTitle}</h3>
+      <p className="mt-1.5 text-sm text-muted-foreground">{t.sectionSubtitle}</p>
 
       <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {LINKS.map(({ name, detail, href, Icon, accent }, i) => (

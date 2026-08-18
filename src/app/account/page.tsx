@@ -11,6 +11,8 @@ import { LogoutButton } from "@/features/account/logout-button";
 import { TelegramLinkButton } from "@/features/account/telegram-link-button";
 import { PlansAccess } from "@/features/billing/plans-access";
 import { LandingHeader } from "@/features/landing/landing-header";
+import { getLocale } from "@/i18n/get-locale";
+import { getDictionary } from "@/i18n/get-dictionary";
 import { LandingFooter } from "@/features/landing/landing-footer";
 
 function initials(email: string) {
@@ -18,6 +20,8 @@ function initials(email: string) {
 }
 
 export default async function AccountPage() {
+  const locale = await getLocale();
+  const dict = await getDictionary(locale);
   const sessionUser = await requireAuth();
   const [user, entitlementRows, plans, telegramLink] = await Promise.all([
     db.user.findUniqueOrThrow({ where: { id: sessionUser.id } }),
@@ -30,7 +34,7 @@ export default async function AccountPage() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <LandingHeader isAuthenticated />
+      <LandingHeader isAuthenticated locale={locale} t={dict.nav} />
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10 sm:px-6">
         <PageHeader eyebrow="Compte" title="Mon compte" description="Ton profil et tes abonnements Odds Hunter." />
 
@@ -122,7 +126,7 @@ export default async function AccountPage() {
           )}
         </div>
       </main>
-      <LandingFooter />
+      <LandingFooter t={dict.footer} />
     </div>
   );
 }

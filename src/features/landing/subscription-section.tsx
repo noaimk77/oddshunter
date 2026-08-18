@@ -2,6 +2,7 @@ import { Check, Crown, Cpu } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { PlanDisplay } from "@/lib/plans";
+import type { Dictionary } from "@/i18n/dictionaries/fr";
 import { CheckoutCta } from "./checkout-cta";
 
 function frPrice(plan?: PlanDisplay): string {
@@ -19,8 +20,10 @@ function Column({
   ctaLabel,
   priceId,
   price,
+  perMonth,
   isAuthenticated,
   footnote,
+  notConfiguredLabel,
   accent = false,
 }: {
   id: string;
@@ -29,12 +32,14 @@ function Column({
   title: string;
   status: { label: string; tone: "live" | "soon" };
   description: string;
-  features: string[];
+  features: readonly string[];
   ctaLabel: string;
   priceId?: string;
   price: string;
+  perMonth: string;
   isAuthenticated: boolean;
   footnote: string;
+  notConfiguredLabel: string;
   accent?: boolean;
 }) {
   return (
@@ -79,7 +84,7 @@ function Column({
       <div className="mt-5 flex items-baseline gap-1">
         <span className="font-mono text-4xl font-bold text-foreground">{price}</span>
         <span className="text-lg text-muted-foreground">€</span>
-        <span className="text-sm text-muted-foreground">/mois</span>
+        <span className="text-sm text-muted-foreground">{perMonth}</span>
       </div>
 
       <ul className="mt-5 space-y-2.5">
@@ -98,7 +103,7 @@ function Column({
           <CheckoutCta priceId={priceId} isAuthenticated={isAuthenticated} label={ctaLabel} variant={accent ? "default" : "outline"} />
         ) : (
           <p className="rounded-md border border-dashed border-border/70 px-4 py-3 text-center text-xs text-muted-foreground">
-            Cette offre n&apos;est pas encore configurée dans Stripe.
+            {notConfiguredLabel}
           </p>
         )}
         <p className="mt-3 text-center text-xs text-muted-foreground">{footnote}</p>
@@ -112,59 +117,54 @@ export function SubscriptionSection({
   bot,
   isAuthenticated,
   billingConfigured,
+  t,
 }: {
   vip?: PlanDisplay;
   bot?: PlanDisplay;
   isAuthenticated: boolean;
   billingConfigured: boolean;
+  t: Dictionary["subscription"];
 }) {
   return (
     <div id="abonnement" className="glow-border scroll-mt-20 overflow-hidden rounded-2xl border border-border/70 bg-card/40">
       <div className="border-b border-border/70 p-6 text-center sm:p-8">
-        <h2 className="text-2xl font-bold text-foreground">Abonnement</h2>
-        <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">
-          Même prix, deux façons indépendantes d&apos;en profiter — le VIP pour le contexte et les explications, le bot pour
-          l&apos;alerte instantanée sans lecture. S&apos;abonner à l&apos;un ne donne pas accès à l&apos;autre.
-        </p>
+        <h2 className="text-2xl font-bold text-foreground">{t.heading}</h2>
+        <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">{t.intro}</p>
       </div>
 
       <div className="grid grid-cols-1 divide-y divide-border/70 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
         <Column
           id="vip"
           icon={Crown}
-          eyebrow="Groupe VIP"
-          title="Canal Telegram VIP"
-          status={{ label: "Actif", tone: "live" }}
+          eyebrow={t.vip.eyebrow}
+          title={t.vip.title}
+          status={{ label: t.vip.statusLabel, tone: "live" }}
           price={frPrice(vip)}
-          description="Un canal Telegram privé où les mouvements de cotes suspects et les analyses sont partagés directement, au fil de la journée."
-          features={[
-            "Signaux dès qu'un mouvement de cote significatif est repéré",
-            "Contexte et explication derrière chaque signal",
-            "Résiliable à tout moment depuis ton compte",
-          ]}
-          ctaLabel={`Rejoindre le VIP – ${frPrice(vip)} €/mois`}
+          perMonth={t.perMonth}
+          description={t.vip.description}
+          features={t.vip.features}
+          ctaLabel={`${t.vip.cta} – ${frPrice(vip)} €${t.perMonth}`}
           priceId={vip?.priceId}
           isAuthenticated={isAuthenticated}
-          footnote={billingConfigured ? "Paiement sécurisé via Stripe." : "La facturation n'est pas encore configurée sur cet environnement."}
+          footnote={billingConfigured ? t.vip.footnoteConfigured : t.vip.footnoteNotConfigured}
+          notConfiguredLabel={t.notConfigured}
           accent
         />
         <Column
           id="bot"
           icon={Cpu}
-          eyebrow="Bot automatisé"
-          title="Bot Odds Hunter"
-          status={{ label: "Bientôt disponible", tone: "soon" }}
+          eyebrow={t.bot.eyebrow}
+          title={t.bot.title}
+          status={{ label: t.bot.statusLabel, tone: "soon" }}
           price={frPrice(bot)}
-          description="Un bot qui surveille les cotes et t'alerte automatiquement, sans avoir à suivre le canal en continu. En cours de configuration."
-          features={[
-            "Alertes automatiques dès qu'un mouvement dépasse un seuil",
-            "Aucune analyse manuelle à lire — juste le signal",
-            "Résiliable à tout moment depuis ton compte",
-          ]}
-          ctaLabel={`Accéder au bot – ${frPrice(bot)} €/mois`}
+          perMonth={t.perMonth}
+          description={t.bot.description}
+          features={t.bot.features}
+          ctaLabel={`${t.bot.cta} – ${frPrice(bot)} €${t.perMonth}`}
           priceId={bot?.priceId}
           isAuthenticated={isAuthenticated}
-          footnote="Abonnement ouvert dès maintenant, l'accès démarrera au lancement."
+          footnote={t.bot.footnote}
+          notConfiguredLabel={t.notConfigured}
         />
       </div>
     </div>

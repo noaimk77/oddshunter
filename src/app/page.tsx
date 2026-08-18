@@ -8,6 +8,8 @@ import { Reveal } from "@/features/landing/reveal";
 import { ScrollToTop } from "@/features/landing/scroll-to-top";
 import { Button } from "@/components/ui/button";
 import { OddsHunterMascot } from "@/components/shared/odds-hunter-mascot";
+import { getLocale } from "@/i18n/get-locale";
+import { getDictionary } from "@/i18n/get-dictionary";
 
 export const metadata = { title: "Oddshunter" };
 
@@ -15,43 +17,25 @@ function frPrice(plan: PlanDisplay): string {
   return (plan.amount / 100).toFixed(0);
 }
 
-const EXPLORE_CARDS = [
-  {
-    href: "/abonnement",
-    icon: CreditCard,
-    title: "Abonnement",
-    description: "Canal VIP ou bot automatisé, 75€/mois chacun.",
-  },
-  {
-    href: "/bookmakers",
-    icon: Landmark,
-    title: "Bookmakers",
-    description: "Mes codes et liens de parrainage — 1xBet en ce moment.",
-  },
-  {
-    href: "/reseaux",
-    icon: Share2,
-    title: "Réseaux",
-    description: "Telegram, Instagram, TikTok, X, YouTube.",
-  },
-  {
-    href: "/faq",
-    icon: HelpCircle,
-    title: "FAQ",
-    description: "Ce qu'il faut savoir avant de rejoindre.",
-  },
-];
-
 export default async function LandingPage() {
+  const locale = await getLocale();
+  const dict = await getDictionary(locale);
   const [session, plans] = await Promise.all([auth(), getPlanDisplays()]);
   const isAuthenticated = Boolean(session?.user);
 
   const vip = plans.find((p) => p.type === "VIP");
   const bot = plans.find((p) => p.type === "BOT");
 
+  const EXPLORE_CARDS = [
+    { href: "/abonnement", icon: CreditCard, ...dict.home.cards.subscription },
+    { href: "/bookmakers", icon: Landmark, ...dict.home.cards.bookmakers },
+    { href: "/reseaux", icon: Share2, ...dict.home.cards.social },
+    { href: "/faq", icon: HelpCircle, ...dict.home.cards.faq },
+  ];
+
   return (
     <div className="flex min-h-screen flex-col">
-      <LandingHeader isAuthenticated={isAuthenticated} />
+      <LandingHeader isAuthenticated={isAuthenticated} locale={locale} t={dict.nav} />
 
       <main className="relative flex-1">
         <div aria-hidden="true" className="bg-grid bg-grid-fade pointer-events-none absolute inset-0 -z-10 h-[800px]" />
@@ -71,18 +55,18 @@ export default async function LandingPage() {
               <Reveal>
                 <span className="shimmer inline-flex items-center gap-1.5 rounded-full border border-gold/25 bg-gold/8 px-3.5 py-1.5 text-xs font-medium text-gold">
                   <span className="signal-pulse relative flex h-1.5 w-1.5 rounded-full bg-gold" />
-                  Signaux partagés en direct
+                  {dict.home.badge}
                 </span>
               </Reveal>
               <Reveal delay={0.08}>
                 <h1 className="mt-7 text-4xl font-bold tracking-[-0.035em] text-foreground sm:text-5xl lg:text-[3.6rem] lg:leading-[1.05]">
-                  Les mouvements de cotes,{" "}
-                  <span className="gradient-text block">avant qu&apos;ils ne passent.</span>
+                  {dict.home.titleLine1}{" "}
+                  <span className="gradient-text block">{dict.home.titleLine2}</span>
                 </h1>
               </Reveal>
               <Reveal delay={0.14}>
                 <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground lg:mx-0 lg:text-lg">
-                  Suis mes signaux via un groupe VIP animé au quotidien, ou laisse le bot automatisé surveiller les mouvements pour toi.
+                  {dict.home.subtitle}
                 </p>
               </Reveal>
               <Reveal delay={0.2}>
@@ -93,7 +77,7 @@ export default async function LandingPage() {
                     nativeButton={false}
                     className="transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_8px_32px_-8px_rgba(245,184,0,0.35)]"
                   >
-                    Rejoindre le VIP – {vip ? frPrice(vip) : "75"} €/mois
+                    {dict.home.ctaVip} – {vip ? frPrice(vip) : "75"} {dict.home.perMonth}
                   </Button>
                   <Button
                     size="lg"
@@ -102,15 +86,15 @@ export default async function LandingPage() {
                     nativeButton={false}
                     className="transition-all duration-300 hover:-translate-y-0.5"
                   >
-                    Accéder au bot – {bot ? frPrice(bot) : "75"} €/mois
+                    {dict.home.ctaBot} – {bot ? frPrice(bot) : "75"} {dict.home.perMonth}
                   </Button>
                 </div>
               </Reveal>
               <Reveal delay={0.26}>
                 <div className="mt-8 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground lg:justify-start">
-                  <span className="inline-flex items-center gap-1.5"><Activity className="h-3.5 w-3.5 text-gold" /> Analyses en direct</span>
-                  <span className="inline-flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5 text-gold" /> Alertes automatiques</span>
-                  <span className="inline-flex items-center gap-1.5"><TimerReset className="h-3.5 w-3.5 text-gold" /> Résiliable à tout moment</span>
+                  <span className="inline-flex items-center gap-1.5"><Activity className="h-3.5 w-3.5 text-gold" /> {dict.home.featureLive}</span>
+                  <span className="inline-flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5 text-gold" /> {dict.home.featureAlerts}</span>
+                  <span className="inline-flex items-center gap-1.5"><TimerReset className="h-3.5 w-3.5 text-gold" /> {dict.home.featureCancel}</span>
                 </div>
               </Reveal>
             </div>
@@ -120,15 +104,15 @@ export default async function LandingPage() {
               <div className="absolute inset-x-4 bottom-3 h-px bg-gradient-to-r from-transparent via-gold/35 to-transparent" aria-hidden="true" />
               <OddsHunterMascot className="absolute bottom-0 left-1/2 !h-[430px] !w-[390px] -translate-x-1/2" />
               <div className="absolute right-3 bottom-16 rounded-xl border border-gold/20 bg-background/80 px-3 py-2 backdrop-blur-md">
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Oddshunter</p>
-                <p className="mt-0.5 text-xs font-medium text-gold">Veille active</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{dict.home.widgetLabel}</p>
+                <p className="mt-0.5 text-xs font-medium text-gold">{dict.home.widgetStatus}</p>
               </div>
             </Reveal>
           </div>
 
           <Reveal delay={0.3} className="text-center lg:text-left">
             <Link href="/reseaux" className="mt-10 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-gold">
-              <Sparkles className="h-3 w-3" /> Suivre Odds Hunter ailleurs
+              <Sparkles className="h-3 w-3" /> {dict.home.followElsewhere}
             </Link>
           </Reveal>
         </section>
@@ -148,7 +132,7 @@ export default async function LandingPage() {
                   <h3 className="mt-4 text-base font-bold text-foreground">{title}</h3>
                   <p className="mt-1.5 flex-1 text-sm text-muted-foreground">{description}</p>
                   <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-gold opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-                    Voir <ArrowRight className="h-3 w-3" />
+                    {dict.home.seeMore} <ArrowRight className="h-3 w-3" />
                   </span>
                 </Link>
               </Reveal>
@@ -157,7 +141,7 @@ export default async function LandingPage() {
         </section>
       </main>
 
-      <LandingFooter />
+      <LandingFooter t={dict.footer} />
       <ScrollToTop />
     </div>
   );

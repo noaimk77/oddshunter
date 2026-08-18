@@ -5,6 +5,8 @@ import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { Switch } from "@/components/ui/switch";
 import { LandingHeader } from "@/features/landing/landing-header";
+import { getLocale } from "@/i18n/get-locale";
+import { getDictionary } from "@/i18n/get-dictionary";
 import { LandingFooter } from "@/features/landing/landing-footer";
 
 function SettingRow({
@@ -35,12 +37,14 @@ function SettingRow({
 }
 
 export default async function SettingsPage() {
+  const locale = await getLocale();
+  const dict = await getDictionary(locale);
   await requireAuth();
   const session = await auth();
 
   return (
     <div className="flex min-h-screen flex-col">
-      <LandingHeader isAuthenticated={Boolean(session?.user)} />
+      <LandingHeader isAuthenticated={Boolean(session?.user)} locale={locale} t={dict.nav} />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6">
         <PageHeader eyebrow="Paramètres" title="Paramètres" description="Apparence du site." />
 
@@ -55,7 +59,7 @@ export default async function SettingsPage() {
           </SectionCard>
         </div>
       </main>
-      <LandingFooter />
+      <LandingFooter t={dict.footer} />
     </div>
   );
 }

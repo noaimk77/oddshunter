@@ -8,18 +8,29 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Wordmark } from "@/components/shared/wordmark";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { LanguageSwitcher } from "./language-switcher";
+import type { Locale } from "@/i18n/locales";
+import type { Dictionary } from "@/i18n/dictionaries/fr";
 
-const NAV_LINKS = [
-  { label: "Abonnement", href: "/abonnement" },
-  { label: "Bookmakers", href: "/bookmakers" },
-  { label: "Réseaux", href: "/reseaux" },
-  { label: "FAQ", href: "/faq" },
-];
-
-export function LandingHeader({ isAuthenticated }: { isAuthenticated: boolean }) {
+export function LandingHeader({
+  isAuthenticated,
+  locale,
+  t,
+}: {
+  isAuthenticated: boolean;
+  locale: Locale;
+  t: Dictionary["nav"];
+}) {
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const NAV_LINKS = [
+    { label: t.subscription, href: "/abonnement" },
+    { label: t.bookmakers, href: "/bookmakers" },
+    { label: t.social, href: "/reseaux" },
+    { label: t.faq, href: "/faq" },
+  ];
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -46,7 +57,7 @@ export function LandingHeader({ isAuthenticated }: { isAuthenticated: boolean })
         )}
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-          <Link href="/" className="flex" aria-label="Accueil Oddshunter">
+          <Link href="/" className="flex" aria-label={t.homeAria}>
             <Wordmark />
           </Link>
 
@@ -78,9 +89,11 @@ export function LandingHeader({ isAuthenticated }: { isAuthenticated: boolean })
           </nav>
 
           <div className="flex items-center gap-2">
+            <LanguageSwitcher locale={locale} label={t.languageLabel} />
+
             {isAuthenticated ? (
               <Button size="sm" variant="outline" render={<Link href="/account" />} nativeButton={false}>
-                Mon compte
+                {t.account}
               </Button>
             ) : (
               <>
@@ -91,10 +104,10 @@ export function LandingHeader({ isAuthenticated }: { isAuthenticated: boolean })
                   nativeButton={false}
                   className="hidden min-[390px]:flex"
                 >
-                  Connexion
+                  {t.login}
                 </Button>
                 <Button size="sm" render={<Link href="/register" />} nativeButton={false}>
-                  Créer un compte
+                  {t.register}
                 </Button>
               </>
             )}
@@ -103,7 +116,7 @@ export function LandingHeader({ isAuthenticated }: { isAuthenticated: boolean })
               type="button"
               onClick={() => setMobileOpen(!mobileOpen)}
               className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground sm:hidden"
-              aria-label={mobileOpen ? "Fermer le menu" : "Ouvrir le menu"}
+              aria-label={mobileOpen ? t.closeMenu : t.openMenu}
             >
               {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
