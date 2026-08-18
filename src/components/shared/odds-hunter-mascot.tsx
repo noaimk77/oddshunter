@@ -25,7 +25,12 @@ interface OddsHunterMascotProps {
  * the real asset when it's exported; swap the whole render for a
  * react-three-fiber scene later without touching call sites.
  */
-export function OddsHunterMascot({ src, variant = "full", className, parallax = true }: OddsHunterMascotProps) {
+export function OddsHunterMascot({
+  src = "/brand/oddshunter-avatar.png",
+  variant = "full",
+  className,
+  parallax = true,
+}: OddsHunterMascotProps) {
   const prefersReducedMotion = useReducedMotion();
   const ref = useRef<HTMLDivElement>(null);
   const mouseX = useMotionValue(0);
@@ -69,7 +74,13 @@ export function OddsHunterMascot({ src, variant = "full", className, parallax = 
         className="relative h-full w-full"
       >
         {src ? (
-          <Image src={src} alt="" fill className="object-contain drop-shadow-[0_0_28px_rgba(245,184,0,0.18)]" />
+          <Image
+            src={src}
+            alt=""
+            fill
+            sizes={variant === "compact" ? "96px" : "(min-width: 1024px) 390px, 200px"}
+            className="object-contain drop-shadow-[0_0_28px_rgba(245,184,0,0.18)]"
+          />
         ) : (
           <MascotPlaceholder />
         )}

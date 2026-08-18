@@ -39,9 +39,6 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  /* Odds Hunter surface scale — distinct from shadcn's card/popover pair so
-     deeply-nested panels (filter bars inside cards, table headers) can step
-     up in elevation without inventing ad-hoc grays per component. */
   --color-surface-0: var(--surface-0);
   --color-surface-1: var(--surface-1);
   --color-surface-2: var(--surface-2);
@@ -68,7 +65,6 @@
 .dark {
   color-scheme: dark;
 
-  /* Odds Hunter surface scale */
   --surface-0: #050505;
   --surface-1: #090909;
   --surface-2: #0d0d0f;
@@ -82,7 +78,6 @@
   --popover: var(--surface-3);
   --popover-foreground: #f5f5f2;
 
-  /* Gold is the brand accent — used for identity and important signals only. */
   --gold: #f5b800;
   --gold-foreground: #1a1300;
   --primary: var(--gold);
@@ -100,10 +95,6 @@
   --input: color-mix(in oklab, white 9%, transparent);
   --ring: var(--gold);
 
-  /* Functional signal scale — normal(gray) / watch(cyan, occasional secondary)
-     / elevated(gold, the brand's "important" color) / high(orange) /
-     extreme(red, reserved for critical anomalies only). Never a proof of
-     match-fixing — see lib/signal.ts for the vocabulary this backs. */
   --signal-normal: #6b6b66;
   --signal-watch: #38bdf8;
   --signal-elevated: var(--gold);
@@ -139,11 +130,12 @@
   }
   body {
     @apply bg-background text-foreground;
-    background-image: radial-gradient(
-      ellipse 70% 45% at 50% -10%,
-      color-mix(in oklab, var(--gold) 5%, transparent),
-      transparent
-    );
+    background-image:
+      radial-gradient(
+        ellipse 80% 50% at 50% -12%,
+        color-mix(in oklab, var(--gold) 6%, transparent),
+        transparent
+      );
     background-repeat: no-repeat;
   }
   ::selection {
@@ -159,18 +151,15 @@
     background: color-mix(in oklab, var(--card) 65%, transparent);
     backdrop-filter: blur(12px);
   }
+
   .signal-pulse {
     animation: signal-pulse 2s ease-in-out infinite;
   }
   @keyframes signal-pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.4;
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
   }
+
   .flash-up {
     animation: flash-up 800ms ease-out;
   }
@@ -178,69 +167,123 @@
     animation: flash-down 800ms ease-out;
   }
   @keyframes flash-up {
-    0% {
-      background-color: color-mix(in oklab, var(--gold) 20%, transparent);
-    }
-    100% {
-      background-color: transparent;
-    }
+    0% { background-color: color-mix(in oklab, var(--gold) 20%, transparent); }
+    100% { background-color: transparent; }
   }
   @keyframes flash-down {
-    0% {
-      background-color: color-mix(in oklab, var(--signal-high) 16%, transparent);
-    }
-    100% {
-      background-color: transparent;
-    }
+    0% { background-color: color-mix(in oklab, var(--signal-high) 16%, transparent); }
+    100% { background-color: transparent; }
   }
+
   .mascot-glow {
     filter: drop-shadow(0 0 24px color-mix(in oklab, var(--gold) 35%, transparent));
   }
+
   .ambient-glow {
     animation: ambient-glow 8s ease-in-out infinite;
   }
   @keyframes ambient-glow {
-    0%,
-    100% {
-      opacity: 0.5;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 0.9;
-      transform: scale(1.08);
-    }
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50% { opacity: 0.9; transform: scale(1.08); }
   }
+
   .ambient-glow-slow {
     animation: ambient-glow-slow 13s ease-in-out infinite;
   }
   @keyframes ambient-glow-slow {
-    0%,
-    100% {
-      opacity: 0.3;
-      transform: translate(0, 0) scale(1);
-    }
-    50% {
-      opacity: 0.6;
-      transform: translate(20px, -12px) scale(1.15);
-    }
+    0%, 100% { opacity: 0.3; transform: translate(0, 0) scale(1); }
+    50% { opacity: 0.6; transform: translate(20px, -12px) scale(1.15); }
   }
+
   .float-y {
     animation: float-y 6s ease-in-out infinite;
   }
   @keyframes float-y {
-    0%,
-    100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-6px);
-    }
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+
+  .gradient-text {
+    background: linear-gradient(
+      135deg,
+      var(--gold) 0%,
+      #ffd866 25%,
+      var(--gold) 50%,
+      #e5a400 75%,
+      var(--gold) 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: gradient-shift 4s ease-in-out infinite;
+  }
+  @keyframes gradient-shift {
+    0%, 100% { background-position: 0% center; }
+    50% { background-position: 100% center; }
+  }
+
+  .glow-border {
+    position: relative;
+  }
+  .glow-border::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      135deg,
+      color-mix(in oklab, var(--gold) 40%, transparent),
+      color-mix(in oklab, var(--gold) 10%, transparent),
+      color-mix(in oklab, var(--gold) 30%, transparent)
+    );
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+    animation: glow-rotate 6s linear infinite;
+  }
+  @keyframes glow-rotate {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      110deg,
+      transparent 25%,
+      color-mix(in oklab, var(--gold) 5%, transparent) 37%,
+      transparent 63%
+    );
+    background-size: 200% 100%;
+    animation: shimmer-sweep 3s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes shimmer-sweep {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  .bg-grid {
+    background-image:
+      linear-gradient(color-mix(in oklab, white 3%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in oklab, white 3%, transparent) 1px, transparent 1px);
+    background-size: 64px 64px;
+  }
+
+  .bg-grid-fade {
+    mask-image: radial-gradient(ellipse 60% 50% at 50% 50%, black 20%, transparent 70%);
   }
 }
 
-/* Respect the user's motion preference across every custom animation and
-   Tailwind's built-in transition utilities. Framer Motion components read
-   this separately via useReducedMotion() in lib/motion.ts. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

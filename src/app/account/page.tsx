@@ -8,6 +8,7 @@ import { SectionCard } from "@/components/shared/section-card";
 import { Button } from "@/components/ui/button";
 import { ChangePasswordForm } from "@/features/account/change-password-form";
 import { LogoutButton } from "@/features/account/logout-button";
+import { TelegramLinkButton } from "@/features/account/telegram-link-button";
 import { PlansAccess } from "@/features/billing/plans-access";
 import { LandingHeader } from "@/features/landing/landing-header";
 import { LandingFooter } from "@/features/landing/landing-footer";
@@ -18,10 +19,11 @@ function initials(email: string) {
 
 export default async function AccountPage() {
   const sessionUser = await requireAuth();
-  const [user, entitlementRows, plans] = await Promise.all([
+  const [user, entitlementRows, plans, telegramLink] = await Promise.all([
     db.user.findUniqueOrThrow({ where: { id: sessionUser.id } }),
     db.entitlement.findMany({ where: { userId: sessionUser.id } }),
     getPlanDisplays(),
+    db.telegramLink.findUnique({ where: { userId: sessionUser.id } }),
   ]);
 
   const entitlements = Object.fromEntries(entitlementRows.map((e) => [e.type, e.status]));
@@ -100,6 +102,22 @@ export default async function AccountPage() {
               >
                 <MessageCircle className="h-4 w-4" /> Rejoindre le canal Telegram VIP
               </Button>
+            </SectionCard>
+          )}
+
+          {entitlements.BOT === "ACTIVE" && (
+            <SectionCard
+              title="Bot automatisé"
+              description="Lie ton compte pour recevoir les signaux du bot directement sur Telegram."
+              className="lg:col-span-3"
+            >
+              {telegramLink && !telegramLink.revokedAt ? (
+                <p className="text-sm text-foreground">
+                  Compte lié à Telegram{telegramLink.telegramUsername ? ` (@${telegramLink.telegramUsername})` : ""}.
+                </p>
+              ) : (
+                <TelegramLinkButton />
+              )}
             </SectionCard>
           )}
         </div>

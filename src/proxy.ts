@@ -1,28 +1,48 @@
-import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getToken } from "next-auth/jwt";
+import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = new Set(["/", "/login", "/register", "/forgot-password", "/reset-password", "/mentions-legales"]);
+const PUBLIC_PATHS = new Set([
+  "/",
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/mentions-legales",
+  "/1xbet",
+  "/bookmakers",
+  "/abonnement",
+  "/reseaux",
+  "/faq",
+]);
 const PUBLIC_API_PREFIXES = ["/api/auth", "/api/stripe/webhook"];
 
-/**
- * Next.js 16 renamed `middleware` to `proxy` — and crucially, `proxy`
- * always runs in the Node.js runtime (never Edge), which is what makes the
- * Prisma + node-postgres (`pg`) driver adapter usable here at all (it opens
- * real TCP sockets, which the Edge runtime doesn't support).
- */
-export const proxy = auth((req) => {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (PUBLIC_PATHS.has(pathname) || PUBLIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+  if (
+    PUBLIC_PATHS.has(pathname) ||
+    PUBLIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix)) ||
+    pathname.includes(".")
+  ) {
     return;
   }
 
-  if (!req.auth) {
+  // Keep the global route check Edge-compatible. Importing the full Auth.js
+  // configuration here also imports Prisma and node-postgres, which cannot run
+  // in Netlify's Edge middleware. Sensitive pages and APIs still perform their
+  // full server-side database checks through requireAuth().
+  const token = await getToken({
+    req,
+    secret: process.env.AUTH_SECRET,
+    secureCookie: req.nextUrl.protocol === "https:",
+  });
+
+  if (!token) {
     const loginUrl = new URL("/login", req.nextUrl.origin);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
-});
+}
 
 export const config = {
   // Every route except static assets goes through the check above; API

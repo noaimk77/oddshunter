@@ -36,13 +36,16 @@ model User {
 
   stripeCustomerId String? @unique
 
-  accounts       Account[]
-  sessions       Session[]
-  entitlements   Entitlement[]
-  watchlistItems WatchlistItem[]
-  alertRules     AlertRule[]
-  notifications  Notification[]
-  resetTokens    PasswordResetToken[]
+  accounts          Account[]
+  sessions          Session[]
+  entitlements      Entitlement[]
+  watchlistItems    WatchlistItem[]
+  alertRules        AlertRule[]
+  notifications     Notification[]
+  resetTokens       PasswordResetToken[]
+  telegramLink      TelegramLink?
+  telegramLinkTokens TelegramLinkToken[]
+  signalDeliveries  SignalDelivery[]
 }
 
 model Account {
@@ -280,6 +283,7 @@ model Market {
 
   event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
   selections Selection[]
+  signals    Signal[]
 
   @@unique([eventId, externalId])
 }
@@ -294,6 +298,7 @@ model Selection {
   market  Market           @relation(fields: [marketId], references: [id], onDelete: Cascade)
   odds    OddsSnapshot[]
   volumes VolumeSnapshot[]
+  signals Signal[]
 
   @@unique([marketId, externalId])
 }
@@ -318,4 +323,97 @@ model VolumeSnapshot {
   selection Selection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
 
   @@index([selectionId, timestamp])
+}
+
+// ---------------------------------------------------------------------------
+// Detection engine — explainable signals produced by the worker. `Signal`
+// only records what the engine computed; whether/how it reached a user goes
+// through `SignalDelivery`, gated by an active BOT entitlement and the
+// user's AlertRule filters. Never written with fabricated data — only from
+// snapshots a connected provider actually produced.
+// ---------------------------------------------------------------------------
+
+/// type: "ODDS_DROP" | "LINE_MOVE" | "VIG_EXPLOSION" | "MULTI_BOOK_CONFIRMATION"
+///     | "MARKET_LOCK" | "VOLUME_SPIKE" | "CORRECTION_FILTER"
+///     | "GAME_STATE_FILTER" | "UNEXPLAINED_LIVE_MOVE"
+/// status: "OPEN" (still strengthening) | "UPDATED" | "RESOLVED" | "REJECTED" (filtered out, kept for QA)
+model Signal {
+  id              String    @id @default(cuid())
+  type            String
+  marketId        String
+  selectionId     String?
+  status          String    @default("OPEN")
+  /// Stable key identifying "the same underlying move" so a strengthening
+  /// signal updates an existing alert instead of spamming a new one — see
+  /// spec section 9 (dedup / update-in-place).
+  dedupKey        String
+  score           Int
+  /// Ordered list of { factor, weight, value, contribution } — every
+  /// component that fed the score, logged so thresholds can be recalibrated
+  /// without redeploying (spec section 6: no fixed weighting is confirmed).
+  reasons         Json
+  openingPrice    Float?
+  currentPrice    Float?
+  priceChangePct  Float?
+  /// Free-form: confirming bookmakers, line-move detail, Betfair back/lay
+  /// price/spread/volume/liquidity, live match context (score, minute,
+  /// events) — only the fields relevant to this signal's `type`.
+  metadata        Json?
+  firstDetectedAt DateTime  @default(now())
+  lastUpdatedAt   DateTime  @updatedAt
+  resolvedAt      DateTime?
+
+  market     Market           @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  selection  Selection?       @relation(fields: [selectionId], references: [id], onDelete: SetNull)
+  deliveries SignalDelivery[]
+
+  @@index([marketId, dedupKey])
+  @@index([status, firstDetectedAt])
+}
+
+/// channel: "TELEGRAM" | "IN_APP" | "EMAIL" — one row per (signal, user,
+/// channel) so an update-in-place edits `messageRef` instead of re-sending.
+model SignalDelivery {
+  id         String   @id @default(cuid())
+  signalId   String
+  userId     String
+  channel    String
+  sentAt     DateTime @default(now())
+  /// Provider-side message id (e.g. Telegram message_id) so a strengthening
+  /// signal can edit the existing message instead of sending a duplicate.
+  messageRef String?
+
+  signal Signal @relation(fields: [signalId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([signalId, userId, channel])
+}
+
+// ---------------------------------------------------------------------------
+// Telegram account linking — a signed, single-use, expiring token generated
+// from the account page pairs a web account to a Telegram chat. The bot
+// never trusts a chat id supplied any other way.
+// ---------------------------------------------------------------------------
+
+model TelegramLink {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  telegramChatId   String    @unique
+  telegramUsername String?
+  linkedAt         DateTime  @default(now())
+  revokedAt        DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model TelegramLinkToken {
+  token     String    @id
+  userId    String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

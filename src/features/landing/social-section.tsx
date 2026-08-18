@@ -14,29 +14,29 @@ const LINKS = [
 
 export function SocialSection() {
   return (
-    <div className="rounded-2xl border border-border/70 bg-card/40 p-6 sm:p-8">
-      <h3 className="text-lg font-semibold text-foreground">Réseaux sociaux</h3>
+    <div className="h-full rounded-2xl border border-border/70 bg-card/40 p-6 sm:p-8">
+      <h3 className="text-lg font-bold text-foreground">Réseaux sociaux</h3>
       <p className="mt-1.5 text-sm text-muted-foreground">
         Le canal Telegram est le point de contact principal. Le reste, c&apos;est pour suivre le quotidien.
       </p>
 
       <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {LINKS.map(({ name, detail, href, Icon, accent }, i) => (
-          <Reveal key={name} delay={i * 0.05}>
+          <Reveal key={name} delay={i * 0.04}>
             <a
               href={href}
               target={href.startsWith("mailto:") ? undefined : "_blank"}
               rel={href.startsWith("mailto:") ? undefined : "noopener noreferrer"}
               className={
-                "group flex items-center gap-3 rounded-xl border p-4 transition-all hover:-translate-y-0.5 " +
+                "group relative flex items-center gap-3 overflow-hidden rounded-xl border p-4 transition-all duration-300 hover:-translate-y-1 " +
                 (accent
-                  ? "border-gold/30 bg-gold/[0.05] hover:border-gold/50 hover:shadow-[0_10px_28px_-14px_rgba(212,175,55,0.4)]"
-                  : "border-border/70 bg-background/40 hover:border-border hover:bg-background/70")
+                  ? "border-gold/30 bg-gold/[0.04] hover:border-gold/50 hover:shadow-[0_12px_32px_-12px_rgba(245,184,0,0.3)]"
+                  : "border-border/70 bg-background/40 hover:border-border hover:bg-background/70 hover:shadow-[0_8px_24px_-12px_rgba(0,0,0,0.5)]")
               }
             >
               <span
                 className={
-                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-110 " +
+                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-all duration-300 group-hover:scale-110 " +
                   (accent ? "bg-gold/15 text-gold" : "bg-secondary/60 text-muted-foreground group-hover:text-foreground")
                 }
               >
