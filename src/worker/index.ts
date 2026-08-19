@@ -9,10 +9,12 @@ import {
   getOddsDropConfig,
   getOddsRiseConfig,
   getVigExplosionConfig,
+  getBetExplorerConfig,
   getScoreWeights,
   WORKER_POLL_INTERVAL_MS,
   INGEST_POLL_INTERVAL_MS,
   SEND_LIVE_ALERTS,
+  BETEXPLORER_ENABLED,
 } from "./config";
 import { detectOddsDrop, type OddsDropOutcome } from "./detectors/oddsDrop";
 import { detectOddsRise, type OddsRiseOutcome } from "./detectors/oddsRise";
@@ -22,6 +24,7 @@ import { scoreSignal, type ScoreFactors, type ScoreWeights } from "./detectors/s
 import { ingestFromProvider } from "./ingest";
 import type { MarketDataProvider } from "./providers/types";
 import { createApiFootballOddsProvider } from "./providers/apiFootball";
+import { createBetExplorerProvider } from "./providers/betexplorer";
 import { createBot } from "./telegram/bot";
 import { deliverSignal, type SignalWithContext } from "./telegram/sendAlert";
 
@@ -41,11 +44,13 @@ import { deliverSignal, type SignalWithContext } from "./telegram/sendAlert";
  */
 
 function getConfiguredProviders(): MarketDataProvider[] {
-  // Primary V1 source: API-Football, targeting low-scrutiny leagues (see
-  // getIngestTargetCountries in config.ts) rather than major commercial
-  // leagues. Add further adapters here as they're wired (Betfair exchange
-  // data arrives through a separate ExchangeDataProvider, not this list).
-  return [createApiFootballOddsProvider()].filter((p) => p.isConfigured());
+  // BetExplorer: free, no key, no account — the primary odds source as of
+  // 2026-08-19 after API-Football's /odds endpoint turned out to be
+  // historical-only on the free tier (see providers/apiFootball.ts header).
+  // API-Football stays wired for whenever its current-odds data unlocks.
+  const providers: MarketDataProvider[] = [createApiFootballOddsProvider()];
+  if (BETEXPLORER_ENABLED) providers.push(createBetExplorerProvider(getBetExplorerConfig()));
+  return providers.filter((p) => p.isConfigured());
 }
 
 function clamp01(n: number): number {

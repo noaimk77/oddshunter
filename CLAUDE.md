@@ -70,9 +70,10 @@ src/worker/
     score.ts / .test.ts           # moteur de score 0-100 + raisons, poids configurables
   providers/
     types.ts                      # interfaces normalisées (MarketDataProvider / ExchangeDataProvider / LiveStateProvider)
-    apiFootball.ts                # adaptateur réel — source de cotes principale V1 (voir "Fournisseurs de données" ci-dessous)
+    betexplorer.ts                # adaptateur réel — source de cotes PRINCIPALE (gratuit, sans clé) — voir "Fournisseurs de données"
+    apiFootball.ts                # adaptateur réel — fixtures/scores gratuits ; /odds bloqué en gratuit (voir ci-dessous)
     theOddsApi.ts                 # adaptateur réel mais NON branché — couvre les grands championnats, plus l'objectif (voir ci-dessous)
-    betfair.ts                    # adaptateur stub — refuse de tourner tant que les vraies clés sont absentes (jamais de données fictives)
+    betfair.ts                    # adaptateur stub — inutilisable depuis la France (Exchange bloqué par la réglementation)
   ingest.ts                       # fetch un provider → upsert Competition/Event/Market/Selection/OddsSnapshot (snapshot seulement si le prix a changé)
   telegram/
     bot.ts                        # commandes grammy : /start /subscribe /settings /status /history /help
@@ -82,6 +83,14 @@ src/worker/
 
 ## Fournisseurs de données
 Le cahier des charges original visait Pinnacle/Bet365/SBOBET/SABA en direct + OddsMatrix/Sportradar comme agrégateurs pro. Recherche du 2026-08-18 : **Sportradar** (10 000$+/mois, contrat entreprise) et **OddsMatrix** (pas de self-service, il faut passer par un commercial) ne sont pas réalistes avant d'avoir du revenu.
+
+**Contrainte "0€ absolu" posée par Noaim le 2026-08-19** — audit complet effectué : PS3838 (B2B uniquement, aucun accès retail), SBOBET (aucune API publique), Betfair Exchange et OrbitX (bloqués par la réglementation française — même liquidité que Betfair), Asian Connect (accessible mais sans API, interface manuelle uniquement) sont tous des impasses vérifiées, pas des suppositions. Détails complets dans la mémoire `oddshunter-bot`.
+
+**Source principale retenue : BetExplorer** (betexplorer.com) — gratuit, sans compte, `robots.txt` autorise explicitement les chemins utilisés (seuls `/ad/`, `/redirect/`, `/bookmaker/` et des query params sont interdits). HTML rendu côté serveur (confirmé via curl brut, pas besoin de navigateur headless). Couvre nativement les ligues obscures voulues (Écosse Highland League, Iran, petites ligues australiennes... apparues spontanément dans le premier test). Deux endpoints :
+- `/football/dropping-odds/` — feed de triage : tous les matchs en chute significative, tous championnats, avec % de chute et consensus multi-bookmakers déjà calculé par BetExplorer.
+- `/match-odds/{matchId}/0/{marché}/bestOdds/?lang=en` — détail par bookmaker individuel (nom, cote, timestamp), y compris des books orientés Asie comme BetInAsia. Marchés dispo au-delà du 1X2 : O/U, Handicap Asiatique, DNB, DC, BTTS.
+
+`src/worker/providers/betexplorer.ts` implémente ça en deux temps : la page dropping-odds (1 requête, triage large) puis le détail par bookmaker seulement pour les N plus grosses chutes par cycle (`BETEXPLORER_MAX_DETAIL_FETCHES_PER_CYCLE`, défaut 15) — pas de scraping agressif de tous les matchs. Délai poli entre requêtes (`BETEXPLORER_MIN_REQUEST_INTERVAL_MS`, défaut 1.5s). Testé en direct (2026-08-19) : fonctionne, cotes réelles et mouvantes confirmées. **Point de perf connu** : l'ingestion existante (`ingest.ts`) fait 4 upserts DB séquentiels par point de donnée (~1.1s/point sur la latence Neon) — avec la couche détail activée, un cycle complet peut prendre plusieurs minutes. Pas bloquant vu le cycle d'ingestion par défaut (20 min), mais optimisable plus tard (upserts groupés / cache en mémoire des IDs déjà vus dans le passage).
 
 **Décision produit du 2026-08-18 (Noaim) : cibler les championnats obscurs/peu surveillés (Inde toutes divisions, petits championnats d'Amérique latine), pas les grands championnats commerciaux** — un mouvement suspect a plus de chances de passer inaperçu là où personne ne regarde. Ça exclut de facto les agrégateurs type The Odds API / TheOddsAPI (ne couvrent que les grandes ligues). Source V1 retenue : **API-Football**, gratuite, ~1200 compétitions couvertes dans le monde. `src/worker/providers/apiFootball.ts` (`createApiFootballOddsProvider`) résout les championnats par pays (`GET /leagues?country=`, liste dans `API_FOOTBALL_TARGET_COUNTRIES`), puis récupère les cotes par championnat (`GET /odds?league=&season=`) et les fixtures pour les noms d'équipes. Budget quotidien (100 requêtes/jour en gratuit) suivi en mémoire — d'où une ingestion toutes les 20 min (`INGEST_POLL_INTERVAL_MS`), découplée de la détection qui elle tourne toutes les 30s.
 

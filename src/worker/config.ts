@@ -2,6 +2,14 @@ import { DEFAULT_ODDS_DROP_CONFIG, type OddsDropConfig } from "./detectors/oddsD
 import { DEFAULT_ODDS_RISE_CONFIG, type OddsRiseConfig } from "./detectors/oddsRise";
 import { DEFAULT_VIG_EXPLOSION_CONFIG, type VigExplosionConfig } from "./detectors/vigExplosion";
 import { DEFAULT_SCORE_WEIGHTS, type ScoreWeights } from "./detectors/score";
+import { DEFAULT_BETEXPLORER_CONFIG, type BetExplorerConfig } from "./providers/betexplorer";
+
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
 
 /**
  * Every threshold the worker uses, in one place, overridable by env var
@@ -43,6 +51,27 @@ export function getVigExplosionConfig(): VigExplosionConfig {
     minIncreasePercentPoints: envFloat(
       "VIG_EXPLOSION_MIN_INCREASE_PP",
       DEFAULT_VIG_EXPLOSION_CONFIG.minIncreasePercentPoints,
+    ),
+  };
+}
+
+/**
+ * BetExplorer — free, no key. Opt-in via env only to allow disabling the
+ * scraper (e.g. if betexplorer.com changes its markup) without a code
+ * change. Defaults to enabled since it costs nothing to try.
+ */
+export const BETEXPLORER_ENABLED = process.env.BETEXPLORER_ENABLED !== "false";
+
+export function getBetExplorerConfig(): BetExplorerConfig {
+  return {
+    maxDetailFetchesPerCycle: envInt(
+      "BETEXPLORER_MAX_DETAIL_FETCHES_PER_CYCLE",
+      DEFAULT_BETEXPLORER_CONFIG.maxDetailFetchesPerCycle,
+    ),
+    minRequestIntervalMs: envInt("BETEXPLORER_MIN_REQUEST_INTERVAL_MS", DEFAULT_BETEXPLORER_CONFIG.minRequestIntervalMs),
+    minDropPercentForDetail: envFloat(
+      "BETEXPLORER_MIN_DROP_PERCENT_FOR_DETAIL",
+      DEFAULT_BETEXPLORER_CONFIG.minDropPercentForDetail,
     ),
   };
 }
