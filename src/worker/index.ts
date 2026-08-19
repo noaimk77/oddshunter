@@ -2,39 +2,49 @@
 // doesn't go through Next, so it needs the same load explicitly — a no-op
 // in production (Railway injects env vars directly, no .env file present).
 import "dotenv/config";
+import type { Bot } from "grammy";
 import { db } from "@/lib/db";
 import { withWorkerLock } from "./lib/lock";
-import { getOddsDropConfig, getScoreWeights, WORKER_POLL_INTERVAL_MS, INGEST_POLL_INTERVAL_MS, SEND_LIVE_ALERTS } from "./config";
-import { detectOddsDrop } from "./detectors/oddsDrop";
-import { scoreSignal, type ScoreFactors } from "./detectors/score";
+import {
+  getOddsDropConfig,
+  getOddsRiseConfig,
+  getVigExplosionConfig,
+  getScoreWeights,
+  WORKER_POLL_INTERVAL_MS,
+  INGEST_POLL_INTERVAL_MS,
+  SEND_LIVE_ALERTS,
+} from "./config";
+import { detectOddsDrop, type OddsDropOutcome } from "./detectors/oddsDrop";
+import { detectOddsRise, type OddsRiseOutcome } from "./detectors/oddsRise";
+import { detectVigExplosion } from "./detectors/vigExplosion";
+import { detectMarketLock, type MarketStatus } from "./detectors/marketLock";
+import { scoreSignal, type ScoreFactors, type ScoreWeights } from "./detectors/score";
 import { ingestFromProvider } from "./ingest";
 import type { MarketDataProvider } from "./providers/types";
 import { createApiFootballOddsProvider } from "./providers/apiFootball";
+import { createBot } from "./telegram/bot";
+import { deliverSignal, type SignalWithContext } from "./telegram/sendAlert";
 
 /**
- * Odds Hunter worker — the "processus régulier et durable" from spec
- * section 11, deliberately not a Netlify function. Each cycle: fetch real
- * odds from every configured provider (ingest.ts normalizes them into
- * Competition/Event/Market/Selection/OddsSnapshot), then run the pre-match
- * ODDS_DROP detector (the only detector in the V1 acceptance criteria,
- * section 19) and write explainable Signal rows. It never invents a price
- * series: with no provider key set, `getConfiguredProviders()` returns an
- * empty list and this loop is a correct, silent no-op.
+ * Odds Hunter worker — the long-lived process (not a Netlify function).
+ * Each cycle: fetch real odds from every configured provider (ingest.ts
+ * normalizes them into Competition/Event/Market/Selection/OddsSnapshot),
+ * then run the detection pass (ODDS_DROP, ODDS_RISE, VIG_EXPLOSION,
+ * MARKET_LOCK — see runDetectionPass) and write explainable Signal rows.
+ * It never invents a price series: with no provider key set,
+ * `getConfiguredProviders()` returns an empty list and this loop is a
+ * correct, silent no-op.
  *
- * Mode observation (section 15): SEND_LIVE_ALERTS defaults to false, so
- * this only logs and persists signals — it does not deliver anything to
- * Telegram until that's explicitly turned on and the delivery wiring
- * (bot instance + AlertRule filtering, see telegram/sendAlert.ts) is
- * connected here.
+ * Mode observation: SEND_LIVE_ALERTS defaults to false, so this only logs
+ * and persists signals — nothing is delivered to Telegram until that's
+ * explicitly turned on.
  */
 
 function getConfiguredProviders(): MarketDataProvider[] {
   // Primary V1 source: API-Football, targeting low-scrutiny leagues (see
   // getIngestTargetCountries in config.ts) rather than major commercial
-  // leagues (2026-08-18 scope change). Add further adapters here as
-  // they're wired (Betfair exchange data arrives through a separate
-  // ExchangeDataProvider, not this list; theOddsApi.ts exists but isn't
-  // wired in — it only covers major leagues, which is no longer the goal).
+  // leagues. Add further adapters here as they're wired (Betfair exchange
+  // data arrives through a separate ExchangeDataProvider, not this list).
   return [createApiFootballOddsProvider()].filter((p) => p.isConfigured());
 }
 
@@ -58,87 +68,310 @@ async function runIngestion(): Promise<void> {
   }
 }
 
-async function runDetectionPass(): Promise<void> {
-  const selections = await db.selection.findMany({
-    where: { market: { event: { status: "upcoming" } } },
+/**
+ * Shared scoring for ODDS_DROP / ODDS_RISE — both are the same shape of
+ * signal (a persistent, sufficiently large move away from the opening
+ * price), just in opposite directions, so they share one upsert path.
+ * Several factors are placeholder-neutral until their real data source is
+ * connected (multi-book, Betfair volume/liquidity, competition tiering,
+ * source-accuracy tracking) — logged explicitly in `reasons` via
+ * scoreSignal so recalibration later is visible, not silent.
+ */
+async function upsertPriceMoveSignal(
+  type: "ODDS_DROP" | "ODDS_RISE",
+  marketId: string,
+  selectionId: string,
+  outcome: { openingPrice: number; currentPrice: number; priceChangePct: number; persistedForSec: number },
+  hoursToKickoff: number,
+  scoreWeights: ScoreWeights,
+): Promise<string> {
+  const persistenceMinutes = outcome.persistedForSec / 60;
+  const factors: ScoreFactors = {
+    amplitude: clamp01(Math.abs(outcome.priceChangePct) / 20),
+    speed: clamp01(Math.abs(outcome.priceChangePct) / Math.max(persistenceMinutes, 1) / 10),
+    persistence: clamp01(outcome.persistedForSec / (30 * 60)),
+    multiBookAgreement: 0,
+    volume: 0,
+    liquidity: 0,
+    proximityToKickoff: clamp01(1 - hoursToKickoff / 48),
+    competitionQuality: 0.5,
+    marketStatus: 0,
+    explainability: 1, // pre-match: no live event context applies
+    sourceQuality: 0.5,
+  };
+
+  const { score, reasons } = scoreSignal(factors, scoreWeights);
+  const reasonsJson = JSON.parse(JSON.stringify(reasons));
+  const dedupKey = `${type}:${marketId}:${selectionId}`;
+
+  const existing = await db.signal.findFirst({ where: { dedupKey, status: { in: ["OPEN", "UPDATED"] } } });
+
+  let signalId: string;
+  if (existing) {
+    await db.signal.update({
+      where: { id: existing.id },
+      data: { status: "UPDATED", score, reasons: reasonsJson, currentPrice: outcome.currentPrice, priceChangePct: outcome.priceChangePct },
+    });
+    signalId = existing.id;
+  } else {
+    const created = await db.signal.create({
+      data: {
+        type,
+        marketId,
+        selectionId,
+        dedupKey,
+        score,
+        reasons: reasonsJson,
+        openingPrice: outcome.openingPrice,
+        currentPrice: outcome.currentPrice,
+        priceChangePct: outcome.priceChangePct,
+      },
+    });
+    signalId = created.id;
+  }
+
+  console.log(
+    `[worker] ${type} selection=${selectionId} ${outcome.openingPrice} -> ${outcome.currentPrice} ` +
+      `(${outcome.priceChangePct.toFixed(1)}%, score ${score})`,
+  );
+  return signalId;
+}
+
+/**
+ * VIG_EXPLOSION — market-wide, not per-selection (overround only means
+ * something as a sum across a market's outcomes). V1 simplification: no
+ * time-window/speed tracking yet (see vigExplosion.ts header) — `speed` and
+ * `persistence` factors are left at 0 rather than guessed.
+ */
+async function upsertVigExplosionSignal(
+  marketId: string,
+  outcome: { openingOverroundPct: number; currentOverroundPct: number; increasePercentPoints: number },
+  hoursToKickoff: number,
+  scoreWeights: ScoreWeights,
+): Promise<string> {
+  const factors: ScoreFactors = {
+    amplitude: clamp01(outcome.increasePercentPoints / 30),
+    speed: 0,
+    persistence: 0,
+    multiBookAgreement: 0,
+    volume: 0,
+    liquidity: 0,
+    proximityToKickoff: clamp01(1 - hoursToKickoff / 48),
+    competitionQuality: 0.5,
+    marketStatus: 0,
+    explainability: 1,
+    sourceQuality: 0.5,
+  };
+
+  const { score, reasons } = scoreSignal(factors, scoreWeights);
+  const reasonsJson = JSON.parse(JSON.stringify(reasons));
+  const dedupKey = `VIG_EXPLOSION:${marketId}`;
+  const metadata = { openingOverroundPct: outcome.openingOverroundPct, currentOverroundPct: outcome.currentOverroundPct };
+
+  const existing = await db.signal.findFirst({ where: { dedupKey, status: { in: ["OPEN", "UPDATED"] } } });
+
+  let signalId: string;
+  if (existing) {
+    await db.signal.update({ where: { id: existing.id }, data: { status: "UPDATED", score, reasons: reasonsJson, metadata } });
+    signalId = existing.id;
+  } else {
+    const created = await db.signal.create({
+      data: { type: "VIG_EXPLOSION", marketId, dedupKey, score, reasons: reasonsJson, metadata },
+    });
+    signalId = created.id;
+  }
+
+  console.log(
+    `[worker] VIG_EXPLOSION market=${marketId} overround ${outcome.openingOverroundPct.toFixed(1)}% -> ` +
+      `${outcome.currentOverroundPct.toFixed(1)}% (score ${score})`,
+  );
+  return signalId;
+}
+
+/**
+ * MARKET_LOCK — a pure status signal, not a price movement, so most of the
+ * generic ScoreFactors shape doesn't apply (amplitude/speed/persistence are
+ * all 0). `marketStatus` is set to its max (1) since the lock IS the
+ * signal. With the generic price-move weight profile (marketStatus's
+ * default weight is only 0.05) this produces a low score by design — the
+ * weights aren't yet split per signal-type; recalibrate once real lock
+ * events are observed rather than inventing a second profile now.
+ */
+async function openMarketLockSignal(
+  marketId: string,
+  status: MarketStatus,
+  hoursToKickoff: number,
+  scoreWeights: ScoreWeights,
+): Promise<string> {
+  const factors: ScoreFactors = {
+    amplitude: 0,
+    speed: 0,
+    persistence: 0,
+    multiBookAgreement: 0,
+    volume: 0,
+    liquidity: 0,
+    proximityToKickoff: clamp01(1 - hoursToKickoff / 48),
+    competitionQuality: 0.5,
+    marketStatus: 1,
+    explainability: 1,
+    sourceQuality: 0.5,
+  };
+
+  const { score, reasons } = scoreSignal(factors, scoreWeights);
+  const reasonsJson = JSON.parse(JSON.stringify(reasons));
+  const dedupKey = `MARKET_LOCK:${marketId}`;
+
+  const created = await db.signal.create({
+    data: { type: "MARKET_LOCK", marketId, dedupKey, score, reasons: reasonsJson, metadata: { status } },
+  });
+
+  console.log(`[worker] MARKET_LOCK market=${marketId} status=${status} (score ${score})`);
+  return created.id;
+}
+
+async function runDetectionPass(): Promise<string[]> {
+  const markets = await db.market.findMany({
+    where: { event: { status: "upcoming" } },
     include: {
-      odds: { orderBy: { timestamp: "asc" } },
-      market: { include: { event: true } },
+      event: { include: { competition: true } },
+      selections: { include: { odds: { orderBy: { timestamp: "asc" } } } },
     },
   });
 
   const oddsDropConfig = getOddsDropConfig();
+  const oddsRiseConfig = getOddsRiseConfig();
+  const vigExplosionConfig = getVigExplosionConfig();
   const scoreWeights = getScoreWeights();
 
-  for (const selection of selections) {
-    if (selection.odds.length < 2) continue;
+  // Rejected-by-filter counts (spec: quality stats even without a schema
+  // change for a full rejected-signal table) — one summary line per pass
+  // rather than a log line per selection, so it stays readable.
+  const rejectionCounts: Record<string, number> = {};
+  const countRejection = (detector: string, reason: string) => {
+    const key = `${detector}:${reason}`;
+    rejectionCounts[key] = (rejectionCounts[key] ?? 0) + 1;
+  };
 
-    const outcome = detectOddsDrop(
-      selection.odds.map((o) => ({ price: o.price, timestamp: o.timestamp })),
-      oddsDropConfig,
-    );
-    if (!outcome.fires) continue;
+  const touchedSignalIds: string[] = [];
 
-    const hoursToKickoff = (selection.market.event.kickoff.getTime() - Date.now()) / 3_600_000;
-    const persistenceMinutes = outcome.persistedForSec / 60;
+  for (const market of markets) {
+    const hoursToKickoff = (market.event.kickoff.getTime() - Date.now()) / 3_600_000;
 
-    // Several factors are placeholder-neutral until their real data source
-    // is connected (multi-book, Betfair volume/liquidity, competition
-    // tiering, source-accuracy tracking) — logged explicitly in `reasons`
-    // via scoreSignal so recalibration later is visible, not silent.
-    const factors: ScoreFactors = {
-      amplitude: clamp01(outcome.priceChangePct / 20),
-      speed: clamp01(outcome.priceChangePct / Math.max(persistenceMinutes, 1) / 10),
-      persistence: clamp01(outcome.persistedForSec / (30 * 60)),
-      multiBookAgreement: 0,
-      volume: 0,
-      liquidity: 0,
-      proximityToKickoff: clamp01(1 - hoursToKickoff / 48),
-      competitionQuality: 0.5,
-      marketStatus: 0,
-      explainability: 1, // pre-match: no live event context applies
-      sourceQuality: 0.5,
-    };
+    for (const selection of market.selections) {
+      if (selection.odds.length < 2) continue;
+      const priceHistory = selection.odds.map((o) => ({ price: o.price, timestamp: o.timestamp }));
 
-    const { score, reasons } = scoreSignal(factors, scoreWeights);
-    // Prisma's Json input type doesn't structurally accept a typed array of
-    // ScoreReason objects directly — round-tripping through JSON gives a
-    // plain value that satisfies it without weakening ScoreReason's type
-    // everywhere else it's used.
-    const reasonsJson = JSON.parse(JSON.stringify(reasons));
-    const dedupKey = `ODDS_DROP:${selection.marketId}:${selection.id}`;
+      const dropOutcome: OddsDropOutcome = detectOddsDrop(priceHistory, oddsDropConfig);
+      if (dropOutcome.fires) {
+        touchedSignalIds.push(
+          await upsertPriceMoveSignal("ODDS_DROP", market.id, selection.id, dropOutcome, hoursToKickoff, scoreWeights),
+        );
+      } else {
+        countRejection("ODDS_DROP", dropOutcome.reason);
+      }
 
-    const existing = await db.signal.findFirst({ where: { dedupKey, status: { in: ["OPEN", "UPDATED"] } } });
+      const riseOutcome: OddsRiseOutcome = detectOddsRise(priceHistory, oddsRiseConfig);
+      if (riseOutcome.fires) {
+        touchedSignalIds.push(
+          await upsertPriceMoveSignal("ODDS_RISE", market.id, selection.id, riseOutcome, hoursToKickoff, scoreWeights),
+        );
+      } else {
+        countRejection("ODDS_RISE", riseOutcome.reason);
+      }
+    }
 
-    if (existing) {
-      await db.signal.update({
-        where: { id: existing.id },
-        data: { status: "UPDATED", score, reasons: reasonsJson, currentPrice: outcome.currentPrice, priceChangePct: outcome.priceChangePct },
-      });
+    const selectionHistories = market.selections
+      .filter((s) => s.odds.length > 0)
+      .map((s) => ({ selectionId: s.id, history: s.odds.map((o) => ({ price: o.price, timestamp: o.timestamp })) }));
+    const vigOutcome = detectVigExplosion(selectionHistories, vigExplosionConfig);
+    if (vigOutcome.fires) {
+      touchedSignalIds.push(await upsertVigExplosionSignal(market.id, vigOutcome, hoursToKickoff, scoreWeights));
     } else {
-      await db.signal.create({
-        data: {
-          type: "ODDS_DROP",
-          marketId: selection.marketId,
-          selectionId: selection.id,
-          dedupKey,
-          score,
-          reasons: reasonsJson,
-          openingPrice: outcome.openingPrice,
-          currentPrice: outcome.currentPrice,
-          priceChangePct: outcome.priceChangePct,
-        },
-      });
+      countRejection("VIG_EXPLOSION", vigOutcome.reason);
     }
 
-    console.log(
-      `[worker] ODDS_DROP selection=${selection.id} ${outcome.openingPrice} -> ${outcome.currentPrice} ` +
-        `(${outcome.priceChangePct.toFixed(1)}%, score ${score})`,
+    const existingLock = await db.signal.findFirst({
+      where: { type: "MARKET_LOCK", marketId: market.id, status: { in: ["OPEN", "UPDATED"] } },
+    });
+    const lockAction = detectMarketLock(market.status as MarketStatus, Boolean(existingLock));
+    if (lockAction.action === "open_signal") {
+      touchedSignalIds.push(await openMarketLockSignal(market.id, market.status as MarketStatus, hoursToKickoff, scoreWeights));
+    } else if (lockAction.action === "resolve_signal" && existingLock) {
+      await db.signal.update({ where: { id: existingLock.id }, data: { status: "RESOLVED", resolvedAt: new Date() } });
+      console.log(`[worker] MARKET_LOCK resolved market=${market.id} (status back to open)`);
+    }
+  }
+
+  const rejectionSummary = Object.entries(rejectionCounts)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(", ");
+  if (rejectionSummary) console.log(`[worker] detection pass rejections — ${rejectionSummary}`);
+
+  return touchedSignalIds;
+}
+
+// Lazily constructed so mode observation (the default) never requires a
+// valid TELEGRAM_BOT_TOKEN — the same "fail soft, never crash the loop"
+// pattern as getConfiguredProviders() above.
+let cachedBot: Bot | null | undefined;
+function getBotForDelivery(): Bot | null {
+  if (cachedBot !== undefined) return cachedBot;
+  try {
+    cachedBot = createBot();
+  } catch (err) {
+    console.error(
+      "[worker] SEND_LIVE_ALERTS is true but the Telegram bot could not be created — alerts will not be delivered this cycle.",
+      err,
     );
+    cachedBot = null;
+  }
+  return cachedBot;
+}
 
-    if (SEND_LIVE_ALERTS) {
-      console.warn("[worker] SEND_LIVE_ALERTS=true but delivery wiring is not connected in this pass yet — no-op.");
-    }
+/**
+ * Delivers only the signals actually created/updated THIS pass — not every
+ * open signal in the database. Re-running deliverSignal for an unchanged
+ * signal every cycle would either spam an identical Telegram edit (harmless
+ * but noisy) or hit Telegram's "message not modified" error; scoping to
+ * touched signals keeps delivery exactly aligned with real changes.
+ */
+async function deliverTouchedSignals(signalIds: string[]): Promise<void> {
+  const bot = getBotForDelivery();
+  if (!bot) return;
+
+  const signals = await db.signal.findMany({
+    where: { id: { in: signalIds } },
+    include: {
+      market: { include: { event: { include: { competition: true } } } },
+      selection: true,
+    },
+  });
+
+  for (const signal of signals) {
+    const context: SignalWithContext = {
+      id: signal.id,
+      type: signal.type,
+      score: signal.score,
+      reasons: (signal.reasons as { label: string; contribution: number }[] | null) ?? [],
+      openingPrice: signal.openingPrice,
+      currentPrice: signal.currentPrice,
+      priceChangePct: signal.priceChangePct,
+      firstDetectedAt: signal.firstDetectedAt,
+      market: {
+        name: signal.market.name,
+        type: signal.market.type,
+        status: signal.market.status,
+        event: {
+          homeTeam: signal.market.event.homeTeam,
+          awayTeam: signal.market.event.awayTeam,
+          kickoff: signal.market.event.kickoff,
+          status: signal.market.event.status,
+          competition: { name: signal.market.event.competition.name, sport: signal.market.event.competition.sport },
+        },
+      },
+      selection: signal.selection ? { name: signal.selection.name } : null,
+    };
+    await deliverSignal(db, bot, context);
   }
 }
 
@@ -162,7 +395,10 @@ async function main() {
           await runIngestion();
           lastIngestAt = Date.now();
         }
-        await runDetectionPass();
+        const touchedSignalIds = await runDetectionPass();
+        if (SEND_LIVE_ALERTS && touchedSignalIds.length > 0) {
+          await deliverTouchedSignals(touchedSignalIds);
+        }
       });
       if (typeof result === "object" && "skipped" in result) {
         console.log("[worker] lock held by another instance — skipping this cycle.");

@@ -1,4 +1,6 @@
 import { DEFAULT_ODDS_DROP_CONFIG, type OddsDropConfig } from "./detectors/oddsDrop";
+import { DEFAULT_ODDS_RISE_CONFIG, type OddsRiseConfig } from "./detectors/oddsRise";
+import { DEFAULT_VIG_EXPLOSION_CONFIG, type VigExplosionConfig } from "./detectors/vigExplosion";
 import { DEFAULT_SCORE_WEIGHTS, type ScoreWeights } from "./detectors/score";
 
 /**
@@ -21,6 +23,26 @@ export function getOddsDropConfig(): OddsDropConfig {
     correctionReboundPercent: envFloat(
       "ODDS_DROP_CORRECTION_REBOUND_PERCENT",
       DEFAULT_ODDS_DROP_CONFIG.correctionReboundPercent,
+    ),
+  };
+}
+
+export function getOddsRiseConfig(): OddsRiseConfig {
+  return {
+    riseThresholdPercent: envFloat("ODDS_RISE_THRESHOLD_PERCENT", DEFAULT_ODDS_RISE_CONFIG.riseThresholdPercent),
+    minPersistenceSec: envFloat("ODDS_RISE_MIN_PERSISTENCE_SEC", DEFAULT_ODDS_RISE_CONFIG.minPersistenceSec),
+    correctionReboundPercent: envFloat(
+      "ODDS_RISE_CORRECTION_REBOUND_PERCENT",
+      DEFAULT_ODDS_RISE_CONFIG.correctionReboundPercent,
+    ),
+  };
+}
+
+export function getVigExplosionConfig(): VigExplosionConfig {
+  return {
+    minIncreasePercentPoints: envFloat(
+      "VIG_EXPLOSION_MIN_INCREASE_PP",
+      DEFAULT_VIG_EXPLOSION_CONFIG.minIncreasePercentPoints,
     ),
   };
 }
