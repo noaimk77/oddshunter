@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { stripe, isStripeConfigured } from "@/lib/stripe";
 
 export interface PlanDisplay {
@@ -36,46 +37,67 @@ const STATIC_FALLBACK: Omit<PlanDisplay, "priceId">[] = [
   },
 ];
 
+async function fetchOnePlan(type: "VIP" | "BOT", priceId: string): Promise<PlanDisplay> {
+  try {
+    const price = await stripe.prices.retrieve(priceId, { expand: ["product"] });
+    const product = price.product;
+    const name = typeof product === "object" && "name" in product ? product.name : STATIC_FALLBACK.find((f) => f.type === type)!.name;
+    const description =
+      typeof product === "object" && "description" in product && product.description
+        ? product.description
+        : STATIC_FALLBACK.find((f) => f.type === type)!.description;
+    return {
+      type,
+      priceId,
+      name,
+      description,
+      amount: price.unit_amount ?? 0,
+      currency: price.currency,
+      interval: price.recurring?.interval ?? null,
+    };
+  } catch (err) {
+    console.error(`[plans] failed to fetch live price for ${type}`, err);
+    return { ...STATIC_FALLBACK.find((f) => f.type === type)!, priceId };
+  }
+}
+
+/**
+ * Live Stripe reads are a real network round-trip (two of them, previously
+ * sequential — one of the causes behind the site feeling slow on every
+ * navigation to "/" or "/abonnement"). Cached for 15 minutes: plenty fresh
+ * for a price that changes rarely, and it turns nearly every page load
+ * after the first into a cache hit instead of a Stripe API call.
+ */
+const getCachedLivePlans = unstable_cache(
+  async (vipPriceId: string | undefined, botPriceId: string | undefined): Promise<PlanDisplay[]> => {
+    const ids: { type: "VIP" | "BOT"; priceId?: string }[] = [
+      { type: "VIP", priceId: vipPriceId },
+      { type: "BOT", priceId: botPriceId },
+    ];
+    const results = await Promise.all(
+      ids.filter((i) => i.priceId).map((i) => fetchOnePlan(i.type, i.priceId!))
+    );
+    return results;
+  },
+  ["plan-displays"],
+  { revalidate: 900 }
+);
+
 export async function getPlanDisplays(): Promise<PlanDisplay[]> {
   const vipPriceId = process.env.STRIPE_PRICE_VIP;
   const botPriceId = process.env.STRIPE_PRICE_BOT;
-  const ids: { type: "VIP" | "BOT"; priceId?: string }[] = [
-    { type: "VIP", priceId: vipPriceId },
-    { type: "BOT", priceId: botPriceId },
-  ];
 
   if (!isStripeConfigured()) {
+    const ids: { type: "VIP" | "BOT"; priceId?: string }[] = [
+      { type: "VIP", priceId: vipPriceId },
+      { type: "BOT", priceId: botPriceId },
+    ];
     return ids
       .filter((i) => i.priceId)
       .map((i) => ({ ...STATIC_FALLBACK.find((f) => f.type === i.type)!, priceId: i.priceId! }));
   }
 
-  const results: PlanDisplay[] = [];
-  for (const { type, priceId } of ids) {
-    if (!priceId) continue;
-    try {
-      const price = await stripe.prices.retrieve(priceId, { expand: ["product"] });
-      const product = price.product;
-      const name = typeof product === "object" && "name" in product ? product.name : STATIC_FALLBACK.find((f) => f.type === type)!.name;
-      const description =
-        typeof product === "object" && "description" in product && product.description
-          ? product.description
-          : STATIC_FALLBACK.find((f) => f.type === type)!.description;
-      results.push({
-        type,
-        priceId,
-        name,
-        description,
-        amount: price.unit_amount ?? 0,
-        currency: price.currency,
-        interval: price.recurring?.interval ?? null,
-      });
-    } catch (err) {
-      console.error(`[plans] failed to fetch live price for ${type}`, err);
-      results.push({ ...STATIC_FALLBACK.find((f) => f.type === type)!, priceId });
-    }
-  }
-  return results;
+  return getCachedLivePlans(vipPriceId, botPriceId);
 }
 
 const INTERVAL_LABEL_FR: Record<string, string> = { day: "jour", week: "semaine", month: "mois", year: "an" };
