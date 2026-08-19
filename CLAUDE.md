@@ -121,6 +121,11 @@ Le cahier des charges original visait Pinnacle/Bet365/SBOBET/SABA en direct + Od
 - Webhook secret dans env var `STRIPE_WEBHOOK_SECRET`
 - **Piège Netlify** : `stripe projects variables set` + `env --pull` ne met à jour que le `.env` local, **pas** les variables d'environnement Netlify en production. Il faut aussi `netlify-cli env:set <VAR> <valeur> --context production`, puis redéployer — sinon le site en prod continue de tourner avec l'ancienne valeur silencieusement.
 
+## Bug critique corrigé le 2026-08-19 : DATABASE_URL cassé en prod
+Le site en production ne pouvait plus se connecter à la base — `Can't reach database server at base`, exactement le même symptôme que le bug Railway (voir plus haut). Cause : la variable `DATABASE_URL` sur Netlify contenait les guillemets simples littéraux copiés depuis `.env` local, corrompant la chaîne de connexion. **Conséquence concrète : impossible de créer un compte ou de se reconnecter sur le site — c'est ce que Noaim a rencontré.** Corrigé via `netlify-cli env:set DATABASE_URL <valeur nettoyée> --context production --secret` + redeploy. Vérifié en vrai : cycle complet création de compte → déconnexion → reconnexion, fonctionne.
+
+**Leçon** : après toute correction de variable d'environnement type "je copie depuis .env local", vérifier la longueur de la valeur sur *chaque* plateforme de déploiement (Railway ET Netlify sont deux environnements séparés, un fix sur l'un ne touche pas l'autre) — ne jamais supposer qu'un seul fix suffit.
+
 ## Providers (via stripe projects)
 - AgentMail (email transactionnel)
 - Neon (Postgres)
