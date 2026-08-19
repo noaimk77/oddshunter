@@ -416,22 +416,36 @@ async function runDetectionPass(): Promise<string[]> {
   return touchedSignalIds;
 }
 
-// Lazily constructed so mode observation (the default) never requires a
-// valid TELEGRAM_BOT_TOKEN — the same "fail soft, never crash the loop"
-// pattern as getConfiguredProviders() above.
-let cachedBot: Bot | null | undefined;
-function getBotForDelivery(): Bot | null {
-  if (cachedBot !== undefined) return cachedBot;
+// Single shared instance: created once and long-polled from main() so
+// incoming commands (/start, /status, /help...) are actually received —
+// creating a Bot object alone only registers handlers, it does not listen
+// until .start() is called. This same instance is reused for outbound
+// delivery below, rather than constructing a second one, since Telegram
+// only allows one active getUpdates connection per bot token at a time.
+let sharedBot: Bot | null = null;
+
+async function startTelegramBot(): Promise<void> {
   try {
-    cachedBot = createBot();
+    sharedBot = createBot();
   } catch (err) {
     console.error(
-      "[worker] SEND_LIVE_ALERTS is true but the Telegram bot could not be created — alerts will not be delivered this cycle.",
+      "[worker] Telegram bot could not be created (TELEGRAM_BOT_TOKEN missing/invalid) — " +
+        "/start and alert delivery are both unavailable this run.",
       err,
     );
-    cachedBot = null;
+    return;
   }
-  return cachedBot;
+
+  // Long-polls Telegram indefinitely — deliberately not awaited, so this
+  // runs alongside the detection loop rather than blocking it. Errors here
+  // (e.g. a transient network drop) are logged, not fatal to the worker.
+  sharedBot
+    .start({ onStart: () => console.log("[worker] Telegram bot listening for commands (long polling).") })
+    .catch((err) => console.error("[worker] Telegram bot polling stopped unexpectedly", err));
+}
+
+function getBotForDelivery(): Bot | null {
+  return sharedBot;
 }
 
 /**
@@ -487,6 +501,11 @@ async function main() {
       `ingestion every ${INGEST_POLL_INTERVAL_MS}ms, ` +
       `${SEND_LIVE_ALERTS ? "LIVE ALERTS ON" : "mode observation (no alerts sent)"}.`,
   );
+
+  // Started unconditionally (not just when SEND_LIVE_ALERTS is on) — account
+  // linking (/start <token>) and status commands must work even while the
+  // worker is only observing, not yet delivering alerts.
+  await startTelegramBot();
 
   let lastIngestAt = 0;
 
