@@ -122,9 +122,18 @@ Le cahier des charges original visait Pinnacle/Bet365/SBOBET/SABA en direct + Od
 ## Providers (via stripe projects)
 - AgentMail (email transactionnel)
 - Neon (Postgres)
-- Netlify (hébergement)
-- Railway (désigné pour héberger le worker `src/worker/` — pas encore déployé)
-- Render (lié mais Netlify est le déploiement principal)
+- Netlify (hébergement du site)
+- Railway (héberge le worker `src/worker/` — **déployé et actif 24/7 depuis le 2026-08-19**)
+- Render (lié mais Netlify est le déploiement principal du site)
+
+## Worker déployé sur Railway
+- Compte Railway : `noaim.k77@gmail.com` (CLI installé via `curl -fsSL https://railway.app/install.sh | sh`, séparé du compte lié à Stripe Projects — deux comptes distincts)
+- Projet : `oddshunter-worker` (project ID `2b9c1d52-05e4-4258-af40-a3616add7515`, service ID `297da1ed-767c-47e2-ad55-59dae54e5aa1`, env `production` = `9132e59e-3174-4d77-86e4-fb62f28721f8`)
+- **Plan gratuit = essai limité (500h de calcul, ~20 jours en continu), pas permanent.** À revoir avant expiration : soit passer sur le plan payant Railway (5$/mois, casse la contrainte 0€), soit migrer vers Oracle Cloud Free Tier (gratuit à vie mais nécessite que Noaim crée le compte lui-même).
+- `railway.json` à la racine force `deploy.startCommand: npm run worker:start` (sinon Railway lance `next start`, le site, par défaut) — la commande CLI `environment edit --service-config` ne persistait pas de façon fiable, le fichier commité est la méthode qui marche.
+- Variables d'env copiées depuis `.env` local vers Railway via `railway variable set --stdin` (jamais affichées) — **attention** : les valeurs dans `.env` local sont entourées de guillemets simples (`'...'`), il faut les retirer avant de les transmettre à Railway ou la valeur est corrompue (bug rencontré : `DATABASE_URL` mal transmis via interpolation shell directe → `Can't reach database server`, corrigé en passant par stdin après avoir strippé les guillemets).
+- `SEND_LIVE_ALERTS` non défini sur Railway = mode observation actif (comportement par défaut, cohérent avec le local).
+- Logs : `railway logs --project <id> --service <id> --environment <id> --lines N` (CLI local : `source ~/.railway/env` d'abord).
 
 ## Règles
 - Langue du site : **français**
