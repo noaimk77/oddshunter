@@ -155,7 +155,7 @@ export function SubscriptionSection({
           icon={Cpu}
           eyebrow={t.bot.eyebrow}
           title={t.bot.title}
-          status={{ label: t.bot.statusLabel, tone: "soon" }}
+          status={{ label: t.bot.statusLabel, tone: "live" }}
           price={frPrice(bot)}
           perMonth={t.perMonth}
           description={t.bot.description}
@@ -165,6 +165,7 @@ export function SubscriptionSection({
           isAuthenticated={isAuthenticated}
           footnote={t.bot.footnote}
           notConfiguredLabel={t.notConfigured}
+          accent
         />
       </div>
     </div>
