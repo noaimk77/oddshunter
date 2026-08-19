@@ -1,6 +1,10 @@
 import { DEFAULT_ODDS_DROP_CONFIG, type OddsDropConfig } from "./detectors/oddsDrop";
 import { DEFAULT_ODDS_RISE_CONFIG, type OddsRiseConfig } from "./detectors/oddsRise";
 import { DEFAULT_VIG_EXPLOSION_CONFIG, type VigExplosionConfig } from "./detectors/vigExplosion";
+import {
+  DEFAULT_MULTI_BOOK_CONFIRMATION_CONFIG,
+  type MultiBookConfirmationConfig,
+} from "./detectors/multiBookConfirmation";
 import { DEFAULT_SCORE_WEIGHTS, type ScoreWeights } from "./detectors/score";
 import { DEFAULT_BETEXPLORER_CONFIG, type BetExplorerConfig } from "./providers/betexplorer";
 
@@ -51,6 +55,15 @@ export function getVigExplosionConfig(): VigExplosionConfig {
     minIncreasePercentPoints: envFloat(
       "VIG_EXPLOSION_MIN_INCREASE_PP",
       DEFAULT_VIG_EXPLOSION_CONFIG.minIncreasePercentPoints,
+    ),
+  };
+}
+
+export function getMultiBookConfirmationConfig(): MultiBookConfirmationConfig {
+  return {
+    minConfirmingBookmakers: envInt(
+      "MULTI_BOOK_MIN_CONFIRMING_BOOKMAKERS",
+      DEFAULT_MULTI_BOOK_CONFIRMATION_CONFIG.minConfirmingBookmakers,
     ),
   };
 }

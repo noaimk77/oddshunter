@@ -9,6 +9,7 @@ import {
   getOddsDropConfig,
   getOddsRiseConfig,
   getVigExplosionConfig,
+  getMultiBookConfirmationConfig,
   getBetExplorerConfig,
   getScoreWeights,
   WORKER_POLL_INTERVAL_MS,
@@ -20,6 +21,7 @@ import { detectOddsDrop, type OddsDropOutcome } from "./detectors/oddsDrop";
 import { detectOddsRise, type OddsRiseOutcome } from "./detectors/oddsRise";
 import { detectVigExplosion } from "./detectors/vigExplosion";
 import { detectMarketLock, type MarketStatus } from "./detectors/marketLock";
+import { detectMultiBookConfirmation, type BookmakerMove } from "./detectors/multiBookConfirmation";
 import { scoreSignal, type ScoreFactors, type ScoreWeights } from "./detectors/score";
 import { ingestFromProvider } from "./ingest";
 import type { MarketDataProvider } from "./providers/types";
@@ -234,6 +236,77 @@ async function openMarketLockSignal(
   return created.id;
 }
 
+/** BetExplorer detail markets are named "1X2 (BookmakerName)" — extract the human label when present. */
+function bookmakerLabelFromMarketName(marketName: string, fallbackMarketId: string): string {
+  const m = marketName.match(/\(([^)]+)\)\s*$/);
+  return m ? m[1] : `market-${fallbackMarketId}`;
+}
+
+/**
+ * MULTI_BOOK_CONFIRMATION — spec point I. Not tied to one bookmaker's
+ * Market row like the price-move signals: it confirms across several
+ * independent ones, so it's scored and stored after the main per-market
+ * loop has seen every bookmaker's ODDS_DROP outcome for this pass.
+ * `multiBookAgreement` is the one real factor here (the others stay at
+ * their documented V1 placeholders, same pattern as the other detectors).
+ */
+async function upsertMultiBookConfirmationSignal(
+  eventId: string,
+  outcome: { confirmingCount: number; bookmakers: string[]; averagePriceChangePct: number; anchor: BookmakerMove },
+  hoursToKickoff: number,
+  scoreWeights: ScoreWeights,
+): Promise<string> {
+  const factors: ScoreFactors = {
+    amplitude: clamp01(Math.abs(outcome.averagePriceChangePct) / 20),
+    speed: 0,
+    persistence: 0,
+    multiBookAgreement: clamp01(outcome.confirmingCount / 5),
+    volume: 0,
+    liquidity: 0,
+    proximityToKickoff: clamp01(1 - hoursToKickoff / 48),
+    competitionQuality: 0.5,
+    marketStatus: 0,
+    explainability: 1,
+    sourceQuality: 0.5,
+  };
+
+  const { score, reasons } = scoreSignal(factors, scoreWeights);
+  const reasonsJson = JSON.parse(JSON.stringify(reasons));
+  const dedupKey = `MULTI_BOOK_CONFIRMATION:${eventId}`;
+  const metadata = {
+    confirmingCount: outcome.confirmingCount,
+    bookmakers: outcome.bookmakers,
+    averagePriceChangePct: outcome.averagePriceChangePct,
+  };
+
+  const existing = await db.signal.findFirst({ where: { dedupKey, status: { in: ["OPEN", "UPDATED"] } } });
+
+  let signalId: string;
+  if (existing) {
+    await db.signal.update({ where: { id: existing.id }, data: { status: "UPDATED", score, reasons: reasonsJson, metadata } });
+    signalId = existing.id;
+  } else {
+    const created = await db.signal.create({
+      data: {
+        type: "MULTI_BOOK_CONFIRMATION",
+        marketId: outcome.anchor.marketId,
+        selectionId: outcome.anchor.selectionId,
+        dedupKey,
+        score,
+        reasons: reasonsJson,
+        metadata,
+      },
+    });
+    signalId = created.id;
+  }
+
+  console.log(
+    `[worker] MULTI_BOOK_CONFIRMATION event=${eventId} confirmed by ${outcome.confirmingCount} books ` +
+      `(${outcome.bookmakers.join(", ")}), avg ${outcome.averagePriceChangePct.toFixed(1)}% (score ${score})`,
+  );
+  return signalId;
+}
+
 async function runDetectionPass(): Promise<string[]> {
   const markets = await db.market.findMany({
     where: { event: { status: "upcoming" } },
@@ -246,7 +319,13 @@ async function runDetectionPass(): Promise<string[]> {
   const oddsDropConfig = getOddsDropConfig();
   const oddsRiseConfig = getOddsRiseConfig();
   const vigExplosionConfig = getVigExplosionConfig();
+  const multiBookConfig = getMultiBookConfirmationConfig();
   const scoreWeights = getScoreWeights();
+
+  // Grouped by (eventId, marketType, position) so bookmaker-independent
+  // moves on "the same real-world outcome" can be cross-referenced after
+  // every market has been visited — see upsertMultiBookConfirmationSignal.
+  const dropsByEventPosition = new Map<string, { eventId: string; kickoff: Date; moves: BookmakerMove[] }>();
 
   // Rejected-by-filter counts (spec: quality stats even without a schema
   // change for a full rejected-signal table) — one summary line per pass
@@ -271,6 +350,16 @@ async function runDetectionPass(): Promise<string[]> {
         touchedSignalIds.push(
           await upsertPriceMoveSignal("ODDS_DROP", market.id, selection.id, dropOutcome, hoursToKickoff, scoreWeights),
         );
+
+        const groupKey = `${market.event.id}:${market.type}:${selection.position}`;
+        const group = dropsByEventPosition.get(groupKey) ?? { eventId: market.event.id, kickoff: market.event.kickoff, moves: [] };
+        group.moves.push({
+          marketId: market.id,
+          selectionId: selection.id,
+          bookmakerLabel: bookmakerLabelFromMarketName(market.name, market.id),
+          priceChangePct: dropOutcome.priceChangePct,
+        });
+        dropsByEventPosition.set(groupKey, group);
       } else {
         countRejection("ODDS_DROP", dropOutcome.reason);
       }
@@ -304,6 +393,18 @@ async function runDetectionPass(): Promise<string[]> {
     } else if (lockAction.action === "resolve_signal" && existingLock) {
       await db.signal.update({ where: { id: existingLock.id }, data: { status: "RESOLVED", resolvedAt: new Date() } });
       console.log(`[worker] MARKET_LOCK resolved market=${market.id} (status back to open)`);
+    }
+  }
+
+  for (const group of dropsByEventPosition.values()) {
+    const outcome = detectMultiBookConfirmation(group.moves, multiBookConfig);
+    if (outcome.fires) {
+      const hoursToKickoff = (group.kickoff.getTime() - Date.now()) / 3_600_000;
+      touchedSignalIds.push(
+        await upsertMultiBookConfirmationSignal(group.eventId, outcome, hoursToKickoff, scoreWeights),
+      );
+    } else {
+      countRejection("MULTI_BOOK_CONFIRMATION", outcome.reason);
     }
   }
 
