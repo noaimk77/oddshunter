@@ -26,6 +26,8 @@ export function LandingHeader({
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const NAV_LINKS = [
+    { label: t.methode, href: "/methode" },
+    { label: t.outils, href: "/outils" },
     { label: t.subscription, href: "/abonnement" },
     { label: t.bookmakers, href: "/bookmakers" },
     { label: t.social, href: "/reseaux" },

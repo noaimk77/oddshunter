@@ -13,6 +13,8 @@ const PUBLIC_PATHS = new Set([
   "/abonnement",
   "/reseaux",
   "/faq",
+  "/methode",
+  "/outils",
 ]);
 const PUBLIC_API_PREFIXES = ["/api/auth", "/api/stripe/webhook"];
 

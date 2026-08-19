@@ -1,5 +1,7 @@
 const fr = {
   nav: {
+    methode: "Méthode",
+    outils: "Outils",
     subscription: "Abonnement",
     bookmakers: "Bookmakers",
     social: "Réseaux",
@@ -165,14 +167,136 @@ const fr = {
       footnote: "Abonnement ouvert dès maintenant, l'accès démarrera au lancement.",
     },
   },
-  settings: {
-    pageTitle: "Paramètres",
-    pageDescription: "Apparence du site.",
-    appearanceTitle: "Apparence",
-    darkModeTitle: "Mode sombre",
-    darkModeDescription: "Odds Hunter est conçu en thème sombre uniquement pour l'instant.",
-    languageTitle: "Langue",
-    languageDescription: "Choisis la langue d'affichage du site.",
+  methode: {
+    metaTitle: "Méthode — Oddshunter",
+    eyebrow: "Le rituel Oddshunter",
+    title1: "Ma méthode pour détecter",
+    title2: "les matchs truqués",
+    subtitle:
+      "Pas de pronos au feeling. Une routine précise, répétée chaque jour, qui transforme les mouvements de cotes anormaux en signaux exploitables.",
+    ctaVip: "Rejoindre le VIP",
+    ctaBot: "Accéder au bot",
+    stepsHeading: "Le rituel en 6 étapes",
+    stepsIntro: "Chaque signal envoyé aux abonnés a suivi ces 6 étapes. Sans exception.",
+    steps: [
+      {
+        tag: "01 · Veille",
+        title: "Radar 24/7 sur les championnats obscurs",
+        body:
+          "Le worker scanne en continu ~1 200 compétitions, en priorité celles que personne ne regarde : divisions basses d'Inde, petits championnats d'Amérique latine, ligues secondaires. C'est là que les truquages passent inaperçus.",
+      },
+      {
+        tag: "02 · Signal",
+        title: "Détection d'une chute anormale",
+        body:
+          "Un mouvement de cote au-delà des seuils (chute rapide, écart avec les books de référence, timing suspect) déclenche un `Signal` scoré 0-100 en base. Aucun humain n'intervient à cette étape.",
+      },
+      {
+        tag: "03 · Confirmation",
+        title: "Cross-check multi-sources",
+        body:
+          "Le signal est confronté à d'autres pistes : divergence avec un book sharp, volume Betfair Exchange, comportement du marché asiatique. Un seul signal ne suffit jamais — il faut au moins deux confirmations.",
+      },
+      {
+        tag: "04 · Analyse",
+        title: "Contexte du match",
+        body:
+          "Je regarde l'enjeu, le classement, l'historique récent des deux équipes, l'horaire, la couverture médiatique. Un mouvement suspect sur un match sans enjeu à 21h un mardi vaut plus qu'un mouvement sur une finale.",
+      },
+      {
+        tag: "05 · Alerte",
+        title: "Envoi ciblé, jamais massif",
+        body:
+          "Si les 4 étapes passent, l'alerte part sur le canal VIP avec le contexte, ou directement en push via le bot pour les abonnés qui veulent juste le signal brut. Pas de spam, pas 10 pronos par jour.",
+      },
+      {
+        tag: "06 · Discipline",
+        title: "Gestion de bankroll et patience",
+        body:
+          "Un match suspect n'est jamais sûr à 100%. Mise raisonnable, pas de martingale, pas de rattrapage émotionnel. La méthode marche sur la durée, pas sur un match isolé.",
+      },
+    ],
+    pillarsHeading: "Ce qui rend la méthode différente",
+    pillars: [
+      {
+        title: "Données brutes, pas d'intuition",
+        body: "Aucun pronostic \"au feeling\". Chaque alerte s'appuie sur un mouvement mesuré et horodaté en base.",
+      },
+      {
+        title: "Championnats sous le radar",
+        body: "Là où les truquages ont le plus de chances de survivre : petites divisions, matchs sans enjeu, horaires creux.",
+      },
+      {
+        title: "Transparence totale",
+        body: "Le score et les raisons du signal sont partagés avec les abonnés VIP — jamais une alerte sans justification.",
+      },
+    ],
+    ctaHeading: "Prêt à recevoir les signaux ?",
+    ctaSubtitle: "Deux façons indépendantes : le VIP pour le contexte et l'explication, le bot pour l'alerte brute et instantanée.",
+  },
+  outils: {
+    metaTitle: "Outils — Oddshunter",
+    eyebrow: "La boîte à outils",
+    title1: "Les outils que",
+    title2: "j'utilise",
+    subtitle:
+      "Le bot maison qui détecte les matchs truqués, plus les ressources que j'ouvre chaque jour pour croiser les signaux.",
+    tutoLabel: "Voir le tuto",
+    ctaLabel: "J'accède à l'outil",
+    tools: [
+      {
+        badge: "Bot maison · Oddshunter",
+        title: "Détecteur de matchs truqués",
+        tagline: "L'outil qui repère les chutes de cotes anormales avant tout le monde.",
+        description:
+          "Un worker qui surveille en continu ~1 200 compétitions (en priorité les championnats obscurs où les truquages passent inaperçus), détecte les mouvements de cotes anormaux, les score de 0 à 100, et pousse une alerte Telegram dès qu'un signal dépasse le seuil.",
+        howItWorksTitle: "Comment ça marche",
+        steps: [
+          "Le worker interroge l'API en continu et snapshoote chaque changement de prix en base.",
+          "Le détecteur `oddsDrop` calcule la variation, le rythme et l'écart avec la cote d'ouverture.",
+          "Un moteur de scoring 0-100 pondère chaque signal selon la profondeur du mouvement, le timing et le contexte.",
+          "Au-delà du seuil, le bot Telegram t'envoie l'alerte avec le nom du match, la cote de départ, la cote actuelle, et le score de confiance.",
+        ],
+        statusLabel: "État",
+        statusValue: "Bot Telegram + base de données opérationnels. Ingestion en cours de configuration.",
+        cta: "Accéder au bot",
+        ctaHref: "/abonnement#bot",
+      },
+      {
+        badge: "Canal Telegram · VIP",
+        title: "Le radar humain",
+        tagline: "Les signaux du bot, filtrés et expliqués par moi.",
+        description:
+          "Chaque alerte pertinente passe par ma vérification : contexte du match, cross-check volume Betfair, historique récent des deux équipes. Tu reçois le signal brut, plus le \"pourquoi\".",
+        howItWorksTitle: "À qui c'est destiné",
+        steps: [
+          "Aux parieurs qui veulent comprendre chaque signal, pas juste l'exécuter.",
+          "À ceux qui préfèrent 2-3 pronos ultra-qualifiés par semaine plutôt qu'un flux constant.",
+          "À ceux qui apprennent la méthode en observant les signaux en direct.",
+        ],
+        statusLabel: "État",
+        statusValue: "Actif — accès Telegram privé communiqué après abonnement.",
+        cta: "Rejoindre le VIP",
+        ctaHref: "/abonnement#vip",
+      },
+      {
+        badge: "Méthode · Article",
+        title: "La méthode Oddshunter",
+        tagline: "Comprends la logique complète avant même de t'abonner.",
+        description:
+          "Le rituel en 6 étapes que je répète chaque jour : de la veille à l'envoi de l'alerte, en passant par la confirmation multi-sources et la discipline de bankroll.",
+        howItWorksTitle: "Ce que tu vas y trouver",
+        steps: [
+          "La routine complète du radar 24/7 à l'envoi de l'alerte.",
+          "Les 3 piliers qui rendent la méthode différente des pronostiqueurs classiques.",
+          "Pourquoi je vise les championnats obscurs plutôt que la Ligue 1 ou la Premier League.",
+        ],
+        statusLabel: "Format",
+        statusValue: "Article complet, lecture ~5 min.",
+        cta: "Lire la méthode",
+        ctaHref: "/methode",
+      },
+    ],
   },
 };
 
