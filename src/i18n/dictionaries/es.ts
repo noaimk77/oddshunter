@@ -300,6 +300,15 @@ const es = {
       },
     ],
   },
+  settings: {
+    pageTitle: "Ajustes",
+    pageDescription: "Apariencia del sitio.",
+    appearanceTitle: "Apariencia",
+    darkModeTitle: "Modo oscuro",
+    darkModeDescription: "Odds Hunter solo tiene tema oscuro por ahora.",
+    languageTitle: "Idioma",
+    languageDescription: "Elige el idioma de visualización del sitio.",
+  },
 } as const satisfies Dictionary;
 
 export default es;

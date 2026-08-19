@@ -298,6 +298,15 @@ const fr = {
       },
     ],
   },
+  settings: {
+    pageTitle: "Paramètres",
+    pageDescription: "Apparence du site.",
+    appearanceTitle: "Apparence",
+    darkModeTitle: "Mode sombre",
+    darkModeDescription: "Odds Hunter est conçu en thème sombre uniquement pour l'instant.",
+    languageTitle: "Langue",
+    languageDescription: "Choisis la langue d'affichage du site.",
+  },
 };
 
 export default fr;

@@ -300,6 +300,15 @@ const ru = {
       },
     ],
   },
+  settings: {
+    pageTitle: "Настройки",
+    pageDescription: "Внешний вид сайта.",
+    appearanceTitle: "Внешний вид",
+    darkModeTitle: "Тёмная тема",
+    darkModeDescription: "Пока Oddshunter доступен только в тёмной теме.",
+    languageTitle: "Язык",
+    languageDescription: "Выбери язык отображения сайта.",
+  },
 } as const satisfies Dictionary;
 
 export default ru;

@@ -299,6 +299,15 @@ const en = {
       },
     ],
   },
+  settings: {
+    pageTitle: "Settings",
+    pageDescription: "Site appearance.",
+    appearanceTitle: "Appearance",
+    darkModeTitle: "Dark mode",
+    darkModeDescription: "Odds Hunter is dark-theme only for now.",
+    languageTitle: "Language",
+    languageDescription: "Choose the site's display language.",
+  },
 } as const satisfies Dictionary;
 
 export default en;
