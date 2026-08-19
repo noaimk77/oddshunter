@@ -40,12 +40,31 @@ function subscriptionEvent(
   };
 }
 
+// Every Stripe event id this suite ever constructs — used to scope StripeEvent
+// cleanup to rows this suite itself created. StripeEvent has no userId (it's a
+// global idempotency ledger keyed by Stripe's own event id, not per-account),
+// so an unscoped deleteMany({}) here would wipe every real webhook's
+// idempotency record — and an unscoped Entitlement wipe would strip every
+// real subscriber's access. Both happened in this file before this fix.
+const TEST_EVENT_IDS = [
+  "evt_bad_sig",
+  "evt_unknown_customer",
+  "evt_active_vip",
+  "evt_pd_1",
+  "evt_pd_2",
+  "evt_duplicate",
+  "evt_unrelated_product",
+  "evt_invoice_failed",
+];
+
 describe("POST /api/stripe/webhook", () => {
   let user: Awaited<ReturnType<typeof db.user.create>>;
 
   beforeEach(async () => {
-    await db.entitlement.deleteMany({});
-    await db.stripeEvent.deleteMany({});
+    // Entitlement cascade-deletes when its user is deleted (schema:
+    // onDelete: Cascade) — deleting by email below already cleans up this
+    // test's own entitlements without touching any other account's.
+    await db.stripeEvent.deleteMany({ where: { id: { in: TEST_EVENT_IDS } } });
     await db.user.deleteMany({ where: { email: "webhook-test@oddshunter.dev" } });
     user = await db.user.create({
       data: { email: "webhook-test@oddshunter.dev", stripeCustomerId: `cus_${crypto.randomUUID()}` },
@@ -53,8 +72,7 @@ describe("POST /api/stripe/webhook", () => {
   });
 
   afterAll(async () => {
-    await db.entitlement.deleteMany({});
-    await db.stripeEvent.deleteMany({});
+    await db.stripeEvent.deleteMany({ where: { id: { in: TEST_EVENT_IDS } } });
     await db.user.deleteMany({ where: { email: "webhook-test@oddshunter.dev" } });
   });
 
