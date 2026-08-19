@@ -1,4 +1,4 @@
-import { Activity, ArrowRight, BellRing, CreditCard, HelpCircle, Landmark, Route, Share2, Sparkles, TimerReset, Wrench } from "lucide-react";
+import { Activity, ArrowRight, BellRing, CreditCard, HelpCircle, Landmark, Share2, Sparkles, TimerReset } from "lucide-react";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { getPlanDisplays, type PlanDisplay } from "@/lib/plans";
@@ -27,8 +27,6 @@ export default async function LandingPage() {
   const bot = plans.find((p) => p.type === "BOT");
 
   const EXPLORE_CARDS = [
-    { href: "/methode", icon: Route, title: dict.nav.methode, description: dict.methode.subtitle },
-    { href: "/outils", icon: Wrench, title: dict.nav.outils, description: dict.outils.subtitle },
     { href: "/abonnement", icon: CreditCard, ...dict.home.cards.subscription },
     { href: "/bookmakers", icon: Landmark, ...dict.home.cards.bookmakers },
     { href: "/reseaux", icon: Share2, ...dict.home.cards.social },
