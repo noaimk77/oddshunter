@@ -62,7 +62,7 @@ const en = {
       {
         question: "Is the bot already active?",
         answer:
-          "Not yet. It's currently being set up. The subscription is open now to reserve your access, which will start at launch.",
+          "Yes. It monitors odds continuously and sends signals straight to Telegram as soon as you link your account from the \"My account\" page.",
       },
       {
         question: "Can I cancel anytime?",
@@ -155,16 +155,16 @@ const en = {
     bot: {
       eyebrow: "Automated bot",
       title: "Odds Hunter bot",
-      statusLabel: "Coming soon",
+      statusLabel: "Active",
       description:
-        "A bot that watches the odds and alerts you automatically, without needing to follow the channel constantly. Currently being set up.",
+        "A bot that watches the odds and alerts you automatically, without needing to follow the channel constantly.",
       features: [
         "Automatic alerts as soon as a movement crosses a threshold",
         "No manual analysis to read — just the signal",
         "Cancel anytime from your account",
       ],
       cta: "Access the bot",
-      footnote: "Subscriptions are open now, access will start at launch.",
+      footnote: "Your Telegram access starts right after payment.",
     },
   },
   settings: {

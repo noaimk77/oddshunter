@@ -62,7 +62,7 @@ const es = {
       {
         question: "¿El bot ya está activo?",
         answer:
-          "Todavía no. Está en fase de configuración. La suscripción está abierta desde ahora para reservar tu acceso, que comenzará en el lanzamiento.",
+          "Sí. Vigila las cuotas de forma continua y envía las señales directamente a Telegram en cuanto vinculas tu cuenta desde la página \"Mi cuenta\".",
       },
       {
         question: "¿Puedo cancelar en cualquier momento?",
@@ -155,16 +155,16 @@ const es = {
     bot: {
       eyebrow: "Bot automatizado",
       title: "Bot de Odds Hunter",
-      statusLabel: "Próximamente",
+      statusLabel: "Activo",
       description:
-        "Un bot que vigila las cuotas y te avisa automáticamente, sin necesidad de seguir el canal constantemente. En fase de configuración.",
+        "Un bot que vigila las cuotas y te avisa automáticamente, sin necesidad de seguir el canal constantemente.",
       features: [
         "Alertas automáticas en cuanto un movimiento supera un umbral",
         "Sin análisis manual que leer — solo la señal",
         "Cancelable en cualquier momento desde tu cuenta",
       ],
       cta: "Acceder al bot",
-      footnote: "Las suscripciones están abiertas desde ahora, el acceso comenzará en el lanzamiento.",
+      footnote: "Tu acceso a Telegram empieza justo después del pago.",
     },
   },
   settings: {

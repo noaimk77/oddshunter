@@ -9,20 +9,27 @@ import { Button } from "@/components/ui/button";
 import { ChangePasswordForm } from "@/features/account/change-password-form";
 import { LogoutButton } from "@/features/account/logout-button";
 import { TelegramLinkButton } from "@/features/account/telegram-link-button";
+import { TelegramAutoRedirect } from "@/features/account/telegram-auto-redirect";
 import { PlansAccess } from "@/features/billing/plans-access";
 import { LandingHeader } from "@/features/landing/landing-header";
 import { getLocale } from "@/i18n/get-locale";
 import { getDictionary } from "@/i18n/get-dictionary";
 import { LandingFooter } from "@/features/landing/landing-footer";
+import { createTelegramLinkToken, buildTelegramDeepLink } from "@/worker/telegram/linking";
 
 function initials(email: string) {
   return email.slice(0, 2).toUpperCase();
 }
 
-export default async function AccountPage() {
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ checkout?: string }>;
+}) {
   const locale = await getLocale();
   const dict = await getDictionary(locale);
   const sessionUser = await requireAuth();
+  const { checkout } = await searchParams;
   const [user, entitlementRows, plans, telegramLink] = await Promise.all([
     db.user.findUniqueOrThrow({ where: { id: sessionUser.id } }),
     db.entitlement.findMany({ where: { userId: sessionUser.id } }),
@@ -31,6 +38,14 @@ export default async function AccountPage() {
   ]);
 
   const entitlements = Object.fromEntries(entitlementRows.map((e) => [e.type, e.status]));
+
+  // "Pay once, land on Telegram" — right after a successful Bot checkout,
+  // skip the extra "click to link Telegram" step and send the browser
+  // straight there. Only fires once (no existing, non-revoked link yet).
+  const botJustPurchased = checkout === "success" && entitlements.BOT === "ACTIVE" && (!telegramLink || telegramLink.revokedAt);
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME;
+  const autoRedirectUrl =
+    botJustPurchased && botUsername ? buildTelegramDeepLink(botUsername, await createTelegramLinkToken(db, sessionUser.id)) : null;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -115,7 +130,9 @@ export default async function AccountPage() {
               description="Lie ton compte pour recevoir les signaux du bot directement sur Telegram."
               className="lg:col-span-3"
             >
-              {telegramLink && !telegramLink.revokedAt ? (
+              {autoRedirectUrl ? (
+                <TelegramAutoRedirect url={autoRedirectUrl} />
+              ) : telegramLink && !telegramLink.revokedAt ? (
                 <p className="text-sm text-foreground">
                   Compte lié à Telegram{telegramLink.telegramUsername ? ` (@${telegramLink.telegramUsername})` : ""}.
                 </p>
