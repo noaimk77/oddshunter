@@ -115,9 +115,11 @@ Le cahier des charges original visait Pinnacle/Bet365/SBOBET/SABA en direct + Od
 
 ## Stripe
 - Projet Stripe : "oddscope" (compte Odds.Hunter98)
-- Prix VIP : `price_1U4mxKINKReF4ckusfZmVX1W`
-- Prix BOT : `price_1U4OMTINKReF4ckuNNGT0CN0` (mode test, peut ne pas exister en live)
+- **Le site tourne en mode TEST Stripe** (`STRIPE_SECRET_KEY` = `sk_test_...`) — aucun paiement réel ne passe actuellement, et c'est voulu tant que Noaim n'a pas explicitement demandé de passer en live (bascule qui traite de l'argent réel, à ne jamais faire sans confirmation explicite).
+- Prix VIP : `price_1U4mxKINKReF4ckusfZmVX1W` (mode test, fonctionne)
+- Prix BOT : `price_1U6CzfINKReF4ckujFshOKSG` (mode test, créé le 2026-08-19 — **l'ancien `price_1U4OMTINKReF4ckuNNGT0CN0` n'existait qu'en mode live**, donc toute tentative d'abonnement au Bot échouait silencieusement côté serveur alors que le site semblait normal. Repéré uniquement parce que Noaim a testé le vrai parcours d'achat.)
 - Webhook secret dans env var `STRIPE_WEBHOOK_SECRET`
+- **Piège Netlify** : `stripe projects variables set` + `env --pull` ne met à jour que le `.env` local, **pas** les variables d'environnement Netlify en production. Il faut aussi `netlify-cli env:set <VAR> <valeur> --context production`, puis redéployer — sinon le site en prod continue de tourner avec l'ancienne valeur silencieusement.
 
 ## Providers (via stripe projects)
 - AgentMail (email transactionnel)
