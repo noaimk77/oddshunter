@@ -36,6 +36,11 @@ export interface NormalizedOddsPoint {
   price: number;
   matchedVolume?: number;
   timestamp: Date;
+  /** Defaults to "upcoming" on Event creation when omitted — every existing
+   *  pre-match provider stays untouched. A live-odds provider sets "live"
+   *  so the same detectors (ODDS_DROP etc.) that already watch pre-match
+   *  snapshots watch in-play movement too, with no detector-side change. */
+  eventStatus?: "upcoming" | "live";
 }
 
 export interface NormalizedBetfairSnapshot {

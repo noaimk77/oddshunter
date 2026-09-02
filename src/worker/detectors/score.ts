@@ -30,19 +30,60 @@ export type ScoreWeights = Record<keyof ScoreFactors, number>;
  * begin with configurable parameters and recalibrate from measured false
  * positives / CLV once real data flows (section 15), not to treat these as
  * final.
+ *
+ * Rebalanced 2026-08-20: `volume` and `liquidity` are structurally always 0
+ * for every provider currently wired in (BetExplorer/API-Football are
+ * bookmaker-odds aggregators, not an exchange — real matched-volume data
+ * only exists on Betfair Exchange, which is blocked for France). Weighting
+ * them at 0.15 combined meant no signal could ever score above ~55/100, no
+ * matter how strong — a 12.61→8.35 move and a 2.37→1.97 move landed within
+ * a few points of each other. Their weight is redistributed into the
+ * factors this pipeline can actually measure, so a genuinely strong signal
+ * (big, fast, persistent, confirmed by several bookmakers) can now reach
+ * the 80-100 range instead of being ceiling-capped by data we don't have.
  */
 export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
-  amplitude: 0.2,
-  speed: 0.1,
-  persistence: 0.15,
-  multiBookAgreement: 0.15,
-  volume: 0.1,
-  liquidity: 0.05,
-  proximityToKickoff: 0.05,
-  competitionQuality: 0.05,
-  marketStatus: 0.05,
-  explainability: 0.05, // high explainability by known game state LOWERS suspicion — invert before scoring
-  sourceQuality: 0.05,
+  amplitude: 0.25,
+  speed: 0.15,
+  persistence: 0.2,
+  multiBookAgreement: 0.2,
+  volume: 0, // no exchange data source wired in — don't pretend to weight it
+  liquidity: 0, // same as volume — Betfair Exchange only, blocked for France
+  proximityToKickoff: 0.08,
+  competitionQuality: 0.04,
+  marketStatus: 0.04,
+  explainability: 0.02, // high explainability by known game state LOWERS suspicion — invert before scoring
+  sourceQuality: 0.02,
+};
+
+/**
+ * VALUE_BET-specific weights (Noaim, 2026-08-23). The shared
+ * DEFAULT_SCORE_WEIGHTS above assumes every signal is a trend observed over
+ * several snapshots — speed/persistence/multiBookAgreement (0.55 combined
+ * weight) only make sense for that. VALUE_BET is a single-snapshot
+ * cross-bookmaker comparison: those three factors are always passed in as 0,
+ * which silently caps VALUE_BET's ceiling at ~36/100 no matter how large the
+ * edge is. Confirmed live: 102 VALUE_BET signals overnight 2026-08-22/23,
+ * every single one topped out at score 36 — including edges of 16-20%,
+ * which is actually a strong signal for this detector, not a weak one. The
+ * score number was misleading the user into reading real opportunities as
+ * noise. Same treatment as the 2026-08-20 volume/liquidity rebalance: the
+ * unusable weight is redistributed into the factors this detector actually
+ * measures (amplitude = the edge itself, proximityToKickoff = real hours-to-
+ * kickoff) plus the two placeholder factors it still carries.
+ */
+export const VALUE_BET_SCORE_WEIGHTS: ScoreWeights = {
+  amplitude: 0.75,
+  speed: 0,
+  persistence: 0,
+  multiBookAgreement: 0,
+  volume: 0,
+  liquidity: 0,
+  proximityToKickoff: 0.15,
+  competitionQuality: 0.06,
+  marketStatus: 0,
+  explainability: 0,
+  sourceQuality: 0.04,
 };
 
 const FACTOR_LABEL_FR: Record<keyof ScoreFactors, string> = {

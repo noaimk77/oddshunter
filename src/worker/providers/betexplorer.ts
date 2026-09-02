@@ -40,10 +40,40 @@ export interface BetExplorerConfig {
   minDropPercentForDetail: number;
 }
 
+/**
+ * `minDropPercentForDetail` lowered 30 -> 15 (2026-08-20): live-checked the
+ * real dropping-odds page and only 6 of 17 currently-listed matches cleared
+ * the old 30% bar — the other 11 (23-29% drops, still large moves) never
+ * got a per-bookmaker breakdown at all, so MULTI_BOOK_CONFIRMATION had far
+ * fewer matches to even look at than it should. `maxDetailFetchesPerCycle`
+ * raised 15 -> 25 to match (more matches now qualify per cycle).
+ *
+ * `maxDetailFetchesPerCycle` lowered 25 -> 8 (2026-08-23): each candidate
+ * costs 4 sequential requests (DETAIL_MARKET_CODES), so 25 candidates was
+ * up to 100 requests spaced `minRequestIntervalMs` apart — 150s+ of sleeping
+ * alone, before real request latency. That fit fine under the old 20-minute
+ * INGEST_POLL_INTERVAL_MS but silently ate 3-4 minutes of every cycle once
+ * it was dropped to 2 minutes for the Ultra plan (looked exactly like a
+ * hang: no per-step logging existed yet to show it was just working
+ * through a long, deliberately-polite queue). 8 candidates keeps this phase
+ * to roughly 30-60s so it actually fits the faster cadence.
+ */
 export const DEFAULT_BETEXPLORER_CONFIG: BetExplorerConfig = {
-  maxDetailFetchesPerCycle: 15,
+  maxDetailFetchesPerCycle: 8,
   minRequestIntervalMs: 1500,
-  minDropPercentForDetail: 30,
+  // Lowered 15 -> 5 (2026-08-25): confirmed live that a real, delivered
+  // ODDS_DROP (UAI Urquiza, 8.2% drop) fell BETWEEN the two thresholds —
+  // above ODDS_DROP's own 5% trigger, below this 15% detail cutoff — so it
+  // never got a per-bookmaker breakdown and shipped as a bare "-8.2%" with
+  // no MULTI_BOOK_CONFIRMATION metadata, no bookmaker names, nothing that
+  // reads as a real signal rather than a raw number (Noaim, 2026-08-25:
+  // "il faut qu'il y ait une logique derrière"). Matching this to
+  // ODDS_DROP's own threshold means almost every signal that's actually
+  // eligible to fire also has the richer context to back it up. Safe now
+  // that ingest.ts is batched (2026-08-24) — the detail-fetch count is no
+  // longer the free-tier database cost driver it used to be; the real
+  // ceiling is maxDetailFetchesPerCycle + request time, unchanged here.
+  minDropPercentForDetail: 5,
 };
 
 export interface DroppingOddsRow {
@@ -213,12 +243,214 @@ export function parseMatchOddsFragment(responseBody: string): BookmakerOddsPoint
   return points;
 }
 
+export interface LinedBookmakerOddsPoint extends BookmakerOddsPoint {
+  /** The total/handicap this price applies to, e.g. "2.5" or "-0.75" —
+   *  BetExplorer bundles every line into one response for `ou`/`ah`
+   *  (see parseLinedMatchOddsFragment header), so this is what keeps
+   *  different lines from being silently merged as if they were the same
+   *  market. */
+  line: string;
+}
+
+/**
+ * `ou` (Over/Under) and `ah` (Asian Handicap) responses bundle EVERY line
+ * into one fragment as a separate `<table class="... best-odds-X.XX ...">`
+ * per line (confirmed live 2026-08-25: 23 line-tables for a real `ou`
+ * fragment, from 0.50 up to 8.50; AH lines carry a sign, e.g.
+ * `best-odds--0.75` for a -0.75 handicap, `best-odds-0` for the pick'em
+ * line) — NOT one table for the whole market like `1x2`/`ha`/`dc`/`bts`.
+ * Each line-table has the identical per-bookmaker row shape the other
+ * markets already use (`tr[data-bid]`, then `td[data-odd]` in column
+ * order), so this reuses that same reading logic per table, tagging every
+ * point with the line read from the table's own class name.
+ */
+export function parseLinedMatchOddsFragment(responseBody: string): LinedBookmakerOddsPoint[] {
+  let html: string;
+  try {
+    const parsed = JSON.parse(responseBody) as { odds?: string };
+    html = parsed.odds ?? "";
+  } catch {
+    html = responseBody;
+  }
+
+  const $ = cheerio.load(html);
+  const points: LinedBookmakerOddsPoint[] = [];
+
+  $("table.table-main.sortable").each((_, table) => {
+    const $table = $(table);
+    const classAttr = $table.attr("class") ?? "";
+    const lineMatch = classAttr.match(/best-odds-(-?\d+(?:\.\d+)?)/);
+    if (!lineMatch) return; // not a per-line odds table (e.g. a stray archive/aodds table)
+    const line = lineMatch[1];
+
+    $table.find("tr[data-bid]").each((_, tr) => {
+      const $tr = $(tr);
+      const bookmakerId = $tr.attr("data-bid") ?? "";
+
+      $tr.find("td[data-odd]").each((columnIndex, td) => {
+        const $td = $(td);
+        const priceRaw = $td.attr("data-odd");
+        const price = priceRaw ? Number.parseFloat(priceRaw) : NaN;
+        if (!Number.isFinite(price)) return;
+
+        // `data-oid` is only present on some cells (the row's "best price"
+        // cell carries the fuller attribute set) — fall back to a
+        // line+bookmaker+column composite so every price still gets a
+        // stable, unique id even without it.
+        const outcomeId = $td.attr("data-oid") ?? `${line}:${bookmakerId}:${columnIndex}`;
+        const bookmakerName = $td.attr("data-bookie") ?? "";
+        const createdRaw = $td.attr("data-created");
+        let createdAt = new Date();
+        const cm = createdRaw?.match(/^(\d{2}),(\d{2}),(\d{4}),(\d{1,2}),(\d{2})$/);
+        if (cm) {
+          createdAt = new Date(Date.UTC(Number(cm[3]), Number(cm[2]) - 1, Number(cm[1]), Number(cm[4]), Number(cm[5])));
+        }
+
+        points.push({
+          bookmakerId,
+          bookmakerName: bookmakerName || `bookie-${bookmakerId}`,
+          outcomeId,
+          columnIndex,
+          price,
+          createdAt,
+          line,
+        });
+      });
+    });
+  });
+
+  return points;
+}
+
+export interface ResultRow {
+  matchId: string;
+  fullTimeHomeGoals: number;
+  fullTimeAwayGoals: number;
+  halftimeHomeGoals: number | null;
+  halftimeAwayGoals: number | null;
+}
+
+/**
+ * `/football/results/` — unlike the individual match page, this listing
+ * renders full content server-side even from a French-detected visitor;
+ * the per-match page returns nothing but a mandatory age-verification gate
+ * for FR traffic (confirmed live, 2026-08-22 — `x-country-code: FR` on the
+ * response, real content entirely replaced by the gate). This listing was
+ * the only result-bearing page that wasn't gated, so it's the one this
+ * scraper uses instead of trying to defeat the per-match gate.
+ *
+ * Score format confirmed live: `td.table-main__result` holds full-time as
+ * "H:A" (e.g. "2:2"), `td.table-main__partial` holds "(HT, FT)" (e.g.
+ * "(0:0, 2:2)") — half-time is the first pair, full-time the second
+ * (redundant with `.table-main__result` but confirms the format).
+ */
+export function parseResultsPage(html: string): ResultRow[] {
+  const $ = cheerio.load(html);
+  const rows: ResultRow[] = [];
+
+  $("table.table-main tbody tr").each((_, tr) => {
+    const $tr = $(tr);
+    const link = $tr.find("td.table-main__tt a").first();
+    const href = link.attr("href");
+    if (!href) return; // header row (tournament name), skip
+
+    const resultText = $tr.find("td.table-main__result").text();
+    const ftMatch = resultText.match(/(\d+):(\d+)/);
+    if (!ftMatch) return; // not started / postponed — no score to read yet
+
+    const partialText = $tr.find("td.table-main__partial").text();
+    const partialMatches = [...partialText.matchAll(/(\d+):(\d+)/g)];
+    const ht = partialMatches[0];
+
+    rows.push({
+      matchId: matchIdFromHref(href),
+      fullTimeHomeGoals: Number.parseInt(ftMatch[1], 10),
+      fullTimeAwayGoals: Number.parseInt(ftMatch[2], 10),
+      halftimeHomeGoals: ht ? Number.parseInt(ht[1], 10) : null,
+      halftimeAwayGoals: ht ? Number.parseInt(ht[2], 10) : null,
+    });
+  });
+
+  return rows;
+}
+
+/**
+ * Fetches today's and yesterday's finished-match results in one pass (two
+ * requests) — cheap and keyless, unlike API-Football's quota-gated
+ * fixture lookup, so there's no reason to ration this the same way.
+ * `dayOffset: 0` is today; BetExplorer's own date-navigation param is
+ * `?year=&month=&day=`.
+ */
+export async function fetchRecentResults(): Promise<Map<string, ResultRow>> {
+  const byMatchId = new Map<string, ResultRow>();
+
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+  const dateParam = (d: Date) => `?year=${d.getUTCFullYear()}&month=${String(d.getUTCMonth() + 1).padStart(2, "0")}&day=${String(d.getUTCDate()).padStart(2, "0")}`;
+
+  for (const d of [today, yesterday]) {
+    try {
+      const html = await politeFetch(`${BASE_URL}/football/results/${dateParam(d)}`);
+      for (const row of parseResultsPage(html)) byMatchId.set(row.matchId, row);
+    } catch (err) {
+      console.error(`[betexplorer] failed to fetch results for ${d.toISOString().slice(0, 10)}`, err);
+    }
+  }
+
+  return byMatchId;
+}
+
+/**
+ * Markets beyond 1X2 — verified live 2026-08-20 against a real match before
+ * adding, not assumed (BetExplorer's own market-tab codes, confirmed via
+ * `data-bet-type` in the page's own JS, then cross-checked against the
+ * actual bookmaker-row column count on `/match-odds/{id}/0/{code}/...`):
+ * - `ha` (site labels it "DNB" — Draw No Bet): 2 columns, home/away.
+ * - `dc` (Double Chance): 3 columns, 1X/12/X2.
+ * - `bts` (Both Teams To Score): 2 columns, yes/no.
+ * All three are single, unambiguous outcome sets per match — no "line"
+ * dimension, so a plain column-position mapping is correct and complete.
+ *
+ * `ou` (Over/Under) and `ah` (Asian Handicap) added 2026-08-25: their
+ * response bundles MULTIPLE totals/handicaps into one fragment as separate
+ * per-line `<table class="... best-odds-X.XX ...">` blocks (verified live —
+ * 23 line-tables in a real `ou` fragment) — `parseLinedMatchOddsFragment`
+ * reads each one and tags every point with its line, so different lines
+ * (Over 1.5 vs Over 3.5) are always distinct markets, never silently
+ * averaged together. 2 columns each (over/under, home/away for AH).
+ */
 const MARKET_COLUMN_LABELS: Record<string, string[]> = {
   "1x2": ["home", "draw", "away"],
+  ha: ["home", "away"],
+  dc: ["1x", "12", "x2"],
+  bts: ["yes", "no"],
+  ou: ["over", "under"],
+  ah: ["home", "away"],
 };
 
+const MARKET_META: Record<string, { type: string; name: string }> = {
+  "1x2": { type: "match_winner", name: "1X2" },
+  ha: { type: "dnb", name: "DNB" },
+  dc: { type: "double_chance", name: "DC" },
+  bts: { type: "btts", name: "BTTS" },
+  ou: { type: "over_under", name: "O/U" },
+  ah: { type: "asian_handicap", name: "AH" },
+};
+
+/** Market codes whose response bundles multiple lines into one fragment —
+ *  see parseLinedMatchOddsFragment. Every other market code has exactly one
+ *  outcome set per match and uses parseMatchOddsFragment instead. */
+const LINED_MARKET_CODES = new Set(["ou", "ah"]);
+
+/** See apiFootball.ts's FETCH_TIMEOUT_MS comment — a stalled request here
+ *  blocks the same shared worker loop just as badly. */
+const FETCH_TIMEOUT_MS = 15_000;
+
 async function politeFetch(url: string): Promise<string> {
-  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "text/html,application/json" } });
+  const res = await fetch(url, {
+    headers: { "User-Agent": USER_AGENT, Accept: "text/html,application/json" },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
   if (!res.ok) throw new Error(`BetExplorer request failed: ${res.status} ${res.statusText} — ${url}`);
   return res.text();
 }
@@ -232,10 +464,12 @@ export function createBetExplorerProvider(config: BetExplorerConfig = DEFAULT_BE
     name: "betexplorer",
     isConfigured: () => true, // no account/key needed — always available
     async fetchPreMatchOdds(sport: string): Promise<NormalizedOddsPoint[]> {
+      console.log("[betexplorer] fetchPreMatchOdds: starting");
       if (sport !== "football") return [];
 
       const droppingHtml = await politeFetch(`${BASE_URL}/football/dropping-odds/`);
       const rows = parseDroppingOddsPage(droppingHtml);
+      console.log(`[betexplorer] dropping-odds page: ${rows.length} rows`);
 
       const points: NormalizedOddsPoint[] = [];
       const now = new Date();
@@ -282,43 +516,92 @@ export function createBetExplorerProvider(config: BetExplorerConfig = DEFAULT_BE
         .filter((r) => r.dropPercent >= config.minDropPercentForDetail)
         .sort((a, b) => b.dropPercent - a.dropPercent)
         .slice(0, config.maxDetailFetchesPerCycle);
+      console.log(`[betexplorer] detail layer: ${candidates.length} candidate match(es) to fetch`);
 
-      for (const row of candidates) {
-        try {
-          const body = await politeFetch(`${BASE_URL}/match-odds/${row.matchId}/0/1x2/bestOdds/?lang=en`);
-          const bookiePoints = parseMatchOddsFragment(body);
-          const labels = MARKET_COLUMN_LABELS["1x2"];
+      for (const [i, row] of candidates.entries()) {
+        console.log(`[betexplorer] detail ${i + 1}/${candidates.length}: match ${row.matchId}`);
+        for (const marketCode of DETAIL_MARKET_CODES) {
+          try {
+            const body = await politeFetch(`${BASE_URL}/match-odds/${row.matchId}/0/${marketCode}/bestOdds/?lang=en`);
+            const meta = MARKET_META[marketCode];
 
-          for (const bp of bookiePoints) {
-            const position = labels[bp.columnIndex] ?? `col${bp.columnIndex}`;
-            points.push({
-              providerName: "betexplorer",
-              externalCompetitionId: `${row.country}:${row.league}`,
-              externalEventId: row.matchId,
-              externalMarketId: `${row.matchId}:1x2:${bp.bookmakerId}`,
-              externalSelectionId: `${row.matchId}:1x2:${bp.bookmakerId}:${position}`,
-              sport: "football",
-              country: row.country,
-              competitionName: row.league,
-              homeTeam: row.homeTeam,
-              awayTeam: row.awayTeam,
-              kickoff: row.kickoff ?? now,
-              marketType: "match_winner",
-              marketName: `1X2 (${bp.bookmakerName})`,
-              marketStatus: "open",
-              selectionName: position,
-              selectionPosition: position,
-              price: bp.price,
-              timestamp: bp.createdAt,
-            });
+            if (LINED_MARKET_CODES.has(marketCode)) {
+              // ou/ah: one response bundles every line — see
+              // parseLinedMatchOddsFragment. Each (line, bookmaker) pair is
+              // its own distinct market so ODDS_DROP etc. never compare
+              // Over 1.5 against Over 3.5 as if they were the same thing.
+              const labels = MARKET_COLUMN_LABELS[marketCode];
+              const linedPoints = parseLinedMatchOddsFragment(body);
+              for (const bp of linedPoints) {
+                const position = labels[bp.columnIndex] ?? `col${bp.columnIndex}`;
+                points.push({
+                  providerName: "betexplorer",
+                  externalCompetitionId: `${row.country}:${row.league}`,
+                  externalEventId: row.matchId,
+                  externalMarketId: `${row.matchId}:${marketCode}:${bp.line}:${bp.bookmakerId}`,
+                  externalSelectionId: `${row.matchId}:${marketCode}:${bp.line}:${bp.bookmakerId}:${position}`,
+                  sport: "football",
+                  country: row.country,
+                  competitionName: row.league,
+                  homeTeam: row.homeTeam,
+                  awayTeam: row.awayTeam,
+                  kickoff: row.kickoff ?? now,
+                  marketType: meta.type,
+                  marketName: `${meta.name} ${bp.line} (${bp.bookmakerName})`,
+                  marketStatus: "open",
+                  selectionName: position,
+                  selectionPosition: position,
+                  price: bp.price,
+                  timestamp: bp.createdAt,
+                });
+              }
+            } else {
+              const bookiePoints = parseMatchOddsFragment(body);
+              const labels = MARKET_COLUMN_LABELS[marketCode];
+
+              for (const bp of bookiePoints) {
+                const position = labels[bp.columnIndex] ?? `col${bp.columnIndex}`;
+                points.push({
+                  providerName: "betexplorer",
+                  externalCompetitionId: `${row.country}:${row.league}`,
+                  externalEventId: row.matchId,
+                  externalMarketId: `${row.matchId}:${marketCode}:${bp.bookmakerId}`,
+                  externalSelectionId: `${row.matchId}:${marketCode}:${bp.bookmakerId}:${position}`,
+                  sport: "football",
+                  country: row.country,
+                  competitionName: row.league,
+                  homeTeam: row.homeTeam,
+                  awayTeam: row.awayTeam,
+                  kickoff: row.kickoff ?? now,
+                  marketType: meta.type,
+                  marketName: `${meta.name} (${bp.bookmakerName})`,
+                  marketStatus: "open",
+                  selectionName: position,
+                  selectionPosition: position,
+                  price: bp.price,
+                  timestamp: bp.createdAt,
+                });
+              }
+            }
+          } catch (err) {
+            console.error(`[betexplorer] failed to fetch ${marketCode} detail for match ${row.matchId}`, err);
           }
-        } catch (err) {
-          console.error(`[betexplorer] failed to fetch detail for match ${row.matchId}`, err);
+          await sleep(config.minRequestIntervalMs);
         }
-        await sleep(config.minRequestIntervalMs);
       }
 
+      console.log(`[betexplorer] fetchPreMatchOdds: done, ${points.length} points`);
       return points;
     },
   };
 }
+
+/**
+ * Market codes fetched for the detail layer, in order. `1x2` first (highest
+ * priority — what every other detector was built and tuned against), then
+ * the three single-line markets, then `ou`/`ah` last (2026-08-25) since
+ * their ~900KB-per-request lined responses are the most expensive part of
+ * this phase — if a request budget/time limit is ever added, these are the
+ * first two to skip.
+ */
+const DETAIL_MARKET_CODES = ["1x2", "ha", "dc", "bts", "ou", "ah"] as const;
