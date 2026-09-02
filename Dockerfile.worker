@@ -1,0 +1,41 @@
+# Fly.io worker image — separate from the Next.js site build (Next runs on
+# Netlify, this Docker image is ONLY the long-lived background worker
+# defined in src/worker/index.ts).
+#
+# Two stages: `deps` installs and generates Prisma client with dev deps
+# available (tsx + prisma need them at generate time); `runtime` copies just
+# what's needed to run the worker with `tsx src/worker/index.ts`.
+
+FROM node:20-alpine AS deps
+WORKDIR /app
+
+# libc6-compat: prisma's engine binary is dynamically linked; missing on
+# vanilla alpine.
+RUN apk add --no-cache libc6-compat openssl
+
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+COPY prisma.config.ts ./
+# `npm ci` runs `postinstall` which calls `prisma generate` — needs
+# schema.prisma present (copied above) and OPENSSL_CONF at runtime.
+RUN npm ci --include=dev
+
+FROM node:20-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN apk add --no-cache libc6-compat openssl tini
+
+# Copy everything the worker needs at runtime — dev deps stay in the image
+# because tsx (the runner) and prisma engines live there. Trimming this
+# further would break `npm run worker:start`.
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/prisma ./prisma
+COPY package.json package-lock.json tsconfig.json ./
+COPY src ./src
+COPY eng.traineddata fra.traineddata ./
+
+# Fly.io shuts down containers with SIGINT/SIGTERM — tini forwards those
+# to node so the worker's process.on("SIGTERM") handlers (if any) run.
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["npm", "run", "worker:start"]

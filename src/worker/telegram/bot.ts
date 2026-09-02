@@ -2,6 +2,7 @@ import { Bot } from "grammy";
 import { db } from "@/lib/db";
 import { getActiveEntitlements } from "@/lib/guards";
 import { consumeTelegramLinkToken } from "./linking";
+import { getUserHitRate, countUserAlerts } from "../lib/leagueStats";
 
 /**
  * Command surface from spec section 8. `/trial` is intentionally omitted —
@@ -13,7 +14,7 @@ import { consumeTelegramLinkToken } from "./linking";
  */
 
 function siteUrl(path = ""): string {
-  return `${process.env.NEXT_PUBLIC_APP_URL ?? "https://oddshunter98.netlify.app"}${path}`;
+  return `${process.env.NEXT_PUBLIC_APP_URL ?? "https://oddshunter98.vercel.app"}${path}`;
 }
 
 async function findLinkedUserId(telegramChatId: string): Promise<string | null> {
@@ -120,6 +121,43 @@ export function createBot(): Bot {
     await ctx.reply(`Tes 10 dernières alertes :\n${lines.join("\n")}`);
   });
 
+  bot.command("stats", async (ctx) => {
+    const userId = await findLinkedUserId(String(ctx.chat.id));
+    if (!userId) {
+      await ctx.reply(`Compte non lié. Ouvre ${siteUrl("/account")} pour le lier.`);
+      return;
+    }
+    const [received30, hitRate30, received7, hitRate7] = await Promise.all([
+      countUserAlerts(db, userId, 30),
+      getUserHitRate(db, userId, 30),
+      countUserAlerts(db, userId, 7),
+      getUserHitRate(db, userId, 7),
+    ]);
+    if (received30 === 0) {
+      await ctx.reply("Aucune alerte reçue pour l'instant — reviens ici après quelques signaux pour voir tes stats.");
+      return;
+    }
+    const formatWindow = (label: string, received: number, hr: typeof hitRate30) => {
+      const decided = hr.wins + hr.losses;
+      if (received === 0) return `${label} — aucune alerte reçue`;
+      if (decided === 0) return `${label} — ${received} alerte(s), aucune encore résolue`;
+      const rate = hr.hitRatePct ?? 0;
+      const voidsSuffix = hr.voids > 0 ? ` (${hr.voids} remboursées)` : "";
+      return `${label} — ${received} reçues, ${hr.wins}W/${hr.losses}L (${rate}%)${voidsSuffix}`;
+    };
+    await ctx.reply(
+      [
+        "📊 <b>Tes stats Odds Hunter</b>",
+        "",
+        formatWindow("30 derniers jours", received30, hitRate30),
+        formatWindow("7 derniers jours", received7, hitRate7),
+        "",
+        "<i>Hit-rate calculé sur les alertes déjà résolues (matchs terminés). Les remboursements (push, DNB sur nul) sont exclus du dénominateur.</i>",
+      ].join("\n"),
+      { parse_mode: "HTML" },
+    );
+  });
+
   bot.command("help", async (ctx) => {
     await ctx.reply(
       [
@@ -128,6 +166,7 @@ export function createBot(): Bot {
         "/settings — voir tes filtres",
         "/status — état de ton compte et de l'abonnement",
         "/history — tes 10 dernières alertes",
+        "/stats — hit-rate de tes alertes (7j et 30j)",
         "/help — cette liste",
       ].join("\n"),
     );
