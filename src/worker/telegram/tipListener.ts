@@ -5,7 +5,7 @@ import { extractFixture, extractSelection, buildParsedTip, type ParsedTip } from
 import { resolveFixture } from "./fixtureResolver";
 import { extractOdds, extractResult } from "./ticketParser";
 import { extractTextFromPhoto } from "./tipOcr";
-import { checkConsensus, checkDirectionalConsensus } from "./tipConsensus";
+import { applyConsensusAndAlert } from "./tipConsensus";
 import { sendConsensusAlert } from "./vipGroup";
 import { shouldSendConsensusAlert } from "./alertFormat";
 import { rememberFixture, recallFixture, isFirehoseChat } from "./chatFixtureContext";
@@ -248,131 +248,61 @@ async function processCandidate(
     `[tipListener] stored ${source} pick from "${sourceChatTitle ?? sourceChatId}": ${parsed.homeTeam} vs ${parsed.awayTeam} — ${parsed.market} ${parsed.selection}`,
   );
 
-  const config = getTipConsensusConfig();
   // Strict: exact same market+selection across N chats. Directional: same
   // side of the same match across N chats (Over 4.5 / 5.5 / 6.5 all bucket
-  // together, as do the various handicap lines on the same favorite). Two
-  // independent alerts — a match can trigger the directional bucket even
-  // when no single line reaches strict consensus. Order matters: if the
-  // strict path fires, don't also fire the directional one for the same
-  // batch of tips.
-  const strict = await checkConsensus(db, parsed.fingerprint, config);
-  let fired = strict;
-  let mode: "strict" | "directional" | null = strict.triggered ? "strict" : null;
-  if (!strict.triggered) {
-    const directional = await checkDirectionalConsensus(db, parsed.fingerprint, { homeTeam: parsed.homeTeam, awayTeam: parsed.awayTeam }, config);
-    if (directional.triggered) {
-      fired = directional;
-      mode = "directional";
-    }
-  }
-  if (!mode) return;
-
-  console.log(`[tipListener] consensus reached (${mode}) for ${parsed.fingerprint} (${fired.groupCount} groupes).`);
-
-  if (!SEND_TIP_CONSENSUS_ALERTS) {
-    console.log("[tipListener] SEND_TIP_CONSENSUS_ALERTS=false — mode observation, rien envoyé.");
-    return;
-  }
-
-  // Final quality gate before hitting the VIP group. A silent drop here is
-  // strictly better than posting an OCR-broken pick like "OVER_18" or a
-  // caption fragment as a fixture side — one nonsense alert reads to a
-  // paying subscriber as reason to distrust every alert. See alertFormat.ts
-  // for the shape of picks this rejects.
-  const gate = shouldSendConsensusAlert(parsed);
-  if (!gate.ok) {
-    console.log(`[tipListener] consensus ${parsed.fingerprint} suppressed — ${gate.reason}`);
-    return;
-  }
-
-  // Odds captured at consensus time — many bet-slip screenshots and text
-  // tips state one. First look in the triggering message; if it doesn't
-  // state one (real miss 2026-09-02: Al Magd vs Abu El Matamir was cleanly
-  // parsed but the triggering post had no numeric odds), fall back on any
-  // recent tip on the same fixture that did — most tipsters posting the
-  // same pick redundantly across chats keeps a good chance one carried the
-  // odds. Best-effort: null means the odds line is just omitted from the
-  // alert rather than filled with a placeholder.
-  let oddsAtAlert = extractOdds(rawText);
-  if (oddsAtAlert === null && parsed.homeTeam && parsed.awayTeam) {
-    try {
-      const recentTips = await db.scrapedTip.findMany({
-        where: {
-          detectedAt: { gte: new Date(Date.now() - 30 * 60_000) },
-          OR: [
-            { homeTeam: parsed.homeTeam, awayTeam: parsed.awayTeam },
-            { homeTeam: parsed.awayTeam, awayTeam: parsed.homeTeam },
-          ],
-        },
-        orderBy: { detectedAt: "desc" },
-        take: 10,
-      });
-      for (const t of recentTips) {
-        const o = extractOdds(t.rawText);
-        if (o !== null && o >= 1.15 && o <= 15) {
-          oddsAtAlert = o;
-          break;
-        }
-      }
-    } catch {
-      // odds fallback is a nice-to-have — never fail the alert over it
-    }
-  }
-  const posted = await sendConsensusAlert(client, {
-    ...parsed,
-    groupCount: fired.groupCount,
-    oddsAtAlert,
+  // together, as do the various handicap lines on the same favorite). The
+  // full lifecycle — count, pick mode, observation short-circuit, quality
+  // gate, claim, send, release-on-failure, persist on the exact claimed row
+  // — lives in applyConsensusAndAlert so it is testable without a Telegram
+  // client.
+  const outcome = await applyConsensusAndAlert(db, parsed, {
+    config: getTipConsensusConfig(),
+    sendEnabled: SEND_TIP_CONSENSUS_ALERTS,
+    qualityGate: shouldSendConsensusAlert,
+    resolveOddsAtAlert: () => resolveOddsAtAlert(db, rawText, parsed),
+    send: (tip) => sendConsensusAlert(client, tip),
   });
 
-  // Persist everything the outcome resolver needs to grade this later
-  // (fixture, market, selection, odds, and the message we posted so it can
-  // reply to it). The ConsensusAlert row already exists from checkConsensus
-  // above, keyed by fingerprint — update it, don't insert a duplicate.
-  try {
-    const fingerprint = mode === "strict"
-      ? parsed.fingerprint
-      : `dir:${[parsed.homeTeam, parsed.awayTeam].map((t) => t?.toLowerCase() ?? "").sort().join("|")}|<direction>`;
-    // The directional path uses a different dedup key (see tipConsensus.ts
-    // for the exact shape). Update by the strict path's fingerprint when
-    // known; otherwise best-effort update by the most recent row matching
-    // this fixture. Silent on failure — the alert has already been sent.
-    if (mode === "strict") {
-      await db.consensusAlert.update({
-        where: { fingerprint: parsed.fingerprint },
-        data: {
-          homeTeam: parsed.homeTeam,
-          awayTeam: parsed.awayTeam,
-          market: parsed.market,
-          selection: parsed.selection,
-          oddsAtAlert,
-          sentChatId: posted?.chatId ?? null,
-          sentMessageId: posted?.messageId != null ? BigInt(posted.messageId) : null,
-        },
-      });
-    } else {
-      // Directional consensus: find the row we just created (most recent
-      // one for this fixture prefix) and update it.
-      const recent = await db.consensusAlert.findFirst({
-        where: { fingerprint: { startsWith: "dir:" }, sentAt: { gte: new Date(Date.now() - 60_000) } },
-        orderBy: { sentAt: "desc" },
-      });
-      if (recent) {
-        await db.consensusAlert.update({
-          where: { id: recent.id },
-          data: {
-            homeTeam: parsed.homeTeam,
-            awayTeam: parsed.awayTeam,
-            market: parsed.market,
-            selection: parsed.selection,
-            oddsAtAlert,
-            sentChatId: posted?.chatId ?? null,
-            sentMessageId: posted?.messageId != null ? BigInt(posted.messageId) : null,
-          },
-        });
-      }
-    }
-  } catch (err) {
-    console.error("[tipListener] failed to persist ConsensusAlert metadata:", err);
+  if (!outcome.mode) return;
+  console.log(`[tipListener] consensus reached (${outcome.mode}) for ${parsed.fingerprint} (${outcome.groupCount} groupes).`);
+  if (outcome.sent) {
+    console.log(`[tipListener] consensus alert posted to VIP group (${outcome.fingerprint}).`);
+  } else if (outcome.reason === "observation") {
+    console.log("[tipListener] SEND_TIP_CONSENSUS_ALERTS=false — mode observation, rien envoyé, consensus non consommé.");
+  } else {
+    console.log(`[tipListener] consensus ${outcome.fingerprint} non envoyé — ${outcome.reason ?? "raison inconnue"}.`);
   }
+}
+
+/**
+ * Odds to record on the alert: the triggering message's own stated value if
+ * it has one, otherwise any recent tip on the same fixture that carried a
+ * plausible value (real miss 2026-09-02: Al Magd vs Abu El Matamir parsed
+ * cleanly but the triggering post had no numeric odds). Best-effort — null
+ * just omits the odds line rather than filling a placeholder.
+ */
+async function resolveOddsAtAlert(db: PrismaClient, rawText: string, parsed: ParsedTip): Promise<number | null> {
+  const own = extractOdds(rawText);
+  if (own !== null) return own;
+  if (!parsed.homeTeam || !parsed.awayTeam) return null;
+  try {
+    const recentTips = await db.scrapedTip.findMany({
+      where: {
+        detectedAt: { gte: new Date(Date.now() - 30 * 60_000) },
+        OR: [
+          { homeTeam: parsed.homeTeam, awayTeam: parsed.awayTeam },
+          { homeTeam: parsed.awayTeam, awayTeam: parsed.homeTeam },
+        ],
+      },
+      orderBy: { detectedAt: "desc" },
+      take: 10,
+    });
+    for (const t of recentTips) {
+      const o = extractOdds(t.rawText);
+      if (o !== null && o >= 1.15 && o <= 15) return o;
+    }
+  } catch {
+    // odds fallback is a nice-to-have — never fail the alert over it
+  }
+  return null;
 }
