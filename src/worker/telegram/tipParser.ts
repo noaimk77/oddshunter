@@ -148,7 +148,7 @@ function isRealTeamName(candidate: string): boolean {
   if (words.length === 0) return false;
   // At least one word must be a real team-name-looking token — every word
   // being a country/competition word is what betrays the phantom.
-  return words.some((w) => !NON_TEAM_TOKENS.has(w) && w.length >= 3);
+  return words.some((w) => !NON_TEAM_TOKENS.has(w) && w.length >= 2);
 }
 
 /** A line reads as "Team A vs Team B" if it splits cleanly in two on a known
