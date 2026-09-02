@@ -6,6 +6,15 @@
     },
     "neon": {
       "name": "Neon"
+    },
+    "netlify": {
+      "name": "Netlify"
+    },
+    "railway": {
+      "name": "Railway"
+    },
+    "render": {
+      "name": "Render"
     }
   },
   "resources": {
@@ -28,6 +37,165 @@
       "name": "neon-postgres",
       "providerName": "Neon",
       "serviceId": "postgres"
+    },
+    "netlify-project": {
+      "name": "netlify-project",
+      "providerName": "Netlify",
+      "serviceId": "project"
+    },
+    "oddshunter": {
+      "name": "oddshunter",
+      "providerName": "Render",
+      "serviceId": "web-service"
+    },
+    "railway-hosting": {
+      "name": "railway-hosting",
+      "providerName": "Railway",
+      "serviceId": "hosting"
+    },
+    "railway-plan": {
+      "name": "railway-plan",
+      "providerName": "Railway",
+      "serviceId": "free"
+    }
+  },
+  "environments": {
+    "default": {
+      "output": ".env",
+      "resources": [
+        {
+          "resourceName": "agentmail-api"
+        },
+        {
+          "resourceName": "agentmail-plan"
+        },
+        {
+          "resourceName": "neon-plan"
+        },
+        {
+          "resourceName": "neon-postgres"
+        },
+        {
+          "resourceName": "netlify-project"
+        },
+        {
+          "resourceName": "oddshunter"
+        },
+        {
+          "resourceName": "railway-hosting"
+        },
+        {
+          "resourceName": "railway-plan"
+        }
+      ],
+      "variables": [
+        {
+          "variableName": "API_FOOTBALL_KEY",
+          "envKey": "API_FOOTBALL_KEY"
+        },
+        {
+          "variableName": "AUTH_SECRET",
+          "envKey": "AUTH_SECRET"
+        },
+        {
+          "variableName": "AUTH_URL",
+          "envKey": "AUTH_URL"
+        },
+        {
+          "variableName": "DATABASE_URL",
+          "envKey": "DATABASE_URL"
+        },
+        {
+          "variableName": "NEXT_PUBLIC_APP_URL",
+          "envKey": "NEXT_PUBLIC_APP_URL"
+        },
+        {
+          "variableName": "STRIPE_PRICE_BOT",
+          "envKey": "STRIPE_PRICE_BOT"
+        },
+        {
+          "variableName": "STRIPE_PRICE_VIP",
+          "envKey": "STRIPE_PRICE_VIP"
+        },
+        {
+          "variableName": "STRIPE_SECRET_KEY",
+          "envKey": "STRIPE_SECRET_KEY"
+        },
+        {
+          "variableName": "STRIPE_WEBHOOK_SECRET",
+          "envKey": "STRIPE_WEBHOOK_SECRET"
+        },
+        {
+          "variableName": "TELEGRAM_BOT_TOKEN",
+          "envKey": "TELEGRAM_BOT_TOKEN"
+        },
+        {
+          "variableName": "TELEGRAM_BOT_USERNAME",
+          "envKey": "TELEGRAM_BOT_USERNAME"
+        },
+        {
+          "variableName": "TELEGRAM_VIP_INVITE_LINK",
+          "envKey": "TELEGRAM_VIP_INVITE_LINK"
+        },
+        {
+          "variableName": "THE_ODDS_API_KEY",
+          "envKey": "THE_ODDS_API_KEY"
+        }
+      ]
+    }
+  },
+  "variables": {
+    "API_FOOTBALL_KEY": {
+      "name": "API_FOOTBALL_KEY",
+      "backendId": "fprjvar_61VF90pw25JkqaAwg16VDilxQFDPp9yDAk1l2dCemDd2"
+    },
+    "AUTH_SECRET": {
+      "name": "AUTH_SECRET",
+      "backendId": "fprjvar_61VERA2A0ryv7QxuE16VDilxQFDPp9yDAk1l2dCemOyG"
+    },
+    "AUTH_URL": {
+      "name": "AUTH_URL",
+      "backendId": "fprjvar_61VERAIXcQsrKdWuj16VDilxQFDPp9yDAk1l2dCemG6a"
+    },
+    "DATABASE_URL": {
+      "name": "DATABASE_URL",
+      "backendId": "fprjvar_61VERA0gzOTmBvs2e16VDilxQFDPp9yDAk1l2dCem9eq"
+    },
+    "NEXT_PUBLIC_APP_URL": {
+      "name": "NEXT_PUBLIC_APP_URL",
+      "backendId": "fprjvar_61VERAEei8ShE2UtS16VDilxQFDPp9yDAk1l2dCemFrU"
+    },
+    "STRIPE_PRICE_BOT": {
+      "name": "STRIPE_PRICE_BOT",
+      "backendId": "fprjvar_61VERACs8a0d70oEA16VDilxQFDPp9yDAk1l2dCem2LQ"
+    },
+    "STRIPE_PRICE_VIP": {
+      "name": "STRIPE_PRICE_VIP",
+      "backendId": "fprjvar_61VERA98w9zlTvtvM16VDilxQFDPp9yDAk1l2dCem5PE"
+    },
+    "STRIPE_SECRET_KEY": {
+      "name": "STRIPE_SECRET_KEY",
+      "backendId": "fprjvar_61VERA5xLxPIxWmA516VDilxQFDPp9yDAk1l2dCemDn6"
+    },
+    "STRIPE_WEBHOOK_SECRET": {
+      "name": "STRIPE_WEBHOOK_SECRET",
+      "backendId": "fprjvar_61VERA7QwO9bhCYVh16VDilxQFDPp9yDAk1l2dCemCqO"
+    },
+    "TELEGRAM_BOT_TOKEN": {
+      "name": "TELEGRAM_BOT_TOKEN",
+      "backendId": "fprjvar_61VF86YdN5xeADm0z16VDilxQFDPp9yDAk1l2dCemGyu"
+    },
+    "TELEGRAM_BOT_USERNAME": {
+      "name": "TELEGRAM_BOT_USERNAME",
+      "backendId": "fprjvar_61VF80ZbELFdtBTWR16VDilxQFDPp9yDAk1l2dCem7Xc"
+    },
+    "TELEGRAM_VIP_INVITE_LINK": {
+      "name": "TELEGRAM_VIP_INVITE_LINK",
+      "backendId": "fprjvar_61VEu1de4Jq7lFHzb16VDilxQFDPp9yDAk1l2dCemGEC"
+    },
+    "THE_ODDS_API_KEY": {
+      "name": "THE_ODDS_API_KEY",
+      "backendId": "fprjvar_61VF8cb0QKhqbDt7A16VDilxQFDPp9yDAk1l2dCemTOq"
     }
   }
 }

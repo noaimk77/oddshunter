@@ -36,13 +36,17 @@ model User {
 
   stripeCustomerId String? @unique
 
-  accounts       Account[]
-  sessions       Session[]
-  entitlements   Entitlement[]
-  watchlistItems WatchlistItem[]
-  alertRules     AlertRule[]
-  notifications  Notification[]
-  resetTokens    PasswordResetToken[]
+  accounts          Account[]
+  sessions          Session[]
+  entitlements      Entitlement[]
+  watchlistItems    WatchlistItem[]
+  alertRules        AlertRule[]
+  notifications     Notification[]
+  resetTokens       PasswordResetToken[]
+  telegramLink      TelegramLink?
+  telegramLinkTokens TelegramLinkToken[]
+  signalDeliveries  SignalDelivery[]
+  strategyPickDeliveries StrategyPickDelivery[]
 }
 
 model Account {
@@ -244,24 +248,42 @@ model Competition {
 
   provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
   events   Event[]
+  strategyStats StrategyStats[]
 
   @@unique([providerId, externalId])
 }
 
 /// status: "upcoming" | "live" | "finished"
 model Event {
-  id            String   @id @default(cuid())
-  competitionId String
-  externalId    String
-  homeTeam      String
-  awayTeam      String
-  kickoff       DateTime
-  status        String
-  homeScore     Int?
-  awayScore     Int?
+  id                String   @id @default(cuid())
+  competitionId     String
+  externalId        String
+  homeTeam          String
+  awayTeam          String
+  kickoff           DateTime
+  status            String
+  homeScore         Int?
+  awayScore         Int?
+  /// Needed separately from the full-time score above to resolve "(1st
+  /// Half)" markets (e.g. Over/Under HT) against the right total — added
+  /// alongside the outcome-tracking pass, 2026-08-22.
+  halftimeHomeScore Int?
+  halftimeAwayScore Int?
+  /// Sorted array of elapsed-minute integers for every goal scored in the
+  /// first half (both teams combined, order only — no home/away split
+  /// needed since every strategy so far is a total-goals Over/Under).
+  /// Populated by a separate backfill pass (historicalCollector.backfillGoalMinutes)
+  /// since API-Football's bulk /fixtures?league&season&status=FT list omits
+  /// `events` entirely — one extra call per fixture via /fixtures/events.
+  /// Null means "not backfilled yet", distinct from an empty array which
+  /// means "backfilled, no first-half goals" — see strategyStats.ts's
+  /// conditional hit-rate calculation, which skips null rows entirely
+  /// rather than treating them as scoreless.
+  firstHalfGoalMinutes Json?
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   markets     Market[]
+  strategyPicks StrategyPick[]
 
   @@unique([competitionId, externalId])
   @@index([kickoff])
@@ -280,6 +302,7 @@ model Market {
 
   event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
   selections Selection[]
+  signals    Signal[]
 
   @@unique([eventId, externalId])
 }
@@ -294,6 +317,7 @@ model Selection {
   market  Market           @relation(fields: [marketId], references: [id], onDelete: Cascade)
   odds    OddsSnapshot[]
   volumes VolumeSnapshot[]
+  signals Signal[]
 
   @@unique([marketId, externalId])
 }
@@ -318,4 +342,320 @@ model VolumeSnapshot {
   selection Selection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
 
   @@index([selectionId, timestamp])
+}
+
+// ---------------------------------------------------------------------------
+// Detection engine — explainable signals produced by the worker. `Signal`
+// only records what the engine computed; whether/how it reached a user goes
+// through `SignalDelivery`, gated by an active BOT entitlement and the
+// user's AlertRule filters. Never written with fabricated data — only from
+// snapshots a connected provider actually produced.
+// ---------------------------------------------------------------------------
+
+/// type: "ODDS_DROP" | "LINE_MOVE" | "VIG_EXPLOSION" | "MULTI_BOOK_CONFIRMATION"
+///     | "MARKET_LOCK" | "VOLUME_SPIKE" | "CORRECTION_FILTER"
+///     | "GAME_STATE_FILTER" | "UNEXPLAINED_LIVE_MOVE"
+/// status: "OPEN" (still strengthening) | "UPDATED" | "RESOLVED" | "REJECTED" (filtered out, kept for QA)
+model Signal {
+  id              String    @id @default(cuid())
+  type            String
+  marketId        String
+  selectionId     String?
+  status          String    @default("OPEN")
+  /// Stable key identifying "the same underlying move" so a strengthening
+  /// signal updates an existing alert instead of spamming a new one — see
+  /// spec section 9 (dedup / update-in-place).
+  dedupKey        String
+  score           Int
+  /// Ordered list of { factor, weight, value, contribution } — every
+  /// component that fed the score, logged so thresholds can be recalibrated
+  /// without redeploying (spec section 6: no fixed weighting is confirmed).
+  reasons         Json
+  openingPrice    Float?
+  currentPrice    Float?
+  priceChangePct  Float?
+  /// Free-form: confirming bookmakers, line-move detail, Betfair back/lay
+  /// price/spread/volume/liquidity, live match context (score, minute,
+  /// events) — only the fields relevant to this signal's `type`.
+  metadata        Json?
+  firstDetectedAt DateTime  @default(now())
+  lastUpdatedAt   DateTime  @updatedAt
+  resolvedAt      DateTime?
+
+  market     Market           @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  selection  Selection?       @relation(fields: [selectionId], references: [id], onDelete: SetNull)
+  deliveries SignalDelivery[]
+  outcome    SignalOutcome?
+
+  @@index([marketId, dedupKey])
+  @@index([status, firstDetectedAt])
+}
+
+/// Whether a signal's implied pick actually happened, checked once the
+/// match is over — the missing feedback loop that would otherwise let a
+/// score threshold get sold to subscribers without ever being validated
+/// against real results (Noaim, 2026-08-22). V1 only resolves market types
+/// it can interpret unambiguously (1X2, Over/Under incl. "(1st Half)") on
+/// events sourced from API-Football (pre-match or live) — BetExplorer
+/// doesn't have a final-score fetch wired yet, so those signals are left
+/// unresolved rather than guessed. `selectionWon: null` means "checked, but
+/// this signal's market type isn't supported yet", not "lost".
+model SignalOutcome {
+  id             String    @id @default(cuid())
+  signalId       String    @unique
+  finalHomeScore Int?
+  finalAwayScore Int?
+  selectionWon   Boolean?
+  checkedAt      DateTime  @default(now())
+
+  signal Signal @relation(fields: [signalId], references: [id], onDelete: Cascade)
+}
+
+/// channel: "TELEGRAM" | "IN_APP" | "EMAIL" — one row per (signal, user,
+/// channel) so an update-in-place edits `messageRef` instead of re-sending.
+model SignalDelivery {
+  id         String   @id @default(cuid())
+  signalId   String
+  userId     String
+  channel    String
+  sentAt     DateTime @default(now())
+  /// Provider-side message id (e.g. Telegram message_id) so a strengthening
+  /// signal can edit the existing message instead of sending a duplicate.
+  messageRef String?
+
+  signal Signal @relation(fields: [signalId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([signalId, userId, channel])
+}
+
+// ---------------------------------------------------------------------------
+// Telegram account linking — a signed, single-use, expiring token generated
+// from the account page pairs a web account to a Telegram chat. The bot
+// never trusts a chat id supplied any other way.
+// ---------------------------------------------------------------------------
+
+model TelegramLink {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  telegramChatId   String    @unique
+  telegramUsername String?
+  linkedAt         DateTime  @default(now())
+  revokedAt        DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model TelegramLinkToken {
+  token     String    @id
+  userId    String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Tip consensus — a separate pipeline from the odds-movement detection engine
+// above. Reads every group the linked personal Telegram account belongs to
+// (via MTProto, not the bot API) and, when the same pick surfaces from 4+
+// distinct source chats within a short window, reposts it to the VIP group.
+// ---------------------------------------------------------------------------
+
+/// source: "TEXT" (message caption) | "IMAGE" (OCR'd from a photo) — kept
+/// distinct because most real tip channels post the match/market as a bet
+/// slip screenshot and only a terse confirmation as text, so the two need
+/// separate quality tracking as OCR accuracy gets tuned.
+model ScrapedTip {
+  id              String   @id @default(cuid())
+  sourceChatId    String
+  sourceChatTitle String?
+  source          String   @default("TEXT")
+  rawText         String
+  /// Normalized "same pick" key: team names + market + selection, lowercased
+  /// and accent/whitespace-stripped — see tipParser.ts. Two tipsters phrasing
+  /// the same pick differently must still collapse to one fingerprint.
+  fingerprint     String
+  homeTeam        String?
+  awayTeam        String?
+  market          String?
+  selection       String?
+  detectedAt      DateTime @default(now())
+
+  @@index([fingerprint, detectedAt])
+}
+
+/// One row per fingerprint that has ever reached the consensus threshold —
+/// prevents re-posting the same pick to the VIP group on every subsequent
+/// matching message.
+/// A consensus alert posted to the VIP group. The core fields (fingerprint,
+/// groupCount, sentAt) claim the alert once and prevent duplicates; the
+/// rest carry enough context for the outcome-resolution pass to look the
+/// match back up, judge whether the pick won, and reply to the original
+/// message so the user sees the result inline.
+model ConsensusAlert {
+  id            String    @id @default(cuid())
+  fingerprint   String    @unique
+  groupCount    Int
+  sentAt        DateTime  @default(now())
+  /// Original pick, captured at post time so the resolver can grade it
+  /// without re-fingerprinting.
+  homeTeam      String?
+  awayTeam      String?
+  market        String?
+  selection     String?
+  /// Decimal odds extracted from the tip that triggered the consensus,
+  /// when it stated one (many bet-slip screenshots do). Null when no odds
+  /// were found — the follow-up just omits the line then.
+  oddsAtAlert   Float?
+  /// Telegram chat + message id of the alert we posted — the resolver
+  /// replies to this message so the outcome shows up threaded, not as a
+  /// stray "✅ WON" floating in the group.
+  sentChatId    String?
+  sentMessageId BigInt?
+  /// Outcome pipeline state.
+  resolvedAt    DateTime?
+  homeScore     Int?
+  awayScore     Int?
+  /// "WON" | "LOST" | "VOID" | "UNRESOLVED". Null until the resolver runs.
+  outcome       String?
+
+  @@index([outcome, sentAt])
+}
+
+/// Every ticket-shaped message seen in any joined group, independent of the
+/// consensus pipeline above — a ticket doesn't need an identifiable fixture
+/// to be counted here, just an odds value (and, when stated, a result), so
+/// per-group stats ("tickets today", "hit rate this month") aren't limited
+/// to the subset of messages clean enough to fingerprint. Noaim, 2026-08-22.
+model GroupTicket {
+  id              String   @id @default(cuid())
+  sourceChatId    String
+  sourceChatTitle String?
+  source          String   @default("TEXT")
+  rawText         String
+  homeTeam        String?
+  awayTeam        String?
+  market          String?
+  selection       String?
+  odds            Float?
+  /// "WON" | "LOST" | "PENDING" — PENDING when this message stated no
+  /// outcome marker (✅/❌/etc.) itself; V1 doesn't yet link a later
+  /// result-only reply back to an earlier PENDING ticket.
+  result          String   @default("PENDING")
+  detectedAt      DateTime @default(now())
+
+  @@index([sourceChatId, detectedAt])
+}
+
+/// Last fixture mentioned per source chat — lets a terse follow-up message
+/// with no team names ("W2", "Victoire de Cuba") resolve against whichever
+/// match that same group posted most recently (an image, usually), instead
+/// of being silently dropped for lack of context. Noaim's call, 2026-08-22.
+model ChatFixtureContext {
+  sourceChatId String   @id
+  homeTeam     String
+  awayTeam     String
+  updatedAt    DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Strategy engine — the InPlay-Alerts-style product pivot (Noaim, 2026-08-23).
+// Replaces the "detect suspicious odds moves" thesis with "surface statistical
+// value bets based on historical league hit-rates". Two-model design:
+//
+//  - StrategyStats: precomputed per (strategyName × competition) — the raw
+//    "in this league, this bet hits X% of the time over N samples" number,
+//    recomputed periodically as new historical fixtures roll in.
+//  - StrategyPick: one row per alert fired, snapshotted with the stats
+//    that justified the alert at trigger time (hitRateAtTrigger,
+//    occurrencesAtTrigger, historyStreak) so a subscriber can always audit
+//    "why did the bot send me this?" — plus the HT resolution that either
+//    validates or refutes the pick.
+// ---------------------------------------------------------------------------
+
+model StrategyStats {
+  id             String   @id @default(cuid())
+  /// Kebab-case identifier — "over_0_5_ht_by_league", "over_1_5_ht_by_league",
+  /// etc. Grouped independently per strategy so a low-sample new strategy
+  /// doesn't pollute an established one's dashboard.
+  strategyName   String
+  competitionId  String
+  /// Seasons the sample was drawn from — stored so a recomputed stats row
+  /// can be validated later ("was this hit-rate computed from 2024+2025 or
+  /// just 2025?") without a separate audit log.
+  seasons        Json
+  occurrences    Int
+  hits           Int
+  hitRatePct     Float
+  /// Config threshold the strategy uses to gate delivery — same value stored
+  /// with the stats so an alert message can honestly say "cote minimale 1.50
+  /// visée" without checking the code.
+  minOdds        Float    @default(1.5)
+  lastComputedAt DateTime @default(now())
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  picks       StrategyPick[]
+
+  @@unique([strategyName, competitionId])
+  @@index([strategyName, hitRatePct])
+}
+
+model StrategyPick {
+  id                   String    @id @default(cuid())
+  strategyName         String
+  eventId              String
+  triggeredAt          DateTime  @default(now())
+  /// Match state at trigger time — snapshotted so the pick can be replayed
+  /// against reality even after the live state has moved on.
+  triggeredAtMinute    Int
+  triggeredAtScore     String
+  firstGoalMinute      Int?
+  /// The odds we alerted on — the "cote proposée" the message shows. Bookmaker
+  /// name kept when known so the subscriber knows where the price came from.
+  bookmakerOdds        Float
+  bookmakerName        String?
+  /// The stats snapshot that justified this pick, frozen at trigger time.
+  hitRateAtTrigger     Float
+  occurrencesAtTrigger Int
+  /// Formatted "V V V V V" of the last N resolved picks for this strategy
+  /// on this competition, at trigger time — matches InPlay Alerts' rendering.
+  historyStreak        String
+  currentLosingStreak  Int       @default(0)
+
+  /// HT resolution — filled by htResultTracker once the match reaches HT.
+  resolvedAt   DateTime?
+  htHomeGoals  Int?
+  htAwayGoals  Int?
+  hit          Boolean?
+
+  strategyStatsId String?
+  strategyStats   StrategyStats? @relation(fields: [strategyStatsId], references: [id], onDelete: SetNull)
+  event           Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  deliveries      StrategyPickDelivery[]
+
+  @@unique([strategyName, eventId])
+  @@index([resolvedAt])
+  @@index([strategyName, triggeredAt])
+}
+
+/// Same shape as SignalDelivery — one row per (pick, user, channel), stores
+/// the Telegram message id so the HT_SCORE RESULT edit lands on the exact
+/// message the subscriber saw.
+model StrategyPickDelivery {
+  id             String   @id @default(cuid())
+  strategyPickId String
+  userId         String
+  channel        String   @default("TELEGRAM")
+  sentAt         DateTime @default(now())
+  messageRef     String?
+  resultPosted   Boolean  @default(false)
+
+  strategyPick StrategyPick @relation(fields: [strategyPickId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([strategyPickId, userId, channel])
 }

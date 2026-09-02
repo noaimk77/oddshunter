@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
 import { db } from "@/lib/db";
 import { PRICE_TO_ENTITLEMENT } from "@/lib/stripe";
+import { revokeTelegramLink } from "@/worker/telegram/linking";
 
 /** Maps Stripe's subscription lifecycle onto our simpler internal states. */
 export function mapStripeStatus(status: Stripe.Subscription.Status): string {
@@ -56,4 +57,11 @@ export async function syncEntitlementFromSubscription(subscription: Stripe.Subsc
       currentPeriodEnd,
     },
   });
+
+  // Cancellation/expiry must cut Telegram delivery immediately, not just
+  // stop new alerts from being gated at send time (spec section 12.3 / 19
+  // acceptance criterion: "coupure après résiliation testée").
+  if (type === "BOT" && status !== "ACTIVE") {
+    await revokeTelegramLink(db, user.id);
+  }
 }

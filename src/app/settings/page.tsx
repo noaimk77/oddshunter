@@ -1,11 +1,14 @@
-import { Moon } from "lucide-react";
+import { Globe, Moon } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { requireAuth } from "@/lib/guards";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { Switch } from "@/components/ui/switch";
 import { LandingHeader } from "@/features/landing/landing-header";
+import { getLocale } from "@/i18n/get-locale";
+import { getDictionary } from "@/i18n/get-dictionary";
 import { LandingFooter } from "@/features/landing/landing-footer";
+import { LanguageSetting } from "@/features/settings/language-setting";
 
 function SettingRow({
   icon: Icon,
@@ -35,27 +38,39 @@ function SettingRow({
 }
 
 export default async function SettingsPage() {
+  const locale = await getLocale();
+  const dict = await getDictionary(locale);
   await requireAuth();
   const session = await auth();
+  const s = dict.settings;
 
   return (
     <div className="flex min-h-screen flex-col">
-      <LandingHeader isAuthenticated={Boolean(session?.user)} />
+      <LandingHeader isAuthenticated={Boolean(session?.user)} locale={locale} t={dict.nav} />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6">
-        <PageHeader eyebrow="Paramètres" title="Paramètres" description="Apparence du site." />
+        <PageHeader eyebrow={s.pageTitle} title={s.pageTitle} description={s.pageDescription} />
 
         <div className="grid grid-cols-1 gap-4">
-          <SectionCard title="Apparence">
+          <SectionCard title={s.languageTitle}>
+            <SettingRow
+              icon={Globe}
+              title={s.languageTitle}
+              description={s.languageDescription}
+              control={<LanguageSetting locale={locale} />}
+            />
+          </SectionCard>
+
+          <SectionCard title={s.appearanceTitle}>
             <SettingRow
               icon={Moon}
-              title="Mode sombre"
-              description="Odds Hunter est conçu en thème sombre uniquement pour l'instant."
+              title={s.darkModeTitle}
+              description={s.darkModeDescription}
               control={<Switch defaultChecked disabled size="sm" />}
             />
           </SectionCard>
         </div>
       </main>
-      <LandingFooter />
+      <LandingFooter t={dict.footer} />
     </div>
   );
 }
