@@ -108,6 +108,15 @@ export async function checkConsensus(
  * (match, direction) is enough; ConsensusAlert's unique fingerprint index
  * makes this concurrency-safe the same way as the strict path. Same
  * `{ claim: false }` option: measure without claiming.
+ *
+ * The key alone is not sufficient though — the sortedSlugs are built from
+ * the CURRENT tip's team names, which can be spelled differently across
+ * chats ("NK Sesvete U19" / "NK Radnik Sesvete U19" / plain "Sesvete"). So
+ * BEFORE claiming, we also fuzzy-match the fixture against every
+ * ConsensusAlert row from the last 24h whose selection carries the same
+ * direction: a hit there means we already posted this pick in the VIP
+ * under a different spelling, and firing again would spam the group with
+ * "Plus de 3.5 buts" three times for the same match (Noaim, 2026-09-05).
  */
 export async function checkDirectionalConsensus(
   db: PrismaClient,
@@ -151,6 +160,38 @@ export async function checkDirectionalConsensus(
     return { triggered: false, groupCount, fingerprint: dirFingerprint };
   }
 
+  // Cross-spelling dedup: an alert for the SAME direction on this fixture
+  // was already sent under a different team-name spelling, don't spam.
+  // 24h look-back matches the tip window (see TIP_CONSENSUS_WINDOW_MINUTES).
+  const dedupSince = new Date(Date.now() - 24 * 3600_000);
+  const recentSameDir = await db.consensusAlert.findMany({
+    where: {
+      sentAt: { gte: dedupSince },
+      // Only rows with the fields we need to check direction + fuzzy match.
+      homeTeam: { not: null },
+      awayTeam: { not: null },
+      market: { not: null },
+      selection: { not: null },
+    },
+    select: { fingerprint: true, homeTeam: true, awayTeam: true, market: true, selection: true },
+  });
+  for (const existing of recentSameDir) {
+    if (existing.fingerprint === dirFingerprint) continue; // will be caught by unique-index claim path
+    if (!existing.homeTeam || !existing.awayTeam || !existing.market || !existing.selection) continue;
+    if (!fuzzyFixtureMatch(fixture, { homeTeam: existing.homeTeam, awayTeam: existing.awayTeam })) continue;
+    const dir = getDirectionKey(existing.market, existing.selection, { homeTeam: existing.homeTeam, awayTeam: existing.awayTeam });
+    if (dir === currentDirection) {
+      return {
+        triggered: false,
+        groupCount,
+        fingerprint: dirFingerprint,
+        sample: sample
+          ? { homeTeam: sample.homeTeam, awayTeam: sample.awayTeam, market: sample.market, selection: sample.selection }
+          : undefined,
+      };
+    }
+  }
+
   if (claim) {
     const { claimed } = await claimConsensusAlert(db, dirFingerprint, groupCount);
     if (!claimed) return { triggered: false, groupCount, fingerprint: dirFingerprint };
@@ -190,18 +231,21 @@ export interface ConsensusApplyOptions {
   config: { minGroups: number; windowMinutes: number };
   /** `SEND_TIP_CONSENSUS_ALERTS`. When false: measure only, claim nothing. */
   sendEnabled: boolean;
-  /** Posts to the VIP group. Only invoked for the caller that wins the claim. */
+  /** Posts to the VIP group. Only invoked for the caller that wins the claim.
+   *  Returning null (e.g. a provider sanity-check rejected the pick) releases
+   *  the claim so a later message can retry. */
   send: (
-    tip: ParsedTip & { groupCount: number; oddsAtAlert: number | null },
+    tip: ParsedTip & { groupCount: number; oddsAtAlert: number | null; oddsSamples: number[] },
   ) => Promise<{ chatId: string; messageId: number } | null>;
   /** Final quality gate (rejects OCR-broken picks). Optional; default: allow. */
   qualityGate?: (tip: ParsedTip) => { ok: boolean; reason?: string };
   /**
-   * Lazily resolves the odds to record on the alert. Only called for the
-   * caller that will actually send, so its DB lookup never runs on the
-   * common "no consensus" path.
+   * Lazily resolves every distinct labeled odds the contributing groups
+   * stated (for the "Cotes au signalement" spread — never averaged). Only
+   * called for the caller that will actually send, so its DB lookup never
+   * runs on the common "no consensus" path.
    */
-  resolveOddsAtAlert?: () => Promise<number | null>;
+  resolveOddsSamplesAtAlert?: () => Promise<number[]>;
 }
 
 /**
@@ -218,19 +262,75 @@ export interface ConsensusApplyOptions {
  * outage can permanently consume a consensus. The metadata write addresses
  * the row by its unique fingerprint, never "the most recent dir: row".
  */
+/**
+ * True when a consensus alert for the SAME DIRECTION on a fuzzy-matched
+ * version of this fixture was already DELIVERED in the last `hours` hours.
+ * Covers BOTH the strict and directional paths — the strict path's
+ * unique-fingerprint latch only blocks byte-identical fingerprints, so OCR
+ * spelling drift between channels ("Trnje U19 vs Kustosija U19" vs "Trnje
+ * vs Kustosija", "Plus de 3,5" vs "Plus de 2,5") kept slipping duplicates
+ * into the VIP group (Noaim 2026-09-06: "je t'ai dit de ne plus envoyer de
+ * doubles"). On a DB error it returns true — a missed alert beats a
+ * duplicate, per Noaim's stated priority.
+ */
+async function alreadyDeliveredSameDirection(db: PrismaClient, parsed: ParsedTip, hours = 24): Promise<boolean> {
+  const dir = getDirectionKey(parsed.market, parsed.selection, { homeTeam: parsed.homeTeam, awayTeam: parsed.awayTeam });
+  if (!dir) return false;
+  let rows: { homeTeam: string | null; awayTeam: string | null; market: string | null; selection: string | null }[];
+  try {
+    rows = await db.consensusAlert.findMany({
+      where: {
+        sentAt: { gte: new Date(Date.now() - hours * 3600_000) },
+        sentMessageId: { not: null }, // actually posted, not a rolled-back claim
+        homeTeam: { not: null },
+        awayTeam: { not: null },
+        market: { not: null },
+        selection: { not: null },
+      },
+      select: { homeTeam: true, awayTeam: true, market: true, selection: true },
+    });
+  } catch (err) {
+    console.error("[tipConsensus] dedup query failed — suppressing this alert to avoid a possible duplicate:", err instanceof Error ? err.message : err);
+    return true;
+  }
+  for (const r of rows) {
+    if (!r.homeTeam || !r.awayTeam || !r.market || !r.selection) continue;
+    if (!fuzzyFixtureMatch(parsed, { homeTeam: r.homeTeam, awayTeam: r.awayTeam })) continue;
+    if (getDirectionKey(r.market, r.selection, { homeTeam: r.homeTeam, awayTeam: r.awayTeam }) === dir) return true;
+  }
+  return false;
+}
+
+/**
+ * One canonical claim key per (match, betting direction) — `dir:<sorted
+ * fuzzy team slugs>|<direction>`, identical to checkDirectionalConsensus's
+ * dedup key. Used as THE claim fingerprint for both the strict and
+ * directional paths, so the unique index on ConsensusAlert.fingerprint
+ * blocks a second alert for the same match + same direction ATOMICALLY,
+ * whatever the exact line ("Plus de 3,5" then "Plus de 2,5") or spelling —
+ * no race window (Noaim 2026-09-06: "les doublons, tu arrêtes… une seule
+ * alerte, ça suffit"). Falls back to the raw pick fingerprint only when the
+ * direction can't be derived (unusual market shape).
+ */
+export function directionalClaimKey(parsed: ParsedTip): string {
+  const dir = getDirectionKey(parsed.market, parsed.selection, { homeTeam: parsed.homeTeam, awayTeam: parsed.awayTeam });
+  if (!dir) return parsed.fingerprint;
+  const sortedSlugs = [slugTeam(parsed.homeTeam), slugTeam(parsed.awayTeam)].sort().join("|");
+  return `dir:${sortedSlugs}|${dir}`;
+}
+
 export async function applyConsensusAndAlert(
   db: PrismaClient,
   parsed: ParsedTip,
   opts: ConsensusApplyOptions,
 ): Promise<ConsensusApplyResult> {
-  const { config, sendEnabled, send, qualityGate, resolveOddsAtAlert } = opts;
+  const { config, sendEnabled, send, qualityGate, resolveOddsSamplesAtAlert } = opts;
 
   // 1. Measure only. Claiming here is what let observation mode and failed
   //    sends burn a consensus for good.
   const strict = await checkConsensus(db, parsed.fingerprint, config, { claim: false });
   let fired = strict;
   let mode: ConsensusMode | null = strict.triggered ? "strict" : null;
-  let claimFingerprint = strict.fingerprint;
 
   if (!strict.triggered) {
     const directional = await checkDirectionalConsensus(
@@ -243,9 +343,12 @@ export async function applyConsensusAndAlert(
     if (directional.triggered) {
       fired = directional;
       mode = "directional";
-      claimFingerprint = directional.fingerprint;
     }
   }
+
+  // Claim on the (match, direction) key regardless of which check fired —
+  // one alert per match direction, enforced by the DB unique constraint.
+  const claimFingerprint = directionalClaimKey(parsed);
 
   if (!mode) {
     return {
@@ -288,6 +391,21 @@ export async function applyConsensusAndAlert(
     };
   }
 
+  // 3b. Cross-spelling / cross-line de-dup: this exact pick direction on
+  //     this match was already posted to the VIP under a different
+  //     spelling or a nearby line. Nothing claimed yet, so just bail.
+  if (await alreadyDeliveredSameDirection(db, parsed)) {
+    return {
+      mode,
+      triggered: true,
+      groupCount: fired.groupCount,
+      sent: false,
+      claimed: false,
+      fingerprint: claimFingerprint,
+      reason: "duplicate-direction",
+    };
+  }
+
   // 4. Claim now (concurrency latch).
   const claim = await claimConsensusAlert(db, claimFingerprint, fired.groupCount);
   if (!claim.claimed) {
@@ -302,12 +420,17 @@ export async function applyConsensusAndAlert(
     };
   }
 
-  const oddsAtAlert = resolveOddsAtAlert ? await resolveOddsAtAlert() : null;
+  const oddsSamples = resolveOddsSamplesAtAlert ? await resolveOddsSamplesAtAlert() : [];
+  // Persist the lowest stated price as the single reference value (the
+  // outcome reply shows one number); the alert message itself renders the
+  // full spread from oddsSamples.
+  const inBand = oddsSamples.filter((n) => Number.isFinite(n) && n >= 1.15 && n <= 15);
+  const oddsAtAlert = inBand.length ? Math.min(...inBand) : null;
 
   // 5. Send. Any failure releases the claim so a later message retries.
   let posted: { chatId: string; messageId: number } | null;
   try {
-    posted = await send({ ...parsed, groupCount: fired.groupCount, oddsAtAlert });
+    posted = await send({ ...parsed, groupCount: fired.groupCount, oddsAtAlert, oddsSamples });
   } catch (err) {
     await releaseConsensusAlert(db, claimFingerprint);
     console.error("[tipConsensus] VIP send threw — released consensus claim for retry:", err);

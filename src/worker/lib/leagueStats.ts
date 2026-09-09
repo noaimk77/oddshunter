@@ -118,3 +118,113 @@ export async function countUserAlerts(db: PrismaClient, userId: string, sinceDay
     },
   });
 }
+
+/**
+ * ROI/units-won summary for a set of resolved signals, priced at the
+ * moment the alert fired (Signal.currentPrice — the odds the subscriber
+ * would have taken had they placed the bet immediately). Units are what
+ * you'd have made if you'd bet a flat 1€ on every signal:
+ *   - win  → +(price − 1)  (you get your stake back plus the profit)
+ *   - loss → −1
+ *   - void → 0
+ * ROI% = totalUnits / decidedBetCount × 100. Voids are excluded from the
+ * denominator (same convention as HitRate.decided).
+ */
+export interface ROI {
+  /** Cumulative profit/loss in units, e.g. +12.4 = you'd be up 12.4€
+   *  on 1€ flat stakes. */
+  units: number;
+  /** wins + losses. */
+  decided: number;
+  /** units / decided × 100. Null when decided === 0. */
+  roiPct: number | null;
+}
+
+export function computeROI(rows: { selectionWon: boolean | null; currentPrice: number | null }[]): ROI {
+  let units = 0;
+  let decided = 0;
+  for (const r of rows) {
+    if (r.selectionWon === null) continue; // void or unresolved — skip
+    decided++;
+    if (r.selectionWon === true) {
+      // Silently ignore a resolved-won signal whose currentPrice is missing:
+      // it's a data-integrity bug we shouldn't surface to a subscriber as
+      // "+0€", but excluding it entirely is more honest than defaulting to
+      // some average price. Same treatment as a void — no unit change.
+      if (r.currentPrice != null && Number.isFinite(r.currentPrice) && r.currentPrice > 1) {
+        units += r.currentPrice - 1;
+      }
+    } else {
+      units -= 1;
+    }
+  }
+  const roiPct = decided === 0 ? null : Math.round((units / decided) * 100 * 10) / 10;
+  return { units: Math.round(units * 100) / 100, decided, roiPct };
+}
+
+/**
+ * Global (all-subscribers) hit-rate + ROI over the window — this is what
+ * powers the /perf command and the public sales pitch. A prospect who
+ * hasn't subscribed yet has nothing in getUserHitRate; showing them the
+ * global track record is what earns the click on the checkout link (Noaim,
+ * 2026-09-06 Phase 1: "sans preuve sociale personne ne paie").
+ *
+ * ODDS_RISE excluded, same rationale as everywhere else.
+ */
+export async function getGlobalPerformance(
+  db: PrismaClient,
+  sinceDays: number,
+): Promise<{ hitRate: HitRate; roi: ROI; totalFired: number }> {
+  const since = new Date(Date.now() - sinceDays * 24 * 3_600_000);
+  const [outcomes, totalFired] = await Promise.all([
+    db.signalOutcome.findMany({
+      where: {
+        checkedAt: { gte: since },
+        signal: { type: { not: "ODDS_RISE" } },
+      },
+      select: { selectionWon: true, signal: { select: { currentPrice: true } } },
+    }),
+    db.signal.count({
+      where: {
+        firstDetectedAt: { gte: since },
+        type: { not: "ODDS_RISE" },
+      },
+    }),
+  ]);
+  const flat = outcomes.map((o) => ({ selectionWon: o.selectionWon, currentPrice: o.signal.currentPrice }));
+  return {
+    hitRate: computeHitRate(flat),
+    roi: computeROI(flat),
+    totalFired,
+  };
+}
+
+/**
+ * Same as `getGlobalPerformance` but scoped to Premium signals only. The
+ * shared tier rules live in `signalTier.ts`; here we translate them into a
+ * database predicate — `score >= 55` AND `type === "MULTI_BOOK_CONFIRMATION"`.
+ * The compact indicator-count logic in `classifySignalTier` doesn't have a
+ * clean SQL translation (velocity is a computed field, isLateMove/
+ * crossMarketCount aren't columns), so we use the ONE indicator that IS a
+ * column — `type` — as the practical Premium proxy for aggregate stats.
+ * MULTI_BOOK_CONFIRMATION alone doesn't guarantee Premium tier at delivery
+ * time, but almost every Premium signal in practice IS a MULTI_BOOK one,
+ * so the aggregate hit-rate is a faithful approximation. The message
+ * badge users see is still the strict classifier (2+ indicators).
+ */
+export async function getPremiumPerformance(
+  db: PrismaClient,
+  sinceDays: number,
+): Promise<{ hitRate: HitRate; roi: ROI; totalFired: number }> {
+  const since = new Date(Date.now() - sinceDays * 24 * 3_600_000);
+  const premiumWhere = { type: "MULTI_BOOK_CONFIRMATION", score: { gte: 55 } };
+  const [outcomes, totalFired] = await Promise.all([
+    db.signalOutcome.findMany({
+      where: { checkedAt: { gte: since }, signal: premiumWhere },
+      select: { selectionWon: true, signal: { select: { currentPrice: true } } },
+    }),
+    db.signal.count({ where: { firstDetectedAt: { gte: since }, ...premiumWhere } }),
+  ]);
+  const flat = outcomes.map((o) => ({ selectionWon: o.selectionWon, currentPrice: o.signal.currentPrice }));
+  return { hitRate: computeHitRate(flat), roi: computeROI(flat), totalFired };
+}

@@ -3,6 +3,7 @@ import type { Bot } from "grammy";
 import { GrammyError } from "grammy";
 import { countryFlagEmoji } from "../lib/countryFlag";
 import type { HitRate } from "../lib/leagueStats";
+import { classifySignalTier, tierBadge, type SignalTier } from "../lib/signalTier";
 
 /**
  * Formats and delivers one Signal to one linked, entitled user — spec
@@ -190,51 +191,219 @@ function formatSignalExtras(signal: SignalWithContext): string[] {
   return extras;
 }
 
+/** Bookmaker name embedded in a provider-built market name — betexplorer.ts
+ *  builds these as "DC (Megapari)" or "O/U 2.5 (1xBet)". Null for market
+ *  names with no "(...)" suffix (momentum / live-pick markets like
+ *  "Pronostic live (stats)" — handled by the fallback path, never read
+ *  here). */
+function bookmakerFromMarketName(name: string): string | null {
+  const m = name.match(/\(([^()]+)\)\s*$/);
+  return m ? m[1].trim() : null;
+}
+
+/** The over/under total or Asian-handicap line embedded in a market name
+ *  like "O/U 2.5 (1xBet)" / "AH -0.75 (Betsson)" — betexplorer.ts puts the
+ *  line between the family label and the bookmaker. Null when there's no
+ *  numeric line (1X2 / DC / DNB / BTTS). */
+function lineFromMarketName(name: string): string | null {
+  const m = name.match(/(-?\d+(?:\.\d+)?)/);
+  return m ? m[1] : null;
+}
+
+/** Family label for the "🧾 Marché" reference line — plain French so the
+ *  reader still sees which market the pick sits on, under the plain-language
+ *  instruction. */
+const MARKET_FAMILY_FR: Record<string, string> = {
+  match_winner: "Résultat du match (1X2)",
+  double_chance: "Double chance",
+  dnb: "Remboursé si match nul (DNB)",
+  btts: "Les deux équipes marquent",
+  over_under: "Nombre de buts",
+  asian_handicap: "Handicap asiatique",
+};
+
+/**
+ * Turns a raw market-position code (what betexplorer.ts stores as the
+ * selection name — "12", "1x", "home", "over"…) into a plain-French bet
+ * instruction with the real team names, so an alert reads as "parie sur X"
+ * instead of "— 12" (Noaim, 2026-09-03: "il me dit juste douze… on
+ * comprend pas ce qu'on doit parier"). Same phrasing conventions as the VIP
+ * consensus alerts in alertFormat.ts. Returns null for shapes we don't map
+ * (momentum / live picks, unexpected codes) so the caller keeps the old
+ * raw line rather than printing something wrong.
+ */
+export function humanizeSelection(
+  marketType: string,
+  selectionName: string,
+  homeTeam: string,
+  awayTeam: string,
+  line: string | null,
+): string | null {
+  const sel = selectionName.trim().toLowerCase();
+  const home = homeTeam.trim();
+  const away = awayTeam.trim();
+
+  switch (marketType) {
+    case "match_winner":
+      if (sel === "home" || sel === "1") return `victoire ${home}`;
+      if (sel === "away" || sel === "2") return `victoire ${away}`;
+      if (sel === "draw" || sel === "x") return "match nul";
+      return null;
+    case "double_chance":
+      if (sel === "1x" || sel === "1-x") return `${home} gagne ou match nul`;
+      if (sel === "x2" || sel === "x-2") return `${away} gagne ou match nul`;
+      if (sel === "12" || sel === "1-2") return `${home} ou ${away} gagne (pas de match nul)`;
+      return null;
+    case "dnb":
+      if (sel === "home" || sel === "1") return `${home}, remboursé si match nul`;
+      if (sel === "away" || sel === "2") return `${away}, remboursé si match nul`;
+      return null;
+    case "btts":
+      if (sel === "yes" || sel === "oui") return "les deux équipes marquent — Oui";
+      if (sel === "no" || sel === "non") return "les deux équipes marquent — Non";
+      return null;
+    case "over_under":
+      if (!line) return null;
+      if (sel === "over") return `plus de ${line} buts dans le match`;
+      if (sel === "under") return `moins de ${line} buts dans le match`;
+      return null;
+    case "asian_handicap":
+      if (!line) return null;
+      if (sel === "home") return `${home} avec handicap ${line}`;
+      if (sel === "away") return `${away} avec handicap ${line}`;
+      return null;
+    default:
+      return null;
+  }
+}
+
 /**
  * Format inspired by Suspicious Game's premium bot (Noaim, 2026-08-23,
- * "je veux exactement le même"): base pick line (emoji + match + flag +
- * market + selection), one real-data headline (drop % / edge / etc.),
- * then optional context lines — velocity, late-move tag, first-mover in a
- * steam move, cross-market confirmation, and rolling league hit-rate —
- * each rendered ONLY when the underlying data is present, so a light
- * signal stays a light message. The public free-channel format
- * (deliberately stripped of team names to drive people to the paid bot)
- * intentionally stays out of scope — this bot IS the paid product; users
- * pay for the full picture.
+ * "je veux exactement le même"): a plain-French bet instruction line
+ * ("🎯 À parier : …" with the real team names — Noaim, 2026-09-03, the raw
+ * "— 12" code told the reader nothing), a market/bookmaker reference line,
+ * one real-data headline (drop % / edge / etc.), then optional context
+ * lines — velocity, late-move tag, first-mover in a steam move,
+ * cross-market confirmation, and rolling league hit-rate — each rendered
+ * ONLY when the underlying data is present, so a light signal stays a
+ * light message. The public free-channel format (deliberately stripped of
+ * team names to drive people to the paid bot) intentionally stays out of
+ * scope — this bot IS the paid product; users pay for the full picture.
  */
+/**
+ * Number of independent bookmakers backing the move — read from the
+ * MULTI_BOOK_CONFIRMATION metadata when the signal is that type; 0 for the
+ * others. The tier classifier uses this alongside cross-market / late /
+ * velocity indicators to decide Standard vs Premium.
+ */
+function confirmingBookmakersOf(signal: SignalWithContext): number {
+  if (signal.type !== "MULTI_BOOK_CONFIRMATION") return 0;
+  const m = signal.metadata as { confirmingCount?: number; bookmakers?: unknown[] } | null | undefined;
+  if (!m) return 0;
+  if (typeof m.confirmingCount === "number" && Number.isFinite(m.confirmingCount)) return m.confirmingCount;
+  if (Array.isArray(m.bookmakers)) return m.bookmakers.length;
+  return 0;
+}
+
+/** Public: classifies the signal against the shared tier rules in
+ *  `../lib/signalTier`. Exported so /perf, delivery routing, and any
+ *  future analytics all use the same source of truth. */
+export function tierOf(signal: SignalWithContext): SignalTier {
+  return classifySignalTier({
+    score: signal.score,
+    isLateMove: signal.isLateMove,
+    crossMarketCount: signal.crossMarketCount,
+    velocity: signal.velocity,
+    confirmingBookmakers: confirmingBookmakersOf(signal),
+  });
+}
+
 export function formatSignalMessage(signal: SignalWithContext): string {
   const { event } = signal.market;
   const sportEmoji = SPORT_EMOJI[event.competition.sport] ?? "🏟️";
   const flag = countryFlagEmoji(event.competition.country);
-  const marketLine = `${escapeHtml(signal.market.name)}${signal.selection ? ` — ${escapeHtml(signal.selection.name)}` : ""}`;
 
-  const lines = [
+  const bookmaker = bookmakerFromMarketName(signal.market.name);
+  const line = lineFromMarketName(signal.market.name);
+  const humanPick = signal.selection
+    ? humanizeSelection(signal.market.type, signal.selection.name, event.homeTeam, event.awayTeam, line)
+    : null;
+
+  // Premium badge sits ALONE on the first line, above the match, so it's
+  // the first thing a scrolling subscriber sees. Standard signals get no
+  // header at all — a subtle "no badge = not our top-tier" is what makes
+  // the Premium tag actually mean something.
+  const tier = tierOf(signal);
+  const lines: string[] = [];
+  const badge = tierBadge(tier);
+  if (badge) lines.push(badge);
+  lines.push(
     `${sportEmoji} ${escapeHtml(event.homeTeam)} vs ${escapeHtml(event.awayTeam)}${flag ? ` ${flag}` : ""}`,
-    marketLine,
-  ];
+  );
+
+  if (humanPick) {
+    lines.push(`🎯 À parier : ${escapeHtml(humanPick)}`);
+    const family = MARKET_FAMILY_FR[signal.market.type];
+    const ref = [family, bookmaker ? `cote ${escapeHtml(bookmaker)}` : null].filter(Boolean).join(" · ");
+    if (ref) lines.push(`🧾 ${ref}`);
+  } else {
+    // Momentum / live picks and any code we don't map: keep the original
+    // raw line — those market names ("Pronostic live (stats)", "Over 0.5
+    // (mi-temps)") are already human-readable and carry no position code.
+    lines.push(`${escapeHtml(signal.market.name)}${signal.selection ? ` — ${escapeHtml(signal.selection.name)}` : ""}`);
+  }
 
   const headline = formatHeadlineStat(signal);
   if (headline) lines.push(headline);
 
   lines.push(...formatSignalExtras(signal));
 
-  lines.push("", "⚠️ Signal statistique à surveiller — pas une garantie de gain ni un conseil financier. Ne mise que ce que tu peux te permettre de perdre.");
+  // Simplified 2026-09-05 (Noaim: "les mêmes mises à jour que pour le VIP")
+  // — the closing "pas une garantie de gain..." disclaimer is dropped, same
+  // treatment as the VIP consensus alerts, and replaced with a single
+  // status line that flips in place when the result lands (see
+  // updateResultInMessage) instead of a separate paragraph appended below.
+  lines.push(SIGNAL_STATUS_PENDING_LINE);
 
   return lines.join("\n");
 }
 
-const RESULT_EMOJI: Record<"won" | "lost" | "void", string> = {
-  won: "✅ Gagné",
-  lost: "❌ Perdu",
-  void: "♻️ Remboursé",
-};
+/** The one status line every bot Signals alert carries, mirroring the VIP
+ *  consensus alert's status line (alertFormat.ts's consensusStatusLine) —
+ *  same vocabulary, same "flip the same message, never a new one" rule
+ *  (Noaim, 2026-09-05: "le résultat, tu le mets dans le même message, tu
+ *  modifies juste le message, tu ne renvoies pas une notification"). */
+const SIGNAL_STATUS_PENDING_LINE = "🔄 Statut : en attente du résultat";
+const SIGNAL_STATUS_PREFIXES = ["🔄 Statut :", "✅ Résultat :", "❌ Résultat :", "⚪ Résultat :"] as const;
 
-/** Appends a result line to an already-delivered message instead of
- *  replacing it (Noaim, 2026-08-23, matching Suspicious Game: they edit the
- *  original pick in place to add "✅"/"♻️ Remboursé" once it's known, rather
- *  than sending a separate follow-up message). */
-export function appendResultToMessage(originalText: string, outcome: "won" | "lost" | "void"): string {
-  return `${originalText}\n\n${RESULT_EMOJI[outcome]}`;
+/**
+ * Swaps the status line for the graded verdict — EDITS the line in place,
+ * never appends a new paragraph and never a separate message (that was the
+ * old behaviour: "✅ Gagné" tacked on below, which is what made this read
+ * as a second message to Noaim once it stacked below several context
+ * lines). `score`, when known, renders "Team A 3-2 Team B" the same way
+ * the VIP alert does; omit it (e.g. BetExplorer's `/results/` endpoint
+ * sometimes only confirms the fixture ended, without a reliable score) to
+ * fall back to the bare verdict.
+ */
+export function updateResultInMessage(
+  originalText: string,
+  outcome: "won" | "lost" | "void",
+  score?: { homeTeam: string; awayTeam: string; homeScore: number; awayScore: number } | null,
+): string {
+  const verdict =
+    outcome === "won" ? "✅ Résultat : pari validé" : outcome === "lost" ? "❌ Résultat : pari perdu" : "⚪ Résultat : remboursé (push)";
+  const newLine = score ? `${verdict} — ${score.homeTeam} ${score.homeScore}-${score.awayScore} ${score.awayTeam}` : verdict;
+
+  const lines = originalText.split("\n");
+  const idx = lines.findIndex((l) => SIGNAL_STATUS_PREFIXES.some((p) => l.startsWith(p)));
+  if (idx !== -1) {
+    lines[idx] = newLine;
+    return lines.join("\n");
+  }
+  // Legacy message sent before this status line existed — append instead
+  // of silently dropping the result.
+  return `${originalText}\n\n${newLine}`;
 }
 
 /**

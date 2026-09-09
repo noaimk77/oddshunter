@@ -2,6 +2,7 @@ import type { Dictionary } from "./fr";
 
 const es = {
   nav: {
+    home: "Inicio",
     subscription: "Suscripción",
     bookmakers: "Casas de apuestas",
     social: "Redes",
@@ -62,7 +63,7 @@ const es = {
       {
         question: "¿El bot ya está activo?",
         answer:
-          "Sí. Vigila las cuotas de forma continua y envía las señales directamente a Telegram en cuanto vinculas tu cuenta desde la página \"Mi cuenta\".",
+          "Todavía no. El bot sigue en fase de ajuste y no está a la venta por ahora — solo el canal VIP está disponible hoy.",
       },
       {
         question: "¿Puedo cancelar en cualquier momento?",
@@ -155,7 +156,7 @@ const es = {
     bot: {
       eyebrow: "Bot automatizado",
       title: "Bot de Odds Hunter",
-      statusLabel: "Activo",
+      statusLabel: "Próximamente",
       description:
         "Un bot que vigila las cuotas y te avisa automáticamente, sin necesidad de seguir el canal constantemente.",
       features: [
@@ -164,7 +165,8 @@ const es = {
         "Cancelable en cualquier momento desde tu cuenta",
       ],
       cta: "Acceder al bot",
-      footnote: "Tu acceso a Telegram empieza justo después del pago.",
+      footnote: "Todavía en fase de ajuste — aún no está a la venta.",
+      notAvailable: "El bot todavía no está a la venta — únete al VIP mientras tanto.",
     },
   },
   settings: {

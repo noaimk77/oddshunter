@@ -324,6 +324,17 @@ export function parseLinedMatchOddsFragment(responseBody: string): LinedBookmake
 
 export interface ResultRow {
   matchId: string;
+  /** Added 2026-09-05 so results can be looked up by team name (fuzzy
+   *  match), not just BetExplorer's own matchId — the consensus outcome
+   *  resolver has no matchId, only the home/away names a tipster posted.
+   *  TheSportsDB has thin coverage of the reserve/youth leagues this feed
+   *  targets (confirmed miss: Croatian U19 sides never resolved); this
+   *  results listing is the same site the odds already come from, so its
+   *  league coverage lines up with what gets detected in the first place —
+   *  confirmed live 2026-09-05: "Sesvete", "Croatia", "U19" all present on
+   *  a single fetch of this page. */
+  homeTeam: string;
+  awayTeam: string;
   fullTimeHomeGoals: number;
   fullTimeAwayGoals: number;
   halftimeHomeGoals: number | null;
@@ -362,8 +373,18 @@ export function parseResultsPage(html: string): ResultRow[] {
     const partialMatches = [...partialText.matchAll(/(\d+):(\d+)/g)];
     const ht = partialMatches[0];
 
+    // "Team A - Team B" — cheerio's .text() already strips the <strong>
+    // wrapping whichever side is the favorite, same convention as
+    // parseDroppingOddsPage's teamsText.
+    const teamsText = link.text().trim();
+    const sepIdx = teamsText.indexOf(" - ");
+    const homeTeam = sepIdx >= 0 ? teamsText.slice(0, sepIdx).trim() : teamsText;
+    const awayTeam = sepIdx >= 0 ? teamsText.slice(sepIdx + 3).trim() : "";
+
     rows.push({
       matchId: matchIdFromHref(href),
+      homeTeam,
+      awayTeam,
       fullTimeHomeGoals: Number.parseInt(ftMatch[1], 10),
       fullTimeAwayGoals: Number.parseInt(ftMatch[2], 10),
       halftimeHomeGoals: ht ? Number.parseInt(ht[1], 10) : null,

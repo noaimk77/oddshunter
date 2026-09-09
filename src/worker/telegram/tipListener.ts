@@ -1,16 +1,16 @@
 import type { TelegramClient } from "telegram";
 import { NewMessage, type NewMessageEvent } from "telegram/events";
 import type { PrismaClient } from "@/generated/prisma/client";
-import { extractFixture, extractSelection, buildParsedTip, type ParsedTip } from "./tipParser";
+import { extractFixture, extractSelection, buildParsedTip, getDirectionKey, fuzzyFixtureMatch, type ParsedTip, type Fixture } from "./tipParser";
 import { resolveFixture } from "./fixtureResolver";
-import { extractOdds, extractResult } from "./ticketParser";
+import { extractOdds, extractLabeledOdds, extractResult } from "./ticketParser";
 import { extractTextFromPhoto } from "./tipOcr";
 import { applyConsensusAndAlert } from "./tipConsensus";
 import { sendConsensusAlert } from "./vipGroup";
 import { shouldSendConsensusAlert } from "./alertFormat";
 import { rememberFixture, recallFixture, isFirehoseChat } from "./chatFixtureContext";
 import { extractSelectionWithLLM, extractFullTipWithLLM } from "./tipLlmFallback";
-import { getTipConsensusConfig, getChatFixtureContextWindowMinutes, getMaxTipMessageAgeMinutes, SEND_TIP_CONSENSUS_ALERTS } from "../config";
+import { getTipConsensusConfig, getTipConsensusHtWindowMinutes, getChatFixtureContextWindowMinutes, getMaxTipMessageAgeMinutes, SEND_TIP_CONSENSUS_ALERTS } from "../config";
 
 /**
  * Wires the MTProto client's NewMessage stream to the consensus pipeline.
@@ -80,15 +80,24 @@ async function handleMessage(client: TelegramClient, db: PrismaClient, event: Ne
   // its pick and fixture are still resolved from text/image independently.
   const messageResult = extractResult([caption, ocrText].filter(Boolean).join("\n"));
 
-  // Text and image are handled as two independent candidate sources for the
-  // pick/fixture itself — most real tip channels post the match/market as a
-  // bet slip screenshot and only a short confirmation as text, so the two
-  // must never be merged into one parse attempt (Noaim, 2026-08-22).
-  if (caption) {
-    await processCandidate(client, db, sourceChatId, sourceChatTitle, caption, "TEXT", messageResult, undefined);
-  }
+  // Text and image are two candidate sources for the pick/fixture — NOT
+  // merged into one parse attempt (a bet-slip photo + a "W2✅" caption are
+  // two different statements), but no longer fully independent either: the
+  // IMAGE is parsed FIRST and the fixture it yields is handed to the TEXT
+  // pass as a same-message anchor. This is what fixes the "screenshot of
+  // the match + short 'Over 6' caption" pattern on firehose channels
+  // (Suspicious Game, MAFIA.BET…): the caption has no fixture of its own,
+  // chat-context recall is disabled for those high-volume chats, and
+  // before this the caption pick was silently dropped — so two channels
+  // posting the exact same live pick never reached consensus (Noaim,
+  // 2026-09-04: "y'a juste 2 groupes qui ont envoyé le même pronostic et
+  // tu l'as raté").
+  let imageFixture: Fixture | null = null;
   if (ocrText) {
-    await processCandidate(client, db, sourceChatId, sourceChatTitle, ocrText, "IMAGE", messageResult, imageBuffer);
+    imageFixture = await processCandidate(client, db, sourceChatId, sourceChatTitle, ocrText, "IMAGE", messageResult, imageBuffer, undefined);
+  }
+  if (caption) {
+    await processCandidate(client, db, sourceChatId, sourceChatTitle, caption, "TEXT", messageResult, undefined, imageFixture ?? undefined);
   }
 }
 
@@ -98,10 +107,15 @@ async function handleMessage(client: TelegramClient, db: PrismaClient, event: Ne
  *  1. Fixture and pick both in this candidate — the strongest signal.
  *  2. Only a fixture ("Puerto Rico vs Cuba", no pick yet) — remembered for
  *     this chat so a later context-free message can resolve against it.
- *  3. No fixture here at all — try resolving the pick against whichever
- *     fixture this same chat mentioned most recently (see
- *     chatFixtureContext.ts), so "W2" posted after a bet-slip image still
- *     counts instead of being silently dropped for lack of context.
+ *  3. No fixture here at all — try `sameMessageFixture` (the fixture the
+ *     OTHER candidate of THIS SAME message resolved, e.g. the screenshot's
+ *     teams for a caption that only says "Over 6"), then the chat's most
+ *     recently mentioned fixture (see chatFixtureContext.ts), so a
+ *     context-free pick still counts instead of being silently dropped.
+ *
+ * Returns the fixture this candidate identified (canonical names when a
+ * pick was built, else the raw extracted/LLM fixture, else null) so the
+ * caller can feed it to the next candidate as `sameMessageFixture`.
  */
 async function processCandidate(
   client: TelegramClient,
@@ -112,19 +126,27 @@ async function processCandidate(
   source: "TEXT" | "IMAGE",
   messageResult: "WON" | "LOST" | "PENDING",
   imageBuffer: Buffer | undefined,
-): Promise<void> {
+  sameMessageFixture: Fixture | undefined,
+): Promise<Fixture | null> {
   const fixture = extractFixture(rawText);
+  let identifiedFixture: Fixture | null = fixture;
 
   let parsed: ParsedTip | null = null;
+  // Odds the LLM read off the bet-slip screenshot for the selected pick —
+  // threaded into the stored rawText so the VIP alert's "Cote au
+  // signalement" line has a value (regex on garbled OCR rarely finds one).
+  let llmOdds: number | null = null;
   // Fixture found in this candidate — try the deterministic parser, then
   // fall back to the LLM for the market/selection only (fixture stays the
   // one we already extracted deterministically).
   if (fixture) {
     let marketSelection = extractSelection(rawText, fixture);
     if (!marketSelection) {
-      marketSelection = await extractSelectionWithLLM({ rawText, fixture, imageBuffer });
-      if (marketSelection) {
-        console.log(`[tipListener] LLM extracted pick for ${fixture.homeTeam} vs ${fixture.awayTeam}: ${marketSelection.market} ${marketSelection.selection}`);
+      const llm = await extractSelectionWithLLM({ rawText, fixture, imageBuffer });
+      if (llm) {
+        marketSelection = llm;
+        llmOdds = llm.odds;
+        console.log(`[tipListener] LLM extracted pick for ${fixture.homeTeam} vs ${fixture.awayTeam}: ${llm.market} ${llm.selection}`);
       }
     }
     if (marketSelection) {
@@ -133,7 +155,29 @@ async function processCandidate(
     } else {
       await rememberFixture(db, sourceChatId, fixture);
     }
-  } else {
+  } else if (sameMessageFixture) {
+    // No fixture in this candidate, but the OTHER half of THIS SAME message
+    // (the screenshot's teams for an "Over 6" caption) gave us one. This is
+    // NOT chat-context recall — it's the same message, so it's safe even on
+    // firehose channels where recall is disabled, and it's what lets two
+    // channels posting "photo + short caption" for the same live pick reach
+    // consensus.
+    let marketSelection = extractSelection(rawText, sameMessageFixture);
+    if (!marketSelection) {
+      const llm = await extractSelectionWithLLM({ rawText, fixture: sameMessageFixture, imageBuffer });
+      if (llm) { marketSelection = llm; llmOdds = llm.odds; }
+    }
+    if (marketSelection) {
+      const canonical = await resolveFixture(db, sameMessageFixture);
+      parsed = buildParsedTip(canonical ?? sameMessageFixture, marketSelection, canonical ?? undefined);
+      identifiedFixture = canonical ?? sameMessageFixture;
+      console.log(
+        `[tipListener] resolved ${source} pick against same-message fixture for "${sourceChatTitle ?? sourceChatId}": ` +
+          `${sameMessageFixture.homeTeam} vs ${sameMessageFixture.awayTeam} — ${marketSelection.market} ${marketSelection.selection}`,
+      );
+    }
+  }
+  if (!parsed && !fixture && !sameMessageFixture) {
     // No fixture in this candidate — try the chat's remembered last-fixture
     // as anchor, then again deterministic first + LLM fallback. Skipped for
     // firehose chats (many distinct matches per hour, e.g. a live-odds feed):
@@ -147,9 +191,11 @@ async function processCandidate(
     if (remembered) {
       let marketSelection = extractSelection(rawText, remembered);
       if (!marketSelection) {
-        marketSelection = await extractSelectionWithLLM({ rawText, fixture: remembered, imageBuffer });
-        if (marketSelection) {
-          console.log(`[tipListener] LLM extracted pick (via chat context) for ${remembered.homeTeam} vs ${remembered.awayTeam}: ${marketSelection.market} ${marketSelection.selection}`);
+        const llm = await extractSelectionWithLLM({ rawText, fixture: remembered, imageBuffer });
+        if (llm) {
+          marketSelection = llm;
+          llmOdds = llm.odds;
+          console.log(`[tipListener] LLM extracted pick (via chat context) for ${remembered.homeTeam} vs ${remembered.awayTeam}: ${llm.market} ${llm.selection}`);
         }
       }
       if (marketSelection) {
@@ -177,6 +223,8 @@ async function processCandidate(
       const full = await extractFullTipWithLLM({ rawText, imageBuffer });
       if (full) {
         const fixtureFromLlm = { homeTeam: full.homeTeam, awayTeam: full.awayTeam };
+        identifiedFixture = fixtureFromLlm; // hand it to the other candidate of this message even if no pick is found here
+        if (full.odds != null) llmOdds = full.odds;
         if (full.market && full.selection) {
           const canonical = await resolveFixture(db, fixtureFromLlm);
           parsed = buildParsedTip(canonical ?? fixtureFromLlm, { market: full.market, selection: full.selection }, canonical ?? undefined);
@@ -193,6 +241,7 @@ async function processCandidate(
           // there's genuinely no stated pick.
           const focused = await extractSelectionWithLLM({ rawText, fixture: fixtureFromLlm, imageBuffer });
           if (focused) {
+            if (focused.odds != null) llmOdds = focused.odds;
             const canonical = await resolveFixture(db, fixtureFromLlm);
             parsed = buildParsedTip(canonical ?? fixtureFromLlm, focused, canonical ?? undefined);
             console.log(`[tipListener] LLM full+focused extraction from "${sourceChatTitle ?? sourceChatId}": ${fixtureFromLlm.homeTeam} vs ${fixtureFromLlm.awayTeam} — ${focused.market} ${focused.selection}`);
@@ -229,14 +278,39 @@ async function processCandidate(
     });
   }
 
-  if (!parsed) return;
+  if (!parsed) return identifiedFixture;
+
+  // Result recap guard (Noaim 2026-09-08): several source channels re-post
+  // ✅/❌ recaps of picks they sent in their OWN private VIP, and the parser
+  // happily reads the recap's teams + pick as a fresh tip — feeding stale
+  // "picks" into the consensus (this is how the Arsenal Sarandi Reserves
+  // alert got fired mid-blowout: two channels were showing off yesterday's
+  // ticket, not calling a live bet). If the message clearly resolves to
+  // WON/LOST, skip storing as ScrapedTip — the GroupTicket row above still
+  // captures it for stats. PENDING (the default, and unambiguous fresh
+  // picks) always stores, matching Noaim's "si t'as un doute envoie quand
+  // même" rule.
+  if (messageResult !== "PENDING") {
+    console.log(
+      `[tipListener] skipping ${source} pick from "${sourceChatTitle ?? sourceChatId}" — message is a ${messageResult} recap, not a fresh tip: ${parsed.homeTeam} vs ${parsed.awayTeam}`,
+    );
+    return identifiedFixture;
+  }
+
+  // If the LLM read an odds off the screenshot and the raw text carries no
+  // labeled cote of its own, append a normalized "cote X.XX" line — the
+  // consensus odds sampler (resolveOddsSamplesAtAlert) reads exactly that
+  // pattern back out, so the VIP alert gets a "Cote au signalement" value
+  // even for pure bet-slip-image tips (Noaim, 2026-09-05).
+  const rawTextForStore =
+    llmOdds != null && extractLabeledOdds(rawText) == null ? `${rawText}\ncote ${llmOdds.toFixed(2)}` : rawText;
 
   await db.scrapedTip.create({
     data: {
       sourceChatId,
       sourceChatTitle,
       source,
-      rawText,
+      rawText: rawTextForStore,
       fingerprint: parsed.fingerprint,
       homeTeam: parsed.homeTeam,
       awayTeam: parsed.awayTeam,
@@ -255,15 +329,24 @@ async function processCandidate(
   // gate, claim, send, release-on-failure, persist on the exact claimed row
   // — lives in applyConsensusAndAlert so it is testable without a Telegram
   // client.
+  // First-half picks use a much tighter window (the bet dies within ~45
+  // min of kickoff) so a stale corroboration can't fire an already-decided
+  // "over 0.5 HT". Full-match picks keep the wide default.
+  const baseConfig = getTipConsensusConfig();
+  const config =
+    parsed.market === "OVER_UNDER_HT"
+      ? { ...baseConfig, windowMinutes: Math.min(baseConfig.windowMinutes, getTipConsensusHtWindowMinutes()) }
+      : baseConfig;
+
   const outcome = await applyConsensusAndAlert(db, parsed, {
-    config: getTipConsensusConfig(),
+    config,
     sendEnabled: SEND_TIP_CONSENSUS_ALERTS,
     qualityGate: shouldSendConsensusAlert,
-    resolveOddsAtAlert: () => resolveOddsAtAlert(db, rawText, parsed),
+    resolveOddsSamplesAtAlert: () => resolveOddsSamplesAtAlert(db, rawTextForStore, parsed),
     send: (tip) => sendConsensusAlert(client, tip),
   });
 
-  if (!outcome.mode) return;
+  if (!outcome.mode) return identifiedFixture;
   console.log(`[tipListener] consensus reached (${outcome.mode}) for ${parsed.fingerprint} (${outcome.groupCount} groupes).`);
   if (outcome.sent) {
     console.log(`[tipListener] consensus alert posted to VIP group (${outcome.fingerprint}).`);
@@ -272,37 +355,53 @@ async function processCandidate(
   } else {
     console.log(`[tipListener] consensus ${outcome.fingerprint} non envoyé — ${outcome.reason ?? "raison inconnue"}.`);
   }
+  return identifiedFixture;
 }
 
 /**
- * Odds to record on the alert: the triggering message's own stated value if
- * it has one, otherwise any recent tip on the same fixture that carried a
- * plausible value (real miss 2026-09-02: Al Magd vs Abu El Matamir parsed
- * cleanly but the triggering post had no numeric odds). Best-effort — null
- * just omits the odds line rather than filling a placeholder.
+ * Every labeled odds the groups behind this consensus stated — averaged
+ * downstream into one displayed value (Noaim, 2026-09-05: user wants a
+ * single reference price on the alert, not a range). Only counts a number
+ * the message explicitly labels as odds ("cote 1,85", "@2.10");
+ * `extractLabeledOdds` drops the bare-trailing-number guesses that kept
+ * surfacing market lines and scorelines.
+ *
+ * Scoped to the SAME DIRECTION on the SAME FUZZY-MATCHED FIXTURE — not just
+ * the exact fingerprint — because for a directional consensus (Over 3.5 /
+ * Over 4.5 / Over 5.5 all bucketed as "over_goals") the odds all speak to
+ * the same underlying bet: "goals will come, this is what different books
+ * are pricing it at". Sampling only the strict fingerprint missed most
+ * groups on directional-only consensuses (which is why the recent alerts
+ * carried no odds line at all).
  */
-async function resolveOddsAtAlert(db: PrismaClient, rawText: string, parsed: ParsedTip): Promise<number | null> {
-  const own = extractOdds(rawText);
-  if (own !== null) return own;
-  if (!parsed.homeTeam || !parsed.awayTeam) return null;
+async function resolveOddsSamplesAtAlert(db: PrismaClient, rawText: string, parsed: ParsedTip): Promise<number[]> {
+  const samples: number[] = [];
+  const own = extractLabeledOdds(rawText);
+  if (own !== null) samples.push(own);
   try {
-    const recentTips = await db.scrapedTip.findMany({
-      where: {
-        detectedAt: { gte: new Date(Date.now() - 30 * 60_000) },
-        OR: [
-          { homeTeam: parsed.homeTeam, awayTeam: parsed.awayTeam },
-          { homeTeam: parsed.awayTeam, awayTeam: parsed.homeTeam },
-        ],
-      },
+    // Load every recent tip and filter in JS (already the pattern used in
+    // checkDirectionalConsensus). 30-min window matches the consensus window.
+    const recent = await db.scrapedTip.findMany({
+      where: { detectedAt: { gte: new Date(Date.now() - 30 * 60_000) } },
       orderBy: { detectedAt: "desc" },
-      take: 10,
+      take: 200,
     });
-    for (const t of recentTips) {
-      const o = extractOdds(t.rawText);
-      if (o !== null && o >= 1.15 && o <= 15) return o;
+
+    const ownDir = getDirectionKey(parsed.market, parsed.selection, { homeTeam: parsed.homeTeam, awayTeam: parsed.awayTeam });
+    for (const t of recent) {
+      if (!t.homeTeam || !t.awayTeam || !t.market || !t.selection) continue;
+      if (!fuzzyFixtureMatch(parsed, { homeTeam: t.homeTeam, awayTeam: t.awayTeam })) continue;
+      // Strict-fingerprint tips always count; for directional consensus,
+      // include every tip whose direction matches.
+      const isSamePick = t.fingerprint === parsed.fingerprint;
+      const dir = getDirectionKey(t.market, t.selection, { homeTeam: t.homeTeam, awayTeam: t.awayTeam });
+      const isSameDir = ownDir != null && dir === ownDir;
+      if (!isSamePick && !isSameDir) continue;
+      const o = extractLabeledOdds(t.rawText);
+      if (o !== null) samples.push(o);
     }
   } catch {
-    // odds fallback is a nice-to-have — never fail the alert over it
+    // odds are a nice-to-have — never fail the alert over them
   }
-  return null;
+  return samples;
 }

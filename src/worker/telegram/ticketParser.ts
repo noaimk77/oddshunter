@@ -7,10 +7,29 @@
  * message, favoring a missed ticket over a market line miscounted as odds.
  */
 
-const LABELED_ODDS_RE = /(?:cote|odd|@)\s*[:\-]?\s*(\d{1,2}[.,]\d{2,3})\b/i;
+const LABELED_ODDS_RE = /(?:c[oô]tes?|odds?|@)\s*[:\-]?\s*(\d{1,2}[.,]\d{1,3})\b/i;
 /** A decimal odds value on its own trailing line, e.g. the "1.632" at the
  *  end of "San Alfonso - Deportivo Amambay 1.632". */
 const TRAILING_ODDS_RE = /^(\d{1,2}[.,]\d{2,3})$/;
+
+/**
+ * Odds ONLY when the message explicitly labels a number as such
+ * ("cote 1,85", "odds: 2.10", "@1.90"). No trailing-number / bare-line
+ * guessing — that heuristic (fine for rough per-group ticket stats) was the
+ * main source of the wrong "Cote au signalement" values the VIP alert kept
+ * showing: it happily picked up a market line, a scoreline, or a random
+ * price off a bookmaker menu. For a number we put in front of subscribers,
+ * "no odds line" beats "a confident wrong one". Band [1.15, 15] drops the
+ * obvious mis-reads (a "1,02" torn out of an odds board, a "23" that was a
+ * minute).
+ */
+export function extractLabeledOdds(rawText: string): number | null {
+  const labeled = rawText.match(LABELED_ODDS_RE);
+  if (!labeled) return null;
+  const value = Number.parseFloat(labeled[1].replace(",", "."));
+  if (Number.isFinite(value) && value >= 1.15 && value <= 15) return value;
+  return null;
+}
 
 export function extractOdds(rawText: string): number | null {
   const labeled = rawText.match(LABELED_ODDS_RE);

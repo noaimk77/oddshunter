@@ -1,5 +1,6 @@
 const fr = {
   nav: {
+    home: "Accueil",
     subscription: "Abonnement",
     bookmakers: "Bookmakers",
     social: "Réseaux",
@@ -60,7 +61,7 @@ const fr = {
       {
         question: "Le bot est-il déjà actif ?",
         answer:
-          "Oui. Il surveille les cotes en continu et envoie les signaux directement sur Telegram dès que tu lies ton compte depuis la page \"Mon compte\".",
+          "Pas encore. Le bot est en cours de fiabilisation et n'est pas ouvert à la vente pour le moment — seul le canal VIP est disponible aujourd'hui.",
       },
       {
         question: "Puis-je annuler à tout moment ?",
@@ -153,7 +154,7 @@ const fr = {
     bot: {
       eyebrow: "Bot automatisé",
       title: "Bot Odds Hunter",
-      statusLabel: "Actif",
+      statusLabel: "Bientôt disponible",
       description:
         "Un bot qui surveille les cotes et t'alerte automatiquement, sans avoir à suivre le canal en continu.",
       features: [
@@ -162,7 +163,8 @@ const fr = {
         "Résiliable à tout moment depuis ton compte",
       ],
       cta: "Accéder au bot",
-      footnote: "Ton accès Telegram démarre dès la fin du paiement.",
+      footnote: "En cours de fiabilisation — pas encore ouvert à la vente.",
+      notAvailable: "Le bot n'est pas encore ouvert à la vente — rejoins le VIP en attendant.",
     },
   },
   settings: {

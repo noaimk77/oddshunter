@@ -44,26 +44,42 @@ RÈGLES:
 - Une "sélection mise en avant" = surlignée, encadrée, cochée, dans un panier "coupon", "Bet slip", "ticket", "bulletin", "Placed", "Selected"; OU annoncée en toutes lettres, y compris en argot de tipster: "victoire de X", "je prends/pars sur X", "sur X", "je mets/blinde/charge X", "banker", "coup sûr", "value sur", "ça passe", "j'ai pris", "W1", "W2", "1", "2", "over/plus de 2.5", "under/moins de 3", "handicap -4.5", "les deux marquent", etc.
 - Une sélection énoncée dans une phrase d'analyse compte, même sans coupon ni cote. Ex: "3-0 à la mi-temps, over 4.5 facile" => OVER_UNDER OVER_4_5. "handicap -4,5 qui passe" => HANDICAP -4.5.
 - Si tu vois une seule cote sans son opposée pour le même marché, c'est le pick.
+- "odds": la COTE décimale du pari sélectionné — le nombre à côté de la sélection surlignée dans le coupon (ex "1.91", "2.07"), ou celle écrite dans le texte ("cote 1.85", "@2.10"). Un nombre entre ~1.15 et ~15. Si aucune cote n'est visible, mets null. Ne confonds PAS avec une ligne de marché ("Over 2.5", "-1.5") ni un score.
 - Extraire un pari RÉELLEMENT énoncé n'est pas "deviner". N'invente un pari QUE quand aucun n'est exprimé (simple discussion du match, ou grille de cotes nue).
+- DIRECTION FIABLE: le sens (OVER vs UNDER, HOME vs AWAY, YES vs NO) vient du TEXTE explicite ("Over 6.5", "moins de 2", "W2"), pas d'une colonne UI. Si la légende dit "Over 6.5" et l'image montre les colonnes Over/Under côte à côte, la réponse est OVER_6_5 — jamais UNDER, même si "Under" apparaît visuellement à côté.
 
-FORMATS DE RETOUR — JSON strict, RIEN d'autre:
-  market: "1X2" | "OVER_UNDER" | "BTTS" | "DOUBLE_CHANCE" | "HANDICAP"
+FORMATS DE RETOUR — JSON strict, RIEN d'autre: { "market": ..., "selection": ..., "odds": number | null }
+  market: "1X2" | "OVER_UNDER" | "OVER_UNDER_HT" | "BTTS" | "DOUBLE_CHANCE" | "HANDICAP"
   selection:
     - 1X2 → slug de l'équipe gagnante (voir slug ci-dessous), ou "DRAW"
     - OVER_UNDER → "OVER_2_5", "UNDER_1_5", etc. (underscore entre entier et décimale)
+    - OVER_UNDER_HT → IDENTIQUE à OVER_UNDER, mais UNIQUEMENT quand le pari vise explicitement la 1ère mi-temps ("1ère mi-temps", "1re période", "MT", "HT", "1st half") — ex "over 0.5 1ère mi-temps" => OVER_UNDER_HT OVER_0_5. Un simple rappel du score à la pause dans une analyse ne compte PAS. Une 2e mi-temps reste OVER_UNDER classique.
     - BTTS → "YES" ou "NO"
     - DOUBLE_CHANCE → "1X", "X2", "12"
     - HANDICAP → la valeur avec signe ("-1.5", "+2")
 
 Le "slug" d'une équipe = son nom en minuscules, sans accents, sans espaces ni ponctuation (ex: "Boca Juniors" → "bocajuniors", "BORRACHEIROS" → "borracheiros").
 
-Si rien d'identifiable, réponds {"market": null, "selection": null}. Ne devine JAMAIS.
+Ajoute aussi "odds": la COTE décimale du pari sélectionné (le nombre à côté de la sélection surlignée dans le coupon, ex "1.91"; ou "cote 1.85" / "@2.10" dans le texte). Nombre entre ~1.15 et ~15, sinon null. Ne confonds PAS avec une ligne de marché ("Over 2.5") ni un score.
+
+Si rien d'identifiable, réponds {"market": null, "selection": null, "odds": null}. Ne devine JAMAIS.
 
 Réponds UNIQUEMENT avec le JSON, pas de markdown, pas d'explication.`;
 
 interface LlmPick {
   market: string | null;
   selection: string | null;
+  odds?: number | string | null;
+}
+
+/** The decimal odds the LLM read off the selected pick / coupon line.
+ *  Kept strict — a plausible sports-betting price only (Noaim 2026-09-05:
+ *  the VIP alert must SHOW a cote; regex on garbled bet-slip OCR wasn't
+ *  finding one, but the model reading the screenshot can). */
+export function parseLlmOdds(v: number | string | null | undefined): number | null {
+  if (v == null) return null;
+  const n = typeof v === "number" ? v : Number.parseFloat(String(v).replace(",", "."));
+  return Number.isFinite(n) && n >= 1.15 && n <= 15 ? Math.round(n * 100) / 100 : null;
 }
 
 export function normalizeSelection(market: string, selection: string, fixture: Fixture): string | null {
@@ -81,7 +97,7 @@ export function normalizeSelection(market: string, selection: string, fixture: F
   return selection.trim().toUpperCase();
 }
 
-const ALLOWED_MARKETS = new Set(["1X2", "OVER_UNDER", "BTTS", "DOUBLE_CHANCE", "HANDICAP"]);
+const ALLOWED_MARKETS = new Set(["1X2", "OVER_UNDER", "OVER_UNDER_HT", "BTTS", "DOUBLE_CHANCE", "HANDICAP"]);
 
 /**
  * Returns `{market, selection}` on a successful parse, `null` on
@@ -94,7 +110,7 @@ export async function extractSelectionWithLLM(args: {
   rawText: string;
   fixture: Fixture;
   imageBuffer?: Buffer;
-}): Promise<{ market: string; selection: string } | null> {
+}): Promise<{ market: string; selection: string; odds: number | null } | null> {
   const client = await getClient();
   if (!client) return null;
 
@@ -125,7 +141,7 @@ Quelle est la sélection mise en avant ? JSON strict.`;
     response = await Promise.race([
       client.messages.create({
         model,
-        max_tokens: 128,
+        max_tokens: 160,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content }],
       }),
@@ -159,28 +175,33 @@ Quelle est la sélection mise en avant ? JSON strict.`;
     console.warn("[tipLlmFallback] could not normalize selection", { market, raw: parsed.selection, home: fixture.homeTeam, away: fixture.awayTeam });
     return null;
   }
-  return { market, selection };
+  return { market, selection, odds: parseLlmOdds(parsed.odds) };
 }
 
 const FULL_SYSTEM_PROMPT = `Tu es un analyseur de pronostics sportifs. On te donne le texte OCR (souvent bruité) et parfois la capture d'écran d'un message posté dans un groupe de tipsters. Ton job: identifier LE MATCH (équipe domicile vs équipe extérieur) ET la sélection.
 
 RÈGLES:
-- Si tu ne peux pas identifier avec certitude les DEUX équipes (nom propre, pas un header type "MATCH SUMMARY" ou "HOME AWAY"), réponds tout à null.
+- IGNORE ABSOLUMENT les éléments d'interface du bookmaker: mots "Kick Off", "Kick-off", "Bet Slip", "Coupon", "Home", "Away", "1st half", "Full Time", "Match", "Popular", "Total", "Bet Builder", "Goals", "Match Goals", "Half", "Asian Lines", "Main markets", "Bet Selection", "Odds", "Ok", "Add to bet slip", "Live", "Prematch", "Regular time", "Timeout", "Basketball", "Football", "Tennis", "1st Goal", "Full time result", "Popular", "1X2", "HCAP", "TOTAL", et tout mot descriptif d'écran de paris. Ces mots ne sont JAMAIS un nom d'équipe.
+- Les VRAIS noms d'équipes sont: soit des noms propres reconnaissables ("Yangon City", "Yadanarbon", "Atlantis 2", "PPS", "Dzongri FC", "Red Panda FC", "Muniz II", "Barracas II"), soit dans le header en haut d'un slip ("Team A vs Team B", "Team A - Team B"), soit à côté d'un score / logo dans une carte match. JAMAIS l'entête d'une colonne ou d'un onglet UI.
+- Si tu ne peux pas identifier avec certitude les DEUX équipes comme de VRAIS noms propres de clubs (pas des mots UI, pas des fragments OCR ≤2 lettres sauf abréviations tout-caps type "OM" "AC"), réponds tout à null. Mieux vaut null que "Kick Off vs Ww".
 - Une "sélection mise en avant" = surlignée, encadrée, cochée, dans un panier "coupon/Bet slip/ticket"; OU énoncée en toutes lettres, y compris en argot ("victoire de X", "je prends/pars sur X", "je mets/blinde/charge", "banker", "coup sûr", "ça passe", "j'ai pris", "over/plus de 2.5", "under/moins de 3", "handicap -4.5", "W1", "les deux marquent"); OU une seule cote visible pour un marché.
 - Une sélection énoncée dans une phrase d'analyse compte, même sans coupon ni cote (ex: "3-0 à la pause, over 4.5 facile" => OVER_UNDER OVER_4_5).
 - Si les deux cotes d'un marché sont visibles sans aucun indice de pick, réponds sélection null (mais remplis quand même homeTeam/awayTeam si tu les identifies).
+- Direction: "Over 6.5" écrit clairement dans la légende = OVER_6_5, JAMAIS UNDER, même si la colonne "Over" est à côté de la colonne "Under" dans le slip. Le sens vient du texte, pas d'un onglet UI.
 
 FORMATS DE RETOUR — JSON strict, RIEN d'autre:
 {
   "homeTeam": "Nom exact équipe domicile" | null,
   "awayTeam": "Nom exact équipe extérieur" | null,
-  "market": "1X2" | "OVER_UNDER" | "BTTS" | "DOUBLE_CHANCE" | "HANDICAP" | null,
-  "selection": string | null
+  "market": "1X2" | "OVER_UNDER" | "OVER_UNDER_HT" | "BTTS" | "DOUBLE_CHANCE" | "HANDICAP" | null,
+  "selection": string | null,
+  "odds": number | null
 }
 
 Selection format:
   - 1X2 → slug de l'équipe gagnante (ex "bocajuniors") ou "DRAW"
   - OVER_UNDER → "OVER_2_5", "UNDER_1_5", etc.
+  - OVER_UNDER_HT → comme OVER_UNDER mais SEULEMENT si le pari vise la 1ère mi-temps ("1ère mi-temps", "MT", "HT", "1st half")
   - BTTS → "YES" ou "NO"
   - DOUBLE_CHANCE → "1X", "X2", "12"
   - HANDICAP → valeur avec signe ("-1.5", "+2")
@@ -192,6 +213,7 @@ interface LlmFullTip {
   awayTeam: string | null;
   market: string | null;
   selection: string | null;
+  odds?: number | string | null;
 }
 
 /**
@@ -203,7 +225,7 @@ interface LlmFullTip {
 export async function extractFullTipWithLLM(args: {
   rawText: string;
   imageBuffer?: Buffer;
-}): Promise<{ homeTeam: string; awayTeam: string; market: string | null; selection: string | null } | null> {
+}): Promise<{ homeTeam: string; awayTeam: string; market: string | null; selection: string | null; odds: number | null } | null> {
   const client = await getClient();
   if (!client) return null;
 
@@ -271,5 +293,5 @@ Identifie le match (équipes) et si possible la sélection. JSON strict.`;
     }
   }
 
-  return { homeTeam: parsed.homeTeam, awayTeam: parsed.awayTeam, market, selection };
+  return { homeTeam: parsed.homeTeam, awayTeam: parsed.awayTeam, market, selection, odds: parseLlmOdds(parsed.odds) };
 }

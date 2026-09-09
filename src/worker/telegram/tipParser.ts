@@ -236,12 +236,42 @@ const MARKET_RULES: MarketRule[] = [
 const OVER_RE = /(?:over\W{0,3}(\d+(?:[.,]\d)?)|plus de\W{0,3}(\d+(?:[.,]\d)?)|\+\s*(\d+(?:[.,]\d)?)\s*buts?)/i;
 const UNDER_RE = /(?:under\W{0,3}(\d+(?:[.,]\d)?)|moins de\W{0,3}(\d+(?:[.,]\d)?)|-\s*(\d+(?:[.,]\d)?)\s*buts?)/i;
 
-function matchOverUnder(rawText: string, re: RegExp, direction: "OVER" | "UNDER"): { market: string; selection: string } | null {
+/**
+ * A lot of tipster channels post first-half-only lines — nearly always
+ * "over 0.5 / 1.5 (1ère mi-temps)". Those must NOT collapse into the same
+ * fingerprint as a full-match "over 1.5" (they're a different bet with a
+ * different price and outcome), so when one of these cues is present the
+ * market becomes `OVER_UNDER_HT` instead of `OVER_UNDER`.
+ *
+ * Deliberately requires an EXPLICIT first-half marker — "1ère mi-temps",
+ * "première période", "1st half", or a standalone HT/MT/1H/1T abbreviation
+ * (the forms bet-slip OCR leaves behind). A bare "mi-temps" mention is NOT
+ * enough: tipsters routinely reference the half-time state while betting on
+ * the full match ("3-0 à la mi-temps, over 4.5 facile" is a full-time
+ * over), and a wrong HT tag both fractures the consensus fingerprint and
+ * grades the pick against the wrong score. Second-half lines ("2e
+ * mi-temps") are screened out separately in extractSelection.
+ */
+const FIRST_HALF_CUE_RE =
+  /(?:\b1(?:ere|ère|re|er)?\s*(?:mi[-\s]?temps|p[ée]riode|half)\b|\bpremi[èe]re\s*(?:mi[-\s]?temps|p[ée]riode)\b|\b1st\s*half\b|\bfirst\s*half\b|\bmi[-\s]?temps\s*1\b|\b(?:ht|mt|1h|1t)\b)/i;
+
+/** Explicit SECOND-half markers — when present, a generic first-half cue is
+ *  ignored so "over 0.5 2e mi-temps" stays a plain (non-HT) line rather
+ *  than being mislabelled. */
+const SECOND_HALF_CUE_RE =
+  /(?:\b2(?:e|eme|ème|nd)?\s*(?:mi[-\s]?temps|p[ée]riode|half)\b|\bseconde?\s*(?:mi[-\s]?temps|p[ée]riode)\b|\bdeuxi[èe]me\s*(?:mi[-\s]?temps|p[ée]riode)\b|\b2nd\s*half\b|\b(?:2h|2t)\b)/i;
+
+function matchOverUnder(
+  rawText: string,
+  re: RegExp,
+  direction: "OVER" | "UNDER",
+  half: "" | "_HT" = "",
+): { market: string; selection: string } | null {
   const match = rawText.match(re);
   if (!match) return null;
   const raw = match[1] ?? match[2] ?? match[3];
   const line = raw.replace(",", ".").replace(".", "_");
-  return { market: "OVER_UNDER", selection: `${direction}_${line}` };
+  return { market: `OVER_UNDER${half}`, selection: `${direction}_${line}` };
 }
 
 /**
@@ -337,9 +367,11 @@ export function extractSelection(rawText: string, fixture: Fixture): { market: s
   const homeSlug = slugTeam(fixture.homeTeam);
   const awaySlug = slugTeam(fixture.awayTeam);
 
-  const over = matchOverUnder(rawText, OVER_RE, "OVER");
+  const half: "" | "_HT" =
+    FIRST_HALF_CUE_RE.test(rawText) && !SECOND_HALF_CUE_RE.test(rawText) ? "_HT" : "";
+  const over = matchOverUnder(rawText, OVER_RE, "OVER", half);
   if (over) return over;
-  const under = matchOverUnder(rawText, UNDER_RE, "UNDER");
+  const under = matchOverUnder(rawText, UNDER_RE, "UNDER", half);
   if (under) return under;
 
   for (const rule of MARKET_RULES) {
@@ -420,9 +452,13 @@ export function getDirectionKey(market: string, selection: string, fixture: Fixt
     if (selection === "DRAW") return "draw";
     return null;
   }
-  if (market === "OVER_UNDER") {
-    if (selection.startsWith("OVER_")) return "over_goals";
-    if (selection.startsWith("UNDER_")) return "under_goals";
+  if (market === "OVER_UNDER" || market === "OVER_UNDER_HT") {
+    // First-half goals get their own direction bucket — a "over 1.5 HT"
+    // reader and a "over 2.5 full-time" reader are not backing the same
+    // thing, so they must never merge into one directional consensus.
+    const suffix = market === "OVER_UNDER_HT" ? "_ht" : "";
+    if (selection.startsWith("OVER_")) return `over_goals${suffix}`;
+    if (selection.startsWith("UNDER_")) return `under_goals${suffix}`;
     return null;
   }
   if (market === "BTTS") {

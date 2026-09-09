@@ -31,6 +31,7 @@ process.on("unhandledRejection", (reason) => {
   console.error("[worker] unhandled promise rejection — logged, worker keeps running:", reason);
 });
 import { withWorkerLock } from "./lib/lock";
+import { purgeOldData } from "./lib/purge";
 import {
   getOddsDropConfig,
   getOddsRiseConfig,
@@ -59,7 +60,6 @@ import { detectValueBet, type BookmakerPrice } from "./detectors/valueBet";
 import { scoreSignal, VALUE_BET_SCORE_WEIGHTS, type ScoreFactors, type ScoreWeights } from "./detectors/score";
 import { ingestFromProvider } from "./ingest";
 import { resolvePendingOutcomes } from "./outcomeResolver";
-import { resolvePendingConsensusOutcomes } from "./telegram/consensusOutcomeResolver";
 import type { TelegramClient } from "telegram";
 
 // Shared handle so the outcome resolver in the main loop can post replies
@@ -522,20 +522,6 @@ async function upsertValueBetSignal(
 }
 
 async function runDetectionPass(): Promise<string[]> {
-  const markets = await db.market.findMany({
-    // "live" added 2026-08-22 — the live-odds provider (apiFootball.ts)
-    // writes in-play Over/Under snapshots tagged eventStatus: "live", but
-    // this query excluded anything not "upcoming" from the moment that
-    // shipped, so every live snapshot was stored and never once evaluated
-    // by a detector. Confirmed and fixed same day, no live signal had
-    // fired yet.
-    where: { event: { status: { in: ["upcoming", "live"] } } },
-    include: {
-      event: { include: { competition: true } },
-      selections: { include: { odds: { orderBy: { timestamp: "asc" } } } },
-    },
-  });
-
   const oddsDropConfig = getOddsDropConfig();
   const oddsRiseConfig = getOddsRiseConfig();
   const vigExplosionConfig = getVigExplosionConfig();
@@ -564,6 +550,37 @@ async function runDetectionPass(): Promise<string[]> {
   };
 
   const touchedSignalIds: string[] = [];
+
+  // Paginated market fetch — Prisma's nested `include: { selections: {
+  // include: { odds: ... } } }` reissues a `WHERE selectionId IN (...)`
+  // with one parameter per selection across the ENTIRE result set. On a
+  // full DB (thousands of live/upcoming markets, ~2-3 selections each)
+  // that blows past Postgres' 65535 parameters/query limit and Supabase
+  // rejects with P2029 ("query parameter limit … exceeded"), which took
+  // the whole detection pass down until now (Noaim 2026-09-08). Pages of
+  // 300 markets keep the nested IN clause well under the limit while still
+  // being few enough page fetches per pass to not matter for throughput.
+  // "live" tag added 2026-08-22 — the live-odds provider (apiFootball.ts)
+  // writes in-play Over/Under snapshots tagged eventStatus: "live", but
+  // this query excluded anything not "upcoming" from the moment that
+  // shipped, so every live snapshot was stored and never once evaluated
+  // by a detector. Confirmed and fixed same day, no live signal had fired
+  // yet.
+  const PAGE_SIZE = 300;
+  let cursor: string | undefined;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const markets = await db.market.findMany({
+      where: { event: { status: { in: ["upcoming", "live"] } } },
+      orderBy: { id: "asc" },
+      take: PAGE_SIZE,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      include: {
+        event: { include: { competition: true } },
+        selections: { include: { odds: { orderBy: { timestamp: "asc" } } } },
+      },
+    });
+    if (markets.length === 0) break;
 
   for (const market of markets) {
     if (isExcludedBookmakerMarket(market.name)) {
@@ -663,6 +680,10 @@ async function runDetectionPass(): Promise<string[]> {
       await db.signal.update({ where: { id: existingLock.id }, data: { status: "RESOLVED", resolvedAt: new Date() } });
       console.log(`[worker] MARKET_LOCK resolved market=${market.id} (status back to open)`);
     }
+  }
+
+    if (markets.length < PAGE_SIZE) break;
+    cursor = markets[markets.length - 1].id;
   }
 
   for (const group of dropsByEventPosition.values()) {
@@ -927,6 +948,34 @@ async function startStrategyLoop(): Promise<void> {
   loop().catch((err) => console.error("[worker] strategy loop crashed", err));
 }
 
+/**
+ * Runs the retention purge every 24h (with a 5-min offset from boot so
+ * fresh restarts don't all try to purge at the same second) — deletes
+ * OddsSnapshot/Signal/ScrapedTip/GroupTicket rows older than their
+ * retention window. Without this the OddsSnapshot table grows a few
+ * thousand rows per ingest cycle, and after a few weeks the detection
+ * query (a JOIN across market/event/selection/OddsSnapshot) starts
+ * timing out at Prisma's pool limit — this is what killed detection
+ * from 2026-09-05 onward. Kept fire-and-forget, its own try/catch.
+ */
+function startPurgeLoop(): void {
+  const DAY_MS = 24 * 3600 * 1000;
+  const loop = async () => {
+    // Small delay on first run so a restart doesn't purge on a machine
+    // that's still finishing its startup work.
+    await new Promise((r) => setTimeout(r, 5 * 60_000));
+    for (;;) {
+      try {
+        await purgeOldData();
+      } catch (err) {
+        console.error("[worker] purge loop iteration failed", err);
+      }
+      await new Promise((r) => setTimeout(r, DAY_MS));
+    }
+  };
+  loop().catch((err) => console.error("[worker] purge loop crashed", err));
+}
+
 async function main() {
   console.log(
     `[worker] Odds Hunter worker starting — detection every ${WORKER_POLL_INTERVAL_MS}ms, ` +
@@ -942,6 +991,7 @@ async function main() {
   await startTelegramBot();
   await startTipConsensusListener();
   await startStrategyLoop();
+  startPurgeLoop();
 
   let lastIngestAt = 0;
 
@@ -952,28 +1002,34 @@ async function main() {
         // (see apiFootball.ts) — it runs on its own, much slower cadence.
         // Detection just re-reads what's already in the DB, so it can run
         // every cycle for free.
-        const touchedSignalIds = await runDetectionPass();
+        //
+        // Wrapped in its own try/catch (2026-09-05): a slow Market/OddsSnapshot
+        // query hitting Supabase's statement_timeout was throwing here and
+        // aborting the WHOLE loop iteration — so consensus outcome grading
+        // below never ran and every VIP alert sat on "en attente" forever.
+        // The odds-drop signal path failing is not a reason to also stop
+        // grading the VIP consensus feed.
+        let touchedSignalIds: string[] = [];
+        try {
+          touchedSignalIds = await runDetectionPass();
+        } catch (err) {
+          console.error("[worker] detection pass failed (continuing to consensus/ingest)", err);
+        }
+
+        // VIP consensus outcome grading DISABLED (Noaim, 2026-09-06: "on
+        // arrête le statut… une seule alerte, ça suffit"). A consensus is
+        // posted once, clean (match / pays / pronostic / cote), and never
+        // touched again — no status line, no "en cours", no result. This
+        // also removes the BetExplorer/TheSportsDB result lookups that were
+        // timing out every pass. resolvePendingConsensusOutcomes and its
+        // helpers are kept in the tree in case grading is wanted back.
+
         if (Date.now() - lastIngestAt >= INGEST_POLL_INTERVAL_MS) {
           await runIngestion();
           try {
             await resolvePendingOutcomes(db, getBotForDelivery());
           } catch (err) {
             console.error("[worker] outcome resolution failed", err);
-          }
-          // Consensus alerts get their own outcome pass: they're graded off
-          // Sofascore (free, no key) since API-Football is dead, and reply
-          // to the original VIP message with ✅ Passé / ❌ Perdu once the
-          // match ends. Runs every ingest cycle (15 min in prod) — plenty
-          // often for match-length feedback, gentle enough on Sofascore.
-          if (tipUserClient) {
-            try {
-              const r = await resolvePendingConsensusOutcomes(db, tipUserClient);
-              if (r.resolved || r.unresolved) {
-                console.log(`[worker] consensus outcomes: ${r.resolved} graded, ${r.unresolved} given up, ${r.skipped} still waiting`);
-              }
-            } catch (err) {
-              console.error("[worker] consensus outcome resolution failed", err);
-            }
           }
           // Momentum picks (stats-based live tips) turned off (Noaim,
           // 2026-08-23): the product targets match-fixing in obscure,

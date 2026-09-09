@@ -2,6 +2,7 @@ import type { Dictionary } from "./fr";
 
 const en = {
   nav: {
+    home: "Home",
     subscription: "Subscription",
     bookmakers: "Bookmakers",
     social: "Social",
@@ -62,7 +63,7 @@ const en = {
       {
         question: "Is the bot already active?",
         answer:
-          "Yes. It monitors odds continuously and sends signals straight to Telegram as soon as you link your account from the \"My account\" page.",
+          "Not yet. The bot is still being refined and isn't open for purchase right now — only the VIP channel is available today.",
       },
       {
         question: "Can I cancel anytime?",
@@ -155,7 +156,7 @@ const en = {
     bot: {
       eyebrow: "Automated bot",
       title: "Odds Hunter bot",
-      statusLabel: "Active",
+      statusLabel: "Coming soon",
       description:
         "A bot that watches the odds and alerts you automatically, without needing to follow the channel constantly.",
       features: [
@@ -164,7 +165,8 @@ const en = {
         "Cancel anytime from your account",
       ],
       cta: "Access the bot",
-      footnote: "Your Telegram access starts right after payment.",
+      footnote: "Still being refined — not open for purchase yet.",
+      notAvailable: "The bot isn't open for purchase yet — join the VIP in the meantime.",
     },
   },
   settings: {

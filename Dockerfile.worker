@@ -33,6 +33,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/prisma ./prisma
 COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src
+COPY scripts ./scripts
 COPY eng.traineddata fra.traineddata ./
 
 # Fly.io shuts down containers with SIGINT/SIGTERM — tini forwards those

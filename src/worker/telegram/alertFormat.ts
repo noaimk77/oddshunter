@@ -10,7 +10,7 @@ import { slugTeam } from "./tipParser";
  * if two chats posted them.
  */
 
-const NAME_JUNK_CHARS_RE = /[©®™•·]/g;
+const NAME_JUNK_CHARS_RE = /[©®™•·°~^]/g;
 const NAME_LEADING_SEPARATOR_RE = /^[\s&|,;:@#*+/\\.\-–—]+/;
 const NAME_TRAILING_SEPARATOR_RE = /[\s&|,;:@#*+/\\.\-–—]+$/;
 
@@ -116,8 +116,61 @@ export function shouldSendConsensusAlert(
   const homeSlug = slugTeam(home);
   const awaySlug = slugTeam(away);
 
+  // An EMPTY slug is nothing to bet on. A ≤2-char slug on either side is
+  // OCR debris (real 2026-09-04: "Opanxap vs ra" — the "ra" side is not a
+  // real Serbian abbreviation, it's an OCR fragment) UNLESS the RAW side
+  // reads as an all-caps abbreviation ("OM", "AC", "PSG"). Two lowercase
+  // letters after slugging = broken; two capital letters in the source =
+  // legitimate club shortcut.
+  if (!homeSlug || !awaySlug) {
+    return { ok: false, reason: `team slug empty after slugging (${homeSlug || "∅"} / ${awaySlug || "∅"})` };
+  }
+  const isRealAbbreviation = (raw: string): boolean => {
+    const trimmed = raw.trim();
+    return trimmed.length >= 2 && trimmed.length <= 4 && /^[A-Z]+$/.test(trimmed);
+  };
+  if (homeSlug.length <= 2 && !isRealAbbreviation(home)) {
+    return { ok: false, reason: `home slug too short and raw name isn't an all-caps abbreviation — OCR fragment (${homeSlug} / raw "${home}")` };
+  }
+  if (awaySlug.length <= 2 && !isRealAbbreviation(away)) {
+    return { ok: false, reason: `away slug too short and raw name isn't an all-caps abbreviation — OCR fragment (${awaySlug} / raw "${away}")` };
+  }
+
   if (META_TEAM_SLUGS.has(homeSlug) || META_TEAM_SLUGS.has(awaySlug)) {
     return { ok: false, reason: `team slug is a known meta label (${META_TEAM_SLUGS.has(homeSlug) ? homeSlug : awaySlug})` };
+  }
+
+  // Non-Latin team names (Noaim 2026-09-06: "je ne parle pas russe"). If
+  // EITHER side of the fixture carries Cyrillic characters — real cases from
+  // the screenshot: "BaacaH Harnoceypa vs IHACTaH", "Сингапур vs Монголия",
+  // "AmMepuka MuHeHpo vs NoHapnHa" — the subscriber has no way to look up
+  // the match on a bookmaker in French. Suppress rather than send something
+  // he can't act on. Same rule for other non-Latin scripts (Greek, Arabic,
+  // CJK) — we don't have a translation pipeline, and posting an
+  // unreadable-to-the-audience alert is worse than skipping it.
+  const NON_LATIN_RE = /[Ѐ-ӿͰ-Ͽ؀-ۿ一-鿿぀-ヿ가-힯]/;
+  for (const raw of [home, away]) {
+    if (NON_LATIN_RE.test(raw)) {
+      return { ok: false, reason: `team name uses non-Latin script (${raw}) — no French/Latin lookup available for subscriber` };
+    }
+  }
+  // OCR/transliteration of Cyrillic into "Latin lookalikes" a French
+  // speaker still can't read — "BaacaH Harnoceypa" (Cyrillic "н" comes out
+  // as Latin "H" mid-word), "IHACTaH" (mostly majuscules), "AmMepuka
+  // MuHeHpo vs NoHapnHa" (alternating case). None of these normal Latin
+  // team names have these letter patterns:
+  //   - a Latin H sitting between a lowercase vowel and end-of-word/space
+  //     (Cyrillic н transliteration): "aH", "oH", "uH", "eH", "iH"
+  //   - 3+ consecutive uppercase letters mid-word (IHACT, ANSTA…)
+  //   - alternating case inside a word ("mMe" in AmMepuka)
+  const LOOKALIKE = [
+    /[aeiou]H(?:$|\s|\b)/g, // aH/oH/uH/eH/iH ending a token
+    /[A-Z]{3,}/g, // 3+ caps in a row
+    /[a-z][A-Z][a-z]/g, // camelCase mid-word (foreign in team names)
+  ];
+  const lookalikeHits = LOOKALIKE.reduce((n, re) => n + (home.match(re)?.length ?? 0) + (away.match(re)?.length ?? 0), 0);
+  if (lookalikeHits >= 2) {
+    return { ok: false, reason: `team names read as cyrillic-lookalike OCR garble (${home} / ${away}, ${lookalikeHits} lookalike signals)` };
   }
 
   // Narrative-text rejection: the parser occasionally tears a phrase out
@@ -154,7 +207,7 @@ export function shouldSendConsensusAlert(
     Array.from(awaySlug.matchAll(/[a-z]+/g)).every((m) => NON_TEAM_WORD_TOKENS.has(m[0]));
   if (homeIsMeta || awayIsMeta) return { ok: false, reason: "team name reads as meta label only" };
 
-  if (tip.market === "OVER_UNDER") {
+  if (tip.market === "OVER_UNDER" || tip.market === "OVER_UNDER_HT") {
     // Two shapes to reject: (a) the raw number is >= 15 (nobody bets on
     // that many goals — a 2-digit line means the decimal got eaten by OCR
     // ["Over 1.8" → "18"]); (b) a bare 2-digit number with no underscore
@@ -180,6 +233,28 @@ export function shouldSendConsensusAlert(
       if (frac !== "5" && frac !== "25" && frac !== "75") {
         return { ok: false, reason: `over/under line has non-standard fraction (${tip.selection}) — real lines are only .0/.25/.5/.75` };
       }
+    }
+  }
+
+  // A full-match total whose line reads as basketball (≥ 15 points, so
+  // inferSport calls it basketball) but sits well below any real
+  // full-game total is almost always a TEAM total or a half/quarter line
+  // the parser couldn't qualify — there is no market code for "team
+  // total", so it would render as a bare "Plus de 71,5 points" and read
+  // as the whole-match line, which it is not (Noaim 2026-09-09, "Dugave
+  // Odema vs Metalac — Plus de 71,5 points": "c'était le total d'une
+  // équipe, pas tout le match, sinon ce n'est pas cohérent"). Real
+  // full-game totals: NBA ~210+, EuroLeague ~150, women's / youth / low
+  // divisions ~120-140 — nothing legitimate lands under ~115. HT lines
+  // are already tagged "1ère mi-temps" and a ~60-90 half total is real,
+  // so this only screens the full-match market.
+  if (tip.market === "OVER_UNDER") {
+    const line = Number.parseFloat(tip.selection.replace(/^(?:OVER|UNDER)_/, "").replace(/_/g, "."));
+    if (Number.isFinite(line) && line >= 15 && line < 115) {
+      return {
+        ok: false,
+        reason: `total ${line} is below any real full-match basketball total — likely a team/half total the parser couldn't qualify`,
+      };
     }
   }
 
@@ -228,7 +303,7 @@ const SPORT_TOTAL_UNIT: Record<Sport, string> = {
 };
 
 export function inferSport(tip: Pick<ParsedTip, "market" | "selection">): Sport {
-  if (tip.market === "OVER_UNDER") {
+  if (tip.market === "OVER_UNDER" || tip.market === "OVER_UNDER_HT") {
     const raw = tip.selection.replace(/^(?:OVER|UNDER)_/, "").replace(/_/g, ".");
     const n = Number.parseFloat(raw);
     if (Number.isFinite(n)) return n >= 15 ? "basketball" : "football";
@@ -263,16 +338,24 @@ function formatOverUnder(selection: string, sport: Sport): string | null {
 
 /** French label for a market+selection pair, or a graceful fallback when
  *  the codes are shapes we didn't anticipate (rather than throwing). */
-export function formatMarketSelection(tip: Pick<ParsedTip, "homeTeam" | "awayTeam" | "market" | "selection">): string {
+export function formatMarketSelection(
+  tip: Pick<ParsedTip, "homeTeam" | "awayTeam" | "market" | "selection">,
+  sportOverride?: Sport,
+): string {
   const home = sanitizeTeamName(tip.homeTeam ?? "");
   const away = sanitizeTeamName(tip.awayTeam ?? "");
-  const sport = inferSport(tip);
+  const sport = sportOverride ?? inferSport(tip);
 
   switch (tip.market) {
     case "OVER_UNDER": {
       const fr = formatOverUnder(tip.selection, sport);
       if (fr) return fr;
       return `Total : ${tip.selection}`;
+    }
+    case "OVER_UNDER_HT": {
+      const fr = formatOverUnder(tip.selection, sport);
+      if (fr) return `${fr} (1ère mi-temps)`;
+      return `Total 1ère mi-temps : ${tip.selection}`;
     }
     case "1X2": {
       if (tip.selection === "DRAW") return "Match nul";
@@ -323,36 +406,177 @@ export function formatMarketSelection(tip: Pick<ParsedTip, "homeTeam" | "awayTea
  *  adapts to what the pick actually reads as (football / basketball /
  *  unknown) — a football emoji on a 162,5-points basketball pick reads as
  *  a bug and undermines trust in the whole feed. */
+const ODDS_MIN = 1.15;
+const ODDS_MAX = 15;
+const frOdds = (n: number): string => n.toFixed(2).replace(".", ",");
+
+/** The odds line for the alert. When multiple groups stated different
+ *  odds we show the AVERAGE (Noaim, 2026-09-05: "si un groupe envoie 1.50
+ *  et l'autre 2.00 tu fais la moyenne, ça fait 1.75" — reversing his
+ *  earlier 2026-09-03 stance because a single-value line is what
+ *  subscribers actually want to see, not a spread). `samples` are every
+ *  DISTINCT labeled odds seen across the groups that formed this
+ *  consensus; the average is arithmetic mean, rounded to 2 decimals. */
+function formatOddsLine(samples: number[] | undefined, fallback: number | null | undefined): string | null {
+  const clean = Array.from(
+    new Set((samples ?? []).filter((n) => Number.isFinite(n) && n >= ODDS_MIN && n <= ODDS_MAX).map((n) => Math.round(n * 100) / 100)),
+  );
+  if (clean.length === 0) {
+    if (fallback != null && Number.isFinite(fallback) && fallback >= ODDS_MIN && fallback <= ODDS_MAX) {
+      return `💰 Cote au signalement : ${frOdds(fallback)}`;
+    }
+    return null;
+  }
+  if (clean.length === 1) return `💰 Cote au signalement : ${frOdds(clean[0])}`;
+  // Averaged into a single value (Noaim, 2026-09-05: "1.50 et 2.00, tu fais
+  // la moyenne, ça fait 1.75") — the "(moyenne de N groupes)" tag was
+  // dropped right after shipping it (Noaim, same day: "ça ne sert à rien,
+  // ça prend de la place pour rien"), so this now reads identically to the
+  // single-value case.
+  const avg = clean.reduce((a, b) => a + b, 0) / clean.length;
+  const rounded = Math.round(avg * 100) / 100;
+  return `💰 Cote au signalement : ${frOdds(rounded)}`;
+}
+
 export function formatConsensusMessage(
-  tip: ParsedTip & { groupCount: number; oddsAtAlert?: number | null },
+  tip: ParsedTip & {
+    groupCount: number;
+    oddsAtAlert?: number | null;
+    /** Every distinct labeled odds the contributing groups stated. */
+    oddsSamples?: number[];
+    country?: string | null;
+    /** Authoritative sport when a provider resolved the fixture — overrides
+     *  the numeric-line guess in inferSport (which read a basketball match
+     *  as football). */
+    sport?: Sport;
+    /** Set when the match is already in play at post time — the status line
+     *  starts as "match en cours (N min)" instead of "en attente". */
+    live?: { minute?: number | null } | null;
+  },
 ): string {
   const home = sanitizeTeamName(tip.homeTeam);
   const away = sanitizeTeamName(tip.awayTeam);
-  const sport = inferSport(tip);
-  const pick = formatMarketSelection(tip);
+  const sport = tip.sport ?? inferSport(tip);
+  const pick = formatMarketSelection(tip, sport);
 
-  const lines = [
-    "🎯 Consensus détecté",
-    "",
-    `${SPORT_EMOJI[sport]} Match : ${home} vs ${away}`,
-    `📊 Pronostic : ${pick}`,
-  ];
-  if (tip.oddsAtAlert && Number.isFinite(tip.oddsAtAlert) && tip.oddsAtAlert >= 1.15 && tip.oddsAtAlert <= 15) {
-    // French decimal comma, two decimals — matches how the tipster
-    // channels themselves post odds ("cote 1,85"), not "1.85". A value
-    // outside [1.15, 15] is almost always the parser picking up an odds
-    // value from a market menu row rather than the actual pick's price
-    // (real case 2026-09-02: cote "1,02" surfaced from a Sporting Liesti
-    // odds board where the real pick was elsewhere on the screen). Skip
-    // rendering rather than displaying a misleading number.
-    lines.push(`💰 Cote au signalement : ${tip.oddsAtAlert.toFixed(2).replace(".", ",")}`);
+  // Simplified 2026-09-05 (Noaim: "on va essayer de tout simplifier") — no
+  // more "🎯 Consensus détecté" header, no "Signalé par : N groupes" line,
+  // no closing disclaimer. Straight to the pick. `groupCount` is still
+  // tracked on the ConsensusAlert row and in logs, just not shown here.
+  const lines = [`${SPORT_EMOJI[sport]} Match : ${home} vs ${away}`];
+  // Best-effort country of the competition (resolved from TheSportsDB at
+  // send time — see vipGroup.ts). Omitted rather than shown blank when the
+  // fixture couldn't be resolved, which is common for the obscure
+  // reserve/youth leagues this feed leans on.
+  if (tip.country && tip.country.trim()) {
+    lines.push(`🌍 Pays : ${tip.country.trim()}`);
   }
-  lines.push(`👥 Signalé par : ${tip.groupCount} groupes différents`);
-  lines.push("");
-  lines.push(
-    "⚠️ Agrégation automatique de pronostics venus d'ailleurs — pas un signal Odds Hunter, à vérifier avant de miser.",
-  );
+  lines.push(`📊 Pronostic : ${pick}`);
+  const oddsLine = formatOddsLine(tip.oddsSamples, tip.oddsAtAlert);
+  if (oddsLine) lines.push(oddsLine);
+  // No status line at post time (Noaim 2026-09-06: "enlève le statut"). The
+  // message stays clean — Match / Pays / Pronostic / Cote — and the outcome
+  // resolver APPENDS a single "✅ Résultat : …" / "❌ …" line once the match
+  // is graded, nothing before that.
   return lines.join("\n");
+}
+
+/**
+ * The single status line every consensus alert carries. It starts life as
+ * "en attente du résultat", flips to "match en cours" once kickoff has
+ * passed, then to the graded verdict + final score once the match ends —
+ * and the outcome resolver EDITS the original Telegram message in place to
+ * do each flip (never a separate follow-up reply — Noaim, 2026-09-04: "tu
+ * n'envoies pas un nouveau message pour le résultat, tu restes sur le même
+ * message"). replaceConsensusStatusLine swaps only this line and leaves
+ * every other line of the alert untouched.
+ */
+export type ConsensusStatusInput =
+  | { state: "pending" }
+  | { state: "live"; minute?: number | null }
+  | { state: "unresolved" }
+  | {
+      state: "won" | "lost" | "void";
+      homeTeam: string;
+      awayTeam: string;
+      homeScore: number;
+      awayScore: number;
+      halfTimeScore?: { homeScore: number; awayScore: number } | null;
+    };
+
+/** Every prefix a status line can start with — replaceConsensusStatusLine
+ *  scans for one of these to find the line it must swap. Order doesn't
+ *  matter; they're mutually exclusive in a real message. */
+export const CONSENSUS_STATUS_PREFIXES = [
+  "🔄 Statut :",
+  "🔴 Statut :",
+  "✅ Résultat :",
+  "❌ Résultat :",
+  "⚪ Résultat :",
+] as const;
+
+export function consensusStatusLine(input: ConsensusStatusInput): string {
+  // 🔄 = "chargement" (Noaim, 2026-09-05) — a true animated Telegram emoji
+  // needs Premium + a custom emoji asset id, not plain Bot API text, so
+  // this is the closest reliable stand-in that reads as "en cours de
+  // traitement" on every client. ✅/❌ below are unchanged, as asked.
+  if (input.state === "pending") return "🔄 Statut : en attente du résultat";
+  if (input.state === "live") {
+    return input.minute != null && Number.isFinite(input.minute)
+      ? `🔴 Statut : match en cours (${input.minute}e min)`
+      : "🔴 Statut : match en cours";
+  }
+  // Terminal state for a fixture we could never find a score for — a
+  // garbled/OCR-mangled team name ("ghas vs Atletica Portugue"), a
+  // postponed match, an ultra-obscure league neither source covers. Better
+  // than leaving the alert on "en attente du résultat" forever (Noaim
+  // 2026-09-05).
+  if (input.state === "unresolved") return "⚪ Résultat : indisponible (match introuvable)";
+  const home = sanitizeTeamName(input.homeTeam);
+  const away = sanitizeTeamName(input.awayTeam);
+  const score = input.halfTimeScore
+    ? `${home} ${input.halfTimeScore.homeScore}-${input.halfTimeScore.awayScore} ${away} à la mi-temps (${input.homeScore}-${input.awayScore} au final)`
+    : `${home} ${input.homeScore}-${input.awayScore} ${away}`;
+  const verdict =
+    input.state === "won"
+      ? "✅ Résultat : pari validé"
+      : input.state === "lost"
+        ? "❌ Résultat : pari perdu"
+        : "⚪ Résultat : remboursé (push)";
+  return `${verdict} — ${score}`;
+}
+
+/**
+ * Returns `originalText` with its status line swapped for `newStatusLine`,
+ * every other line kept byte-for-byte (so the country / odds-spread lines
+ * survive an edit made from data the resolver doesn't itself hold). If the
+ * message predates the status line — alerts posted before 2026-09-04 — the
+ * new line is inserted just above the ⚠️ disclaimer instead.
+ */
+export function replaceConsensusStatusLine(originalText: string, newStatusLine: string): string {
+  const lines = originalText.split("\n");
+  const idx = lines.findIndex((l) => CONSENSUS_STATUS_PREFIXES.some((p) => l.startsWith(p)));
+  if (idx !== -1) {
+    lines[idx] = newStatusLine;
+    return lines.join("\n");
+  }
+  const disclaimerIdx = lines.findIndex((l) => l.startsWith("⚠️"));
+  if (disclaimerIdx === -1) return `${originalText}\n${newStatusLine}`;
+  let insertAt = disclaimerIdx;
+  if (insertAt > 0 && lines[insertAt - 1] === "") insertAt -= 1; // keep the blank line before the disclaimer
+  lines.splice(insertAt, 0, newStatusLine);
+  return lines.join("\n");
+}
+
+/** The status prefix currently on a posted message, or null — lets the
+ *  resolver skip a redundant "→ live" edit on a message that already shows
+ *  a live or resolved line. */
+export function currentConsensusStatusPrefix(text: string): (typeof CONSENSUS_STATUS_PREFIXES)[number] | null {
+  for (const line of text.split("\n")) {
+    const hit = CONSENSUS_STATUS_PREFIXES.find((p) => line.startsWith(p));
+    if (hit) return hit;
+  }
+  return null;
 }
 
 /**
@@ -370,10 +594,16 @@ export function formatConsensusOutcomeMessage(args: {
   awayScore: number;
   outcome: "WON" | "LOST" | "VOID";
   oddsAtAlert?: number | null;
+  /** When set, the pick was a first-half line — the score that graded it is
+   *  the half-time one, so show that (with the full-time score alongside for
+   *  context) instead of a bare full-time score the reader would misread. */
+  halfTimeScore?: { homeScore: number; awayScore: number } | null;
 }): string {
   const home = sanitizeTeamName(args.homeTeam);
   const away = sanitizeTeamName(args.awayTeam);
-  const scoreLine = `${home} ${args.homeScore}-${args.awayScore} ${away}`;
+  const scoreLine = args.halfTimeScore
+    ? `${home} ${args.halfTimeScore.homeScore}-${args.halfTimeScore.awayScore} ${away} à la mi-temps (${args.homeScore}-${args.awayScore} au final)`
+    : `${home} ${args.homeScore}-${args.awayScore} ${away}`;
   const label =
     args.outcome === "WON"
       ? "✅ Passé"
@@ -397,18 +627,28 @@ export function evaluateConsensusOutcome(
   selection: string,
   fixture: { homeTeam: string; awayTeam: string },
   score: { homeScore: number; awayScore: number },
+  halfTimeScore?: { homeScore: number; awayScore: number } | null,
 ): "WON" | "LOST" | "VOID" | null {
   const diff = score.homeScore - score.awayScore;
   const total = score.homeScore + score.awayScore;
   const homeSlug = slugTeam(fixture.homeTeam);
   const awaySlug = slugTeam(fixture.awayTeam);
 
-  if (market === "OVER_UNDER") {
+  if (market === "OVER_UNDER" || market === "OVER_UNDER_HT") {
     const m = selection.match(/^(OVER|UNDER)_(\d+(?:_\d+)?)$/);
     if (!m) return null;
     const dir = m[1];
     const line = Number.parseFloat(m[2].replace(/_/g, "."));
     if (!Number.isFinite(line)) return null;
+    // A first-half line is graded against the half-time score, not the
+    // full-time one. No HT score available (Sofascore didn't expose
+    // period1) → ungradeable, caller records UNRESOLVED rather than guessing.
+    if (market === "OVER_UNDER_HT") {
+      if (!halfTimeScore) return null;
+      const htTotal = halfTimeScore.homeScore + halfTimeScore.awayScore;
+      if (htTotal === line) return "VOID";
+      return (dir === "OVER" ? htTotal > line : htTotal < line) ? "WON" : "LOST";
+    }
     if (total === line) return "VOID"; // push
     const isOver = total > line;
     return (dir === "OVER" ? isOver : !isOver) ? "WON" : "LOST";

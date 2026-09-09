@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateConsensusOutcome, formatConsensusMessage, formatConsensusOutcomeMessage, formatMarketSelection, inferSport, sanitizeTeamName, shouldSendConsensusAlert } from "./alertFormat";
+import { consensusStatusLine, currentConsensusStatusPrefix, evaluateConsensusOutcome, formatConsensusMessage, formatConsensusOutcomeMessage, formatMarketSelection, inferSport, replaceConsensusStatusLine, sanitizeTeamName, shouldSendConsensusAlert } from "./alertFormat";
 
 describe("sanitizeTeamName", () => {
   it("strips a stray & prefix left by OCR (real case: 'Wigry Suwatki vs & Termalica')", () => {
@@ -131,6 +131,23 @@ describe("shouldSendConsensusAlert — quality gate", () => {
     expect(shouldSendConsensusAlert({ ...base, selection: "OVER_2" }).ok).toBe(true);
   });
 
+  it("rejects a sub-range basketball total — team/half line, not the match total (real 2026-09-09: 'Dugave Odema vs Metalac — Plus de 71,5 points')", () => {
+    expect(shouldSendConsensusAlert({ ...base, homeTeam: "Dugave Odema", awayTeam: "Metalac", selection: "OVER_71_5" }).ok).toBe(false);
+    expect(shouldSendConsensusAlert({ ...base, selection: "OVER_45_5" }).ok).toBe(false);
+    expect(shouldSendConsensusAlert({ ...base, selection: "UNDER_88_5" }).ok).toBe(false);
+  });
+
+  it("keeps a real full-match basketball total (>= 115 points)", () => {
+    expect(shouldSendConsensusAlert({ ...base, selection: "OVER_162_5" }).ok).toBe(true);
+    expect(shouldSendConsensusAlert({ ...base, selection: "UNDER_180_5" }).ok).toBe(true);
+    expect(shouldSendConsensusAlert({ ...base, selection: "OVER_115_5" }).ok).toBe(true);
+  });
+
+  it("does not touch football over/under lines (< 15 is goals, not points)", () => {
+    expect(shouldSendConsensusAlert({ ...base, selection: "OVER_5_5" }).ok).toBe(true);
+    expect(shouldSendConsensusAlert({ ...base, selection: "OVER_9_5" }).ok).toBe(true);
+  });
+
   it("rejects a team name that reads as narrative Russian text (real bug 2026-09-02)", () => {
     expect(shouldSendConsensusAlert({ ...base, homeTeam: "Для них гол этой команде", awayTeam: "уже достижение" }).ok).toBe(false);
   });
@@ -157,9 +174,21 @@ describe("shouldSendConsensusAlert — quality gate", () => {
     expect(shouldSendConsensusAlert({ ...base, homeTeam: "Main Same Game Multi", awayTeam: "Goals Asic", market: "OVER_UNDER", selection: "OVER_2_5" }).ok).toBe(false);
   });
 
-  it("keeps a legitimate 4-word Cyrillic team name", () => {
-    // 4 words is at the boundary but common ("Football Club Something Region"). No filler tokens = OK.
-    expect(shouldSendConsensusAlert({ ...base, homeTeam: "Спартак Москва", awayTeam: "Динамо Санкт Петербург" }).ok).toBe(true);
+  it("rejects Cyrillic team names — subscriber can't look them up in French (Noaim 2026-09-06)", () => {
+    // Real cases from the 2026-09-06 screenshot: "Сингапур vs Монголия",
+    // "AmMepuka MuHeHpo vs NoHapnHa", "BaacaH Harnoceypa vs IHACTaH".
+    expect(shouldSendConsensusAlert({ ...base, homeTeam: "Сингапур", awayTeam: "Монголия" }).ok).toBe(false);
+    expect(shouldSendConsensusAlert({ ...base, homeTeam: "Спартак Москва", awayTeam: "Динамо" }).ok).toBe(false);
+  });
+
+  it("rejects cyrillic-lookalike OCR garble ('BaacaH Harnoceypa vs IHACTaH')", () => {
+    expect(shouldSendConsensusAlert({ ...base, homeTeam: "BaacaH Harnoceypa", awayTeam: "IHACTaH" }).ok).toBe(false);
+    expect(shouldSendConsensusAlert({ ...base, homeTeam: "AmMepuka MuHeHpo", awayTeam: "NoHapnHa" }).ok).toBe(false);
+  });
+
+  it("keeps a clean, Latin, French/English-readable team name", () => {
+    expect(shouldSendConsensusAlert({ ...base, homeTeam: "Deportivo Paraguayo", awayTeam: "Club Leandro N. Alem" }).ok).toBe(true);
+    expect(shouldSendConsensusAlert({ ...base, homeTeam: "FC Porto", awayTeam: "Sporting Lisboa" }).ok).toBe(true);
   });
 });
 
@@ -244,8 +273,70 @@ describe("formatConsensusOutcomeMessage — reply body", () => {
   });
 });
 
+describe("consensusStatusLine + replaceConsensusStatusLine — result line appended once graded", () => {
+  const base = formatConsensusMessage({
+    homeTeam: "FC Iberia 2010",
+    awayTeam: "FC Orbi",
+    market: "OVER_UNDER",
+    selection: "OVER_2_5",
+    fingerprint: "iberia|orbi|OVER_UNDER|OVER_2_5",
+    groupCount: 2,
+    country: "Georgia",
+    oddsAtAlert: 1.75,
+  });
+
+  it("a fresh alert carries NO status line (Noaim 2026-09-06: 'enlève le statut')", () => {
+    expect(base).not.toContain("Statut");
+    expect(base).not.toContain("en attente du résultat");
+    expect(currentConsensusStatusPrefix(base)).toBeNull();
+  });
+
+  it("appends a graded verdict + final score, leaving every other line intact", () => {
+    const won = replaceConsensusStatusLine(
+      base,
+      consensusStatusLine({ state: "won", homeTeam: "FC Iberia 2010", awayTeam: "FC Orbi", homeScore: 3, awayScore: 2 }),
+    );
+    expect(won).toContain("✅ Résultat : pari validé — FC Iberia 2010 3-2 FC Orbi");
+    expect(won).toContain("🌍 Pays : Georgia");
+    expect(won).toContain("💰 Cote au signalement : 1,75");
+    expect(won.split("\n").length).toBe(base.split("\n").length + 1);
+
+    const lost = replaceConsensusStatusLine(
+      base,
+      consensusStatusLine({ state: "lost", homeTeam: "FC Iberia 2010", awayTeam: "FC Orbi", homeScore: 0, awayScore: 0 }),
+    );
+    expect(lost).toContain("❌ Résultat : pari perdu — FC Iberia 2010 0-0 FC Orbi");
+  });
+
+  it("a re-grade replaces the result line rather than stacking a second one", () => {
+    const once = replaceConsensusStatusLine(
+      base,
+      consensusStatusLine({ state: "lost", homeTeam: "FC Iberia 2010", awayTeam: "FC Orbi", homeScore: 0, awayScore: 0 }),
+    );
+    const twice = replaceConsensusStatusLine(
+      once,
+      consensusStatusLine({ state: "won", homeTeam: "FC Iberia 2010", awayTeam: "FC Orbi", homeScore: 3, awayScore: 2 }),
+    );
+    expect(twice).toContain("✅ Résultat : pari validé");
+    expect(twice).not.toContain("❌ Résultat");
+    expect(twice.split("\n").length).toBe(once.split("\n").length);
+  });
+
+  it("still handles a legacy message that had a status line", () => {
+    const legacy = [
+      "⚽ Match : A vs B",
+      "📊 Pronostic : Plus de 2,5 buts",
+      "🔄 Statut : en attente du résultat",
+    ].join("\n");
+    const out = replaceConsensusStatusLine(legacy, consensusStatusLine({ state: "lost", homeTeam: "A", awayTeam: "B", homeScore: 1, awayScore: 0 }));
+    expect(out).toContain("❌ Résultat : pari perdu — A 1-0 B");
+    expect(out).not.toContain("🔄 Statut :");
+    expect(out.split("\n").length).toBe(legacy.split("\n").length);
+  });
+});
+
 describe("formatConsensusMessage — end-to-end format", () => {
-  it("renders a clean French block", () => {
+  it("renders a simplified block — no header, no group count, no disclaimer, no status line", () => {
     const msg = formatConsensusMessage({
       homeTeam: "Leicester City",
       awayTeam: "Plymouth Argyle",
@@ -254,11 +345,13 @@ describe("formatConsensusMessage — end-to-end format", () => {
       fingerprint: "leicester|plymouth|OVER_UNDER|OVER_2_5",
       groupCount: 2,
     });
-    expect(msg).toContain("🎯 Consensus détecté");
     expect(msg).toContain("⚽ Match : Leicester City vs Plymouth Argyle");
     expect(msg).toContain("📊 Pronostic : Plus de 2,5 buts");
-    expect(msg).toContain("👥 Signalé par : 2 groupes");
-    expect(msg).toContain("pas un signal Odds Hunter");
+    expect(msg).not.toContain("Statut");
+    expect(msg).not.toContain("Consensus détecté");
+    expect(msg).not.toContain("Signalé par");
+    expect(msg).not.toContain("Agrégation automatique");
+    expect(msg.startsWith("⚽ Match :")).toBe(true);
   });
 
   it("uses the basketball emoji and 'points' unit for a basketball pick (real miss 2026-09-02 00:53)", () => {
@@ -312,6 +405,36 @@ describe("formatConsensusMessage — end-to-end format", () => {
       oddsAtAlert: 1.02,
     });
     expect(msg).not.toContain("Cote au signalement");
+  });
+
+  it("averages multiple odds samples into a single displayed value, no tag (Noaim 2026-09-05)", () => {
+    const msg = formatConsensusMessage({
+      homeTeam: "PSG",
+      awayTeam: "OM",
+      market: "OVER_UNDER",
+      selection: "OVER_2_5",
+      fingerprint: "x",
+      groupCount: 2,
+      oddsSamples: [1.5, 2.0],
+    });
+    expect(msg).toContain("💰 Cote au signalement : 1,75");
+    expect(msg).not.toContain("moyenne");
+    expect(msg).not.toContain("selon les groupes");
+    expect(msg).not.toContain("–");
+  });
+
+  it("shows a single odds value when all groups agree", () => {
+    const msg = formatConsensusMessage({
+      homeTeam: "PSG",
+      awayTeam: "OM",
+      market: "OVER_UNDER",
+      selection: "OVER_2_5",
+      fingerprint: "x",
+      groupCount: 2,
+      oddsSamples: [1.85, 1.85],
+    });
+    expect(msg).toContain("💰 Cote au signalement : 1,85");
+    expect(msg).not.toContain("moyenne");
   });
 
   it("cleans the team names in the rendered message (& / © artefacts)", () => {

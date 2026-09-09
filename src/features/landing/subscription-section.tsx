@@ -25,6 +25,7 @@ function Column({
   footnote,
   notConfiguredLabel,
   accent = false,
+  available = true,
 }: {
   id: string;
   icon: typeof Crown;
@@ -41,6 +42,7 @@ function Column({
   footnote: string;
   notConfiguredLabel: string;
   accent?: boolean;
+  available?: boolean;
 }) {
   return (
     <div
@@ -99,7 +101,7 @@ function Column({
       </ul>
 
       <div className="mt-7">
-        {priceId ? (
+        {priceId && available ? (
           <CheckoutCta priceId={priceId} isAuthenticated={isAuthenticated} label={ctaLabel} variant={accent ? "default" : "outline"} />
         ) : (
           <p className="rounded-md border border-dashed border-border/70 px-4 py-3 text-center text-xs text-muted-foreground">
@@ -155,7 +157,7 @@ export function SubscriptionSection({
           icon={Cpu}
           eyebrow={t.bot.eyebrow}
           title={t.bot.title}
-          status={{ label: t.bot.statusLabel, tone: "live" }}
+          status={{ label: t.bot.statusLabel, tone: "soon" }}
           price={frPrice(bot)}
           perMonth={t.perMonth}
           description={t.bot.description}
@@ -164,8 +166,8 @@ export function SubscriptionSection({
           priceId={bot?.priceId}
           isAuthenticated={isAuthenticated}
           footnote={t.bot.footnote}
-          notConfiguredLabel={t.notConfigured}
-          accent
+          notConfiguredLabel={t.bot.notAvailable}
+          available={false}
         />
       </div>
     </div>

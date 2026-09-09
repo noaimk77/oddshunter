@@ -30,13 +30,23 @@
       "status": "complete"
     },
     "netlify": {
-      "accountRequestId": "facctrq_61VEQ034srG8ipmnf16VDilxQFDPp9yDAk1l2dCem2RU",
+      "accountRequestId": "facctrq_61VFblpRevDeOgF0x16VDilxQFDPp9yDAk1l2dCemB8C",
       "configuration": {},
-      "linkedAt": "2026-08-16T11:15:57.067Z",
+      "linkedAt": "2026-08-19T18:02:10.177Z",
       "providerId": "prvdr_61UXju1taz9UCvkk95GEK",
       "providerName": "Netlify",
       "redirectUrl": null,
-      "requestedAt": "2026-08-16T11:15:57.066Z",
+      "requestedAt": "2026-08-19T18:02:10.176Z",
+      "status": "complete"
+    },
+    "prisma": {
+      "accountRequestId": "facctrq_61VHQvClQ37NxQEHr16VDilxQFDPp9yDAk1l2dCemSxs",
+      "configuration": {},
+      "linkedAt": "2026-08-24T18:51:24.623Z",
+      "providerId": "prvdr_61Ulq2NBoEkAzhMKC50vA",
+      "providerName": "Prisma",
+      "redirectUrl": null,
+      "requestedAt": "2026-08-24T18:51:24.623Z",
       "status": "complete"
     },
     "railway": {
@@ -57,6 +67,16 @@
       "providerName": "Render",
       "redirectUrl": null,
       "requestedAt": "2026-08-16T12:23:35.836Z",
+      "status": "complete"
+    },
+    "supabase": {
+      "accountRequestId": "facctrq_61VHQu1ZuwdJHGhge16VDilxQFDPp9yDAk1l2dCem4k4",
+      "configuration": {},
+      "linkedAt": "2026-08-24T18:50:24.032Z",
+      "providerId": "prvdr_61UIXYHdsyF69pZbG52n2",
+      "providerName": "Supabase",
+      "redirectUrl": null,
+      "requestedAt": "2026-08-24T18:50:24.031Z",
       "status": "complete"
     }
   },
@@ -137,6 +157,43 @@
       "resourceId": "fres_61VER7DNAo5C5EXjO16VDilxQFDPp9yDAk1l2dCem5Ls",
       "serviceId": "web-service"
     },
+    "oddshunter-db": {
+      "configuration": {
+        "name": "oddscope"
+      },
+      "createdAt": "2026-08-28T17:25:23.470Z",
+      "lastRevealedAt": "2026-08-28T17:25:23.805Z",
+      "lastStatus": "complete",
+      "name": "oddshunter-db",
+      "providerId": "prvdr_61UIXYHdsyF69pZbG52n2",
+      "providerName": "Supabase",
+      "resourceId": "fres_61VIrTuvGpeWF9Cu616VDilxQFDPp9yDAk1l2dCemPVo",
+      "serviceId": "project"
+    },
+    "prisma-db": {
+      "configuration": {
+        "region": "us-east-1"
+      },
+      "createdAt": "2026-08-24T18:51:35.774Z",
+      "lastRevealedAt": "2026-08-24T18:51:36.085Z",
+      "lastStatus": "complete",
+      "name": "prisma-db",
+      "providerId": "prvdr_61Ulq2NBoEkAzhMKC50vA",
+      "providerName": "Prisma",
+      "resourceId": "fres_61VHQvNh0BdWpgG6216VDilxQFDPp9yDAk1l2dCem4cK",
+      "serviceId": "database"
+    },
+    "prisma-plan": {
+      "configuration": {},
+      "createdAt": "2026-08-24T18:51:25.873Z",
+      "lastRevealedAt": "2026-08-24T18:51:26.229Z",
+      "lastStatus": "complete",
+      "name": "prisma-plan",
+      "providerId": "prvdr_61Ulq2NBoEkAzhMKC50vA",
+      "providerName": "Prisma",
+      "resourceId": "fres_61VHQvFDexbnOF9aS16VDilxQFDPp9yDAk1l2dCemAXw",
+      "serviceId": "free"
+    },
     "railway-hosting": {
       "configuration": {},
       "createdAt": "2026-08-16T12:02:17.292Z",
@@ -157,6 +214,17 @@
       "providerId": "prvdr_61UK2uWsoydL7tUBp57Fg",
       "providerName": "Railway",
       "resourceId": "fres_61VEQfYvpAnTiaZbA16VDilxQFDPp9yDAk1l2dCem8mO",
+      "serviceId": "free"
+    },
+    "supabase-plan": {
+      "configuration": {},
+      "createdAt": "2026-08-28T17:25:03.522Z",
+      "lastRevealedAt": "2026-08-28T17:25:03.859Z",
+      "lastStatus": "complete",
+      "name": "supabase-plan",
+      "providerId": "prvdr_61UIXYHdsyF69pZbG52n2",
+      "providerName": "Supabase",
+      "resourceId": "fres_61VIrTZ496v6KxYBR16VDilxQFDPp9yDAk1l2dCemXUm",
       "serviceId": "free"
     }
   },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeSelection } from "./tipLlmFallback";
+import { normalizeSelection, parseLlmOdds } from "./tipLlmFallback";
 
 const fx = { homeTeam: "Borracheiros", awayTeam: "Bestia Academy" };
 
@@ -34,5 +34,23 @@ describe("normalizeSelection (LLM output normalization)", () => {
     expect(normalizeSelection("BTTS", "yes", fx)).toBe("YES");
     expect(normalizeSelection("DOUBLE_CHANCE", "1x", fx)).toBe("1X");
     expect(normalizeSelection("HANDICAP", "-1.5", fx)).toBe("-1.5");
+  });
+});
+
+describe("parseLlmOdds", () => {
+  it("accepts a plausible decimal price, as number or string, comma or dot", () => {
+    expect(parseLlmOdds(1.91)).toBe(1.91);
+    expect(parseLlmOdds("2.07")).toBe(2.07);
+    expect(parseLlmOdds("1,85")).toBe(1.85);
+    expect(parseLlmOdds(1.756)).toBe(1.76);
+  });
+
+  it("rejects null, non-numeric, and out-of-band values", () => {
+    expect(parseLlmOdds(null)).toBeNull();
+    expect(parseLlmOdds(undefined)).toBeNull();
+    expect(parseLlmOdds("n/a")).toBeNull();
+    expect(parseLlmOdds(1.02)).toBeNull(); // torn off an odds board
+    expect(parseLlmOdds(2.5)).toBe(2.5); // a real price, not a market line — the LLM is told which is which
+    expect(parseLlmOdds(23)).toBeNull(); // a minute, not a price
   });
 });

@@ -315,6 +315,17 @@ export function getTipConsensusConfig(): { minGroups: number; windowMinutes: num
 }
 
 /**
+ * First-half (OVER_UNDER_HT) picks get a much shorter consensus window than
+ * the full-match default: an HT bet's whole window is ~45 min, so a
+ * corroborating tip that's already 30+ min old means the goal has very
+ * likely landed and the bet is gone (Noaim 2026-09-03: "le but avait déjà
+ * été marqué"). 25 min keeps HT consensus to picks that are still live.
+ */
+export function getTipConsensusHtWindowMinutes(): number {
+  return envInt("TIP_CONSENSUS_HT_WINDOW_MINUTES", 25);
+}
+
+/**
  * How long a chat's last-mentioned fixture stays eligible to resolve a
  * later context-free message ("W2", "Victoire de Cuba") in that same chat.
  * 60 minutes covers "image now, confirmation mid-match" without reaching
@@ -331,6 +342,27 @@ export function getChatFixtureContextWindowMinutes(): number {
  * parsing straight to paying subscribers.
  */
 export const SEND_TIP_CONSENSUS_ALERTS = process.env.SEND_TIP_CONSENSUS_ALERTS === "true";
+
+/**
+ * OFF by default (Noaim 2026-09-04: "détecte tous les match"). When set to
+ * "true" a consensus alert is only posted if the fixture resolves on
+ * Pinnacle / TheSportsDB — useful if unverifiable "oa vs gid"-style OCR
+ * junk ever floods the feed, but it also drops the obscure reserve/youth
+ * matches that are the whole point, so it stays opt-in.
+ */
+export const CONSENSUS_REQUIRE_RESOLVABLE_FIXTURE =
+  (process.env.CONSENSUS_REQUIRE_RESOLVABLE_FIXTURE ?? "false") === "true";
+
+/**
+ * OFF by default (Noaim 2026-09-04: two channels posted the same in-play
+ * pick and the bot never alerted). A consensus is now posted whether the
+ * match is pre-match, live, or timing-unknown — only a CONFIRMED-finished
+ * match is suppressed (see vipGroup.ts). A live alert carries a "match en
+ * cours (N min)" status line so the subscriber knows what they're getting.
+ * Set "true" to restore the old pre-match-only behaviour.
+ */
+export const CONSENSUS_SUPPRESS_INPLAY =
+  (process.env.CONSENSUS_SUPPRESS_INPLAY ?? "false") === "true";
 
 /**
  * Guards against stale backlog. `ScrapedTip.detectedAt` was always our own

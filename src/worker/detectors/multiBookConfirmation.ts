@@ -19,6 +19,12 @@ export interface BookmakerMove {
   /** Human label if available (e.g. "BetInAsia") — falls back to an id string otherwise. */
   bookmakerLabel: string;
   priceChangePct: number;
+  /** How long this book's price stayed at/below the drop threshold before
+   *  this pass — the real substitute for a staked-amount figure we don't
+   *  have access to (no exchange data in France): several books moving
+   *  together AND fast is the closest legitimate proxy for "real money,
+   *  not noise" (Noaim, 2026-08-22). */
+  persistedForSec: number;
 }
 
 export interface MultiBookConfirmationConfig {
@@ -37,6 +43,16 @@ export interface MultiBookConfirmationSignal {
   /** The record with the largest |priceChangePct| — used as the anchor market/selection for the Signal row. */
   anchor: BookmakerMove;
   averagePriceChangePct: number;
+  /** The fastest-moving confirming book — several books shifting together
+   *  in a short window is more suspicious than the same shift spread over
+   *  days, so this (not an average) is the headline timing figure. */
+  fastestPersistedForSec: number;
+  /** The book that has held the drop level the LONGEST — i.e. moved first,
+   *  the others followed. In a steam move this is a strong hint about who
+   *  had the information (Noaim, 2026-08-23, inspired by Suspicious Game's
+   *  premium bot which surfaces originator info per alert). */
+  firstMoverBookmaker: string;
+  firstMoverPersistedForSec: number;
 }
 
 export interface MultiBookConfirmationRejection {
@@ -66,6 +82,10 @@ export function detectMultiBookConfirmation(
     Math.abs(m.priceChangePct) > Math.abs(biggest.priceChangePct) ? m : biggest,
   );
   const averagePriceChangePct = distinctMoves.reduce((sum, m) => sum + m.priceChangePct, 0) / distinctMoves.length;
+  const fastestPersistedForSec = Math.min(...distinctMoves.map((m) => m.persistedForSec));
+  const firstMover = distinctMoves.reduce((longest, m) =>
+    m.persistedForSec > longest.persistedForSec ? m : longest,
+  );
 
   return {
     fires: true,
@@ -73,5 +93,8 @@ export function detectMultiBookConfirmation(
     bookmakers: distinctMoves.map((m) => m.bookmakerLabel),
     anchor,
     averagePriceChangePct,
+    fastestPersistedForSec,
+    firstMoverBookmaker: firstMover.bookmakerLabel,
+    firstMoverPersistedForSec: firstMover.persistedForSec,
   };
 }

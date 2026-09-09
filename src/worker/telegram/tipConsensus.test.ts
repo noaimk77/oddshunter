@@ -3,6 +3,7 @@ import {
   applyConsensusAndAlert,
   checkConsensus,
   claimConsensusAlert,
+  directionalClaimKey,
   releaseConsensusAlert,
 } from "./tipConsensus";
 import { buildParsedTip } from "./tipParser";
@@ -128,6 +129,23 @@ function makeFakeDb(tips: Array<Partial<ScrapedTipRow>> = []) {
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       findFirst: async () => (alerts.length ? { ...alerts[0] } : null),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      findMany: async ({ where = {} }: any = {}) => {
+        // Minimal filter shim — the dedup query in checkDirectionalConsensus
+        // asks for rows with non-null homeTeam/awayTeam/market/selection
+        // within a time window. Tests use the fixed FIXED_SENT_AT for
+        // everything, so date filters are effectively no-ops here.
+        return alerts
+          .filter((a) => {
+            if (where.homeTeam?.not === null && a.homeTeam === null) return false;
+            if (where.awayTeam?.not === null && a.awayTeam === null) return false;
+            if (where.market?.not === null && a.market === null) return false;
+            if (where.selection?.not === null && a.selection === null) return false;
+            if (where.sentMessageId?.not === null && a.sentMessageId === null) return false;
+            return true;
+          })
+          .map((r) => ({ ...r }));
+      },
     },
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -177,7 +195,7 @@ describe("applyConsensusAndAlert — observation mode never consumes a consensus
     expect(sentTip).toMatchObject({ homeTeam: "Lyon", awayTeam: "Marseille", groupCount: 3 });
     expect(db._alerts).toHaveLength(1);
     expect(db._alerts[0]).toMatchObject({
-      fingerprint: PARSED.fingerprint,
+      fingerprint: directionalClaimKey(PARSED), // claim is on the (match, direction) key now
       sentChatId: "vip",
       sentMessageId: BigInt(555),
       homeTeam: "Lyon",
@@ -206,7 +224,7 @@ describe("applyConsensusAndAlert — a failed Telegram send leaves the alert ret
     });
     expect(retried).toMatchObject({ sent: true, claimed: true });
     expect(db._alerts).toHaveLength(1);
-    expect(db._alerts[0]).toMatchObject({ fingerprint: PARSED.fingerprint, sentMessageId: BigInt(777) });
+    expect(db._alerts[0]).toMatchObject({ fingerprint: directionalClaimKey(PARSED), sentMessageId: BigInt(777) });
   });
 
   it("releases the claim when send returns null (no usable message id)", async () => {
@@ -303,7 +321,7 @@ describe("consensus primitives", () => {
 
   it("applyConsensusAndAlert reports already-claimed without sending when the row exists", async () => {
     const db = makeFakeDb([strictTip("c1"), strictTip("c2"), strictTip("c3")]);
-    await claimConsensusAlert(db, PARSED.fingerprint, 3); // someone else got there first
+    await claimConsensusAlert(db, directionalClaimKey(PARSED), 3); // someone else got there first
     let sendCalls = 0;
     const res = await applyConsensusAndAlert(db, PARSED, {
       config: CONFIG,
@@ -315,5 +333,44 @@ describe("consensus primitives", () => {
     });
     expect(res).toMatchObject({ sent: false, claimed: false, reason: "already-claimed" });
     expect(sendCalls).toBe(0);
+  });
+
+  it("does not re-post the same match+direction on a nearby line (Noaim 2026-09-06)", async () => {
+    const over35 = (chat: string) => ({
+      sourceChatId: chat,
+      fingerprint: "lyon|marseille|OVER_UNDER|OVER_3_5",
+      homeTeam: "Lyon",
+      awayTeam: "Marseille",
+      market: "OVER_UNDER",
+      selection: "OVER_3_5",
+      detectedAt: new Date(),
+    });
+    const db = makeFakeDb([strictTip("c1"), strictTip("c2"), strictTip("c3"), over35("d1"), over35("d2"), over35("d3")]);
+
+    // First: Lyon vs Marseille — Plus de 2,5 buts → delivered.
+    await applyConsensusAndAlert(db, PARSED, {
+      config: CONFIG,
+      sendEnabled: true,
+      send: async () => ({ chatId: "vip", messageId: 1 }),
+    });
+    expect(db._alerts).toHaveLength(1);
+
+    // Then the same match, Plus de 3,5 buts — same "over goals" direction.
+    let sendCalls = 0;
+    const dup = await applyConsensusAndAlert(
+      db,
+      buildParsedTip({ homeTeam: "Lyon", awayTeam: "Marseille" }, { market: "OVER_UNDER", selection: "OVER_3_5" }),
+      {
+        config: CONFIG,
+        sendEnabled: true,
+        send: async () => {
+          sendCalls++;
+          return { chatId: "vip", messageId: 2 };
+        },
+      },
+    );
+    expect(dup).toMatchObject({ sent: false, claimed: false, reason: "duplicate-direction" });
+    expect(sendCalls).toBe(0);
+    expect(db._alerts).toHaveLength(1); // still just the one
   });
 });

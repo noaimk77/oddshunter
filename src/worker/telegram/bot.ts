@@ -2,7 +2,7 @@ import { Bot } from "grammy";
 import { db } from "@/lib/db";
 import { getActiveEntitlements } from "@/lib/guards";
 import { consumeTelegramLinkToken } from "./linking";
-import { getUserHitRate, countUserAlerts } from "../lib/leagueStats";
+import { getUserHitRate, countUserAlerts, getGlobalPerformance, getPremiumPerformance } from "../lib/leagueStats";
 
 /**
  * Command surface from spec section 8. `/trial` is intentionally omitted —
@@ -158,10 +158,69 @@ export function createBot(): Bot {
     );
   });
 
+  /**
+   * PUBLIC — no account needed, no subscription needed. This is the sales
+   * pitch: a prospect messages the bot, types /perf, and sees the actual
+   * track record of every signal fired over the last 7 / 30 / 90 days,
+   * with a flat-1€ ROI on top. Same source of truth as /stats — no
+   * cherry-picking, no marketing figures. If we ever lie here, we lose
+   * the whole point of the command; the numbers are computed from
+   * SignalOutcome rows directly. See getGlobalPerformance.
+   */
+  bot.command("perf", async (ctx) => {
+    let allWindows, premWindows;
+    try {
+      [allWindows, premWindows] = await Promise.all([
+        Promise.all([getGlobalPerformance(db, 7), getGlobalPerformance(db, 30), getGlobalPerformance(db, 90)]),
+        Promise.all([getPremiumPerformance(db, 7), getPremiumPerformance(db, 30), getPremiumPerformance(db, 90)]),
+      ]);
+    } catch (err) {
+      console.error("[bot] /perf failed", err);
+      await ctx.reply("Les stats sont temporairement indisponibles — réessaie dans quelques minutes.");
+      return;
+    }
+
+    type Perf = Awaited<ReturnType<typeof getGlobalPerformance>>;
+    const line = (label: string, p: Perf): string => {
+      if (p.hitRate.decided === 0) {
+        return `<b>${label}</b> — ${p.totalFired} signaux, aucun résolu pour l'instant`;
+      }
+      const roi = p.roi.roiPct == null ? "?" : (p.roi.roiPct > 0 ? "+" : "") + p.roi.roiPct + "%";
+      const units = (p.roi.units > 0 ? "+" : "") + p.roi.units.toFixed(2) + "€";
+      return (
+        `<b>${label}</b> — ${p.totalFired} signaux · ` +
+        `${p.hitRate.wins}✅ / ${p.hitRate.losses}❌ (${p.hitRate.hitRatePct}%) · ` +
+        `ROI ${roi} (${units} à 1€/pari)`
+      );
+    };
+
+    await ctx.reply(
+      [
+        "🎯 <b>Track record Odds Hunter</b>",
+        "",
+        "📊 <b>Tous signaux</b>",
+        line("7 j", allWindows[0]),
+        line("30 j", allWindows[1]),
+        line("90 j", allWindows[2]),
+        "",
+        "⭐ <b>Signaux Premium</b> — mouvement corroboré par plusieurs bookmakers",
+        line("7 j", premWindows[0]),
+        line("30 j", premWindows[1]),
+        line("90 j", premWindows[2]),
+        "",
+        "<i>Chaque signal est jugé une fois le match terminé, prix à l'instant de l'alerte. Les remboursements (push, DNB sur nul) sont exclus.</i>",
+        "",
+        `S'abonner → ${siteUrl("/#abonnement")}`,
+      ].join("\n"),
+      { parse_mode: "HTML", link_preview_options: { is_disabled: true } },
+    );
+  });
+
   bot.command("help", async (ctx) => {
     await ctx.reply(
       [
         "/start — accueil et liaison du compte",
+        "/perf — track record du bot (public, 7/30/90j)",
         "/subscribe — voir l'abonnement Bot",
         "/settings — voir tes filtres",
         "/status — état de ton compte et de l'abonnement",

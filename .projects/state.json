@@ -10,11 +10,17 @@
     "netlify": {
       "name": "Netlify"
     },
+    "prisma": {
+      "name": "Prisma"
+    },
     "railway": {
       "name": "Railway"
     },
     "render": {
       "name": "Render"
+    },
+    "supabase": {
+      "name": "Supabase"
     }
   },
   "resources": {
@@ -48,6 +54,21 @@
       "providerName": "Render",
       "serviceId": "web-service"
     },
+    "oddshunter-db": {
+      "name": "oddshunter-db",
+      "providerName": "Supabase",
+      "serviceId": "project"
+    },
+    "prisma-db": {
+      "name": "prisma-db",
+      "providerName": "Prisma",
+      "serviceId": "database"
+    },
+    "prisma-plan": {
+      "name": "prisma-plan",
+      "providerName": "Prisma",
+      "serviceId": "free"
+    },
     "railway-hosting": {
       "name": "railway-hosting",
       "providerName": "Railway",
@@ -56,6 +77,11 @@
     "railway-plan": {
       "name": "railway-plan",
       "providerName": "Railway",
+      "serviceId": "free"
+    },
+    "supabase-plan": {
+      "name": "supabase-plan",
+      "providerName": "Supabase",
       "serviceId": "free"
     }
   },
@@ -82,10 +108,22 @@
           "resourceName": "oddshunter"
         },
         {
+          "resourceName": "oddshunter-db"
+        },
+        {
+          "resourceName": "prisma-db"
+        },
+        {
+          "resourceName": "prisma-plan"
+        },
+        {
           "resourceName": "railway-hosting"
         },
         {
           "resourceName": "railway-plan"
+        },
+        {
+          "resourceName": "supabase-plan"
         }
       ],
       "variables": [

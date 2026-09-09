@@ -6,7 +6,7 @@ import { fetchFixtureResults, isFixtureFinished } from "./providers/apiFootball"
 import { fetchRecentResults } from "./providers/betexplorer";
 import { resolveSelectionOutcome, type MatchResult } from "./detectors/signalOutcome";
 import { getOutcomeResolutionConfig } from "./config";
-import { formatSignalMessage, appendResultToMessage } from "./telegram/sendAlert";
+import { formatSignalMessage, updateResultInMessage } from "./telegram/sendAlert";
 import { buildSignalContext } from "./telegram/signalContext";
 
 type EventWithMarkets = Prisma.EventGetPayload<{ include: { markets: { include: { selections: true } }; competition: true } }>;
@@ -54,6 +54,7 @@ async function postResultToTelegram(
   market: EventWithMarkets["markets"][number],
   selection: EventWithMarkets["markets"][number]["selections"][number],
   selectionWon: boolean | null,
+  matchResult: MatchResult,
 ): Promise<void> {
   if (!bot) return;
   const deliveries = await db.signalDelivery.findMany({ where: { signalId: signal.id, channel: "TELEGRAM" } });
@@ -98,7 +99,12 @@ async function postResultToTelegram(
   });
   const originalText = formatSignalMessage(context);
   const outcome = selectionWon === true ? "won" : selectionWon === false ? "lost" : "void";
-  const finalText = appendResultToMessage(originalText, outcome);
+  const finalText = updateResultInMessage(originalText, outcome, {
+    homeTeam: event.homeTeam,
+    awayTeam: event.awayTeam,
+    homeScore: matchResult.fullTimeHomeGoals,
+    awayScore: matchResult.fullTimeAwayGoals,
+  });
 
   for (const delivery of deliveries) {
     const chatId = chatIdByUserId.get(delivery.userId);
@@ -140,7 +146,7 @@ async function applyResult(db: PrismaClient, bot: Bot | null, event: EventWithMa
             selectionWon,
           },
         });
-        await postResultToTelegram(db, bot, signal, event, market, selection, selectionWon);
+        await postResultToTelegram(db, bot, signal, event, market, selection, selectionWon, matchResult);
         resolvedCount++;
       }
     }

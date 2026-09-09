@@ -24,6 +24,7 @@
         "npm:@types/react@19",
         "npm:agentmail@~0.5.19",
         "npm:bcryptjs@^3.0.3",
+        "npm:cheerio@^1.2.0",
         "npm:class-variance-authority@~0.7.1",
         "npm:clsx@^2.1.1",
         "npm:dotenv@^17.4.2",
