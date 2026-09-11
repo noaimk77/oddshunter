@@ -365,6 +365,21 @@ export const CONSENSUS_SUPPRESS_INPLAY =
   (process.env.CONSENSUS_SUPPRESS_INPLAY ?? "false") === "true";
 
 /**
+ * ON by default (Noaim 2026-09-11: "arrête de prendre en compte les alertes
+ * envoyées dans les groupes chats, il y a beaucoup de flux donc ça consomme
+ * beaucoup et beaucoup de gens ont des voix de merde. Tu prends uniquement
+ * quand c'est envoyé sur des groupes" — sous-entendu channels broadcast).
+ * When on, only messages posted on BROADCAST CHANNELS (announcement-only,
+ * one poster) are considered as tip sources. Megagroups / supergroups /
+ * basic chats where anyone can post are ignored — those are high-volume
+ * discussion chats where random members throw picks around and dilute the
+ * consensus with noise. Set "false" to restore the pre-2026-09-11 behaviour
+ * of listening to every group and channel the account belongs to.
+ */
+export const TIP_LISTENER_CHANNELS_ONLY =
+  (process.env.TIP_LISTENER_CHANNELS_ONLY ?? "true") === "true";
+
+/**
  * Guards against stale backlog. `ScrapedTip.detectedAt` was always our own
  * processing timestamp (`@default(now())`), never Telegram's — so when the
  * MTProto link drops (network blip, or the 512MB box getting OOM-killed —

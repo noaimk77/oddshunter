@@ -64,6 +64,34 @@ describe("parseTipMessage", () => {
     expect(result).toMatchObject({ market: "BTTS", selection: "YES" });
   });
 
+  it("parses a bare '12' double-chance pick", () => {
+    const result = parseTipMessage("PSG vs OM\nPronostic: 12");
+    expect(result).toMatchObject({ market: "DOUBLE_CHANCE", selection: "12" });
+  });
+
+  it("does not mistake a decimal odds value ('2.12') for a bare '12' double-chance pick (real miss: Sportivo Ameliano (Res) vs Sp. San Lorenzo (Res), 2026-09-11 — VIP alert wrongly posted 'Double chance' when the real pick was Over 4.5 buts)", () => {
+    const fixture = extractFixture("🏟️ Sportivo Ameliano (Res) vs Sp. San Lorenzo (Res)")!;
+    expect(extractSelection("📉 Totals | 17.92% drop (2.12 → 1.74)", fixture)?.market).not.toBe("DOUBLE_CHANCE");
+  });
+
+  it("reads the goal line out of an odds-drop 'Line | Over | Volume' table instead of falling through to a bare-number false match (real miss, same 2026-09-11 alert)", () => {
+    const rawText =
+      "⚽️ Paraguayan Reserves\n🏟️ Sportivo Ameliano (Res) vs Sp. San Lorenzo (Res)\n\n" +
+      "📉 Totals | 17.92% drop (2.12 → 1.74)\n💰 Volume up 116.83% (€608 → €1.32k)\n\n" +
+      "💶 Volume (Totals): €28.20k\n\nMin  | Score  |  Line |   Over |  Volume\n" +
+      "6     | 0 - 0    |  4.50 |   1.74 |  €1.32k\n5     | 0 - 0    |  4.50 |   1.77 |  €1.25k";
+    const result = parseTipMessage(rawText);
+    expect(result).toMatchObject({ market: "OVER_UNDER", selection: "OVER_4_5" });
+  });
+
+  it("normalizes the odds-drop table's two-decimal line ('4.50') to the same selection as a plain one-decimal line ('4.5'), so both feed the same consensus fingerprint", () => {
+    const fixture = extractFixture("Sportivo Ameliano Reserves vs Sportivo San Lorenzo Reserve")!;
+    const tableText =
+      "Totals | 16.58% drop (1.99 -> 1.66)\n\nMin  | Score  |  Line |   Over\n08    | 0 - 0    |  4.50 |   1.66";
+    const plainText = "Total: Over (4.5) 1.91";
+    expect(extractSelection(tableText, fixture)).toEqual(extractSelection(plainText, fixture));
+  });
+
   it("parses a numeric 1X2 pick using team identity, not position", () => {
     const result = parseTipMessage("PSG vs OM\nPronostic: 1");
     expect(result?.market).toBe("1X2");

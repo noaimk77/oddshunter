@@ -216,8 +216,50 @@ const MARKET_RULES: MarketRule[] = [
   { market: "BTTS", selection: "YES", pattern: /(btts|les deux equipes marquent|deux equipes marquent)/i },
   { market: "DOUBLE_CHANCE", selection: "1X", pattern: /\b1x\b/i },
   { market: "DOUBLE_CHANCE", selection: "X2", pattern: /\bx2\b/i },
-  { market: "DOUBLE_CHANCE", selection: "12", pattern: /\b12\b/i },
+  // Bare "12" as double-chance shorthand — guarded against matching inside
+  // a decimal odds value. \b already stops it matching mid-integer (no
+  // false hit inside "112"), but "." isn't a word character, so without
+  // this a price like "2.12" (real miss: "drop (2.12 → 1.74)" in an
+  // odds-drop table, 2026-09-11) reads as a standalone "12" and the whole
+  // message gets misfiled as DOUBLE_CHANCE instead of whatever it actually
+  // was (that one was an Over 4.5 goals line — see matchOddsDropTable).
+  { market: "DOUBLE_CHANCE", selection: "12", pattern: /(?<![.\d])\b12\b(?![.\d])/i },
 ];
+
+/**
+ * "Odds-drop" tipster format (seen from "Fix is fix tchat", "ON IN-PLAY/SUS"
+ * — a live line-movement table for the Totals market:
+ *   Min | Score | Line | Over | Volume
+ *   6   | 0 - 0 | 4.50 | 1.74 | €1.32k
+ * The actual goal line sits in the "Line" column, which can be many
+ * characters (or a header + newline) away from the word "Over" — too far
+ * for the generic OVER_RE/UNDER_RE below (only \W{0,3} of slack). That
+ * either misses the line entirely, so the message falls through to the
+ * bare-"12" DOUBLE_CHANCE rule above and fires on a decimal odds value
+ * elsewhere in the table (real miss: Sportivo Ameliano (Res) vs Sp. San
+ * Lorenzo (Res), 2026-09-11 — the real pick was Over 4.5 buts, posted to
+ * VIP as "Double chance" instead), or grabs the wrong number (the row's
+ * "Min" column value, since it sits right under "Over" once the header
+ * wraps — same feed, other messages came out "OVER_08" instead of
+ * "OVER_4_5"). Read the "Line" column directly from the first data row
+ * instead of guessing off proximity to the word "Over"/"Under".
+ */
+const ODDS_DROP_TABLE_HEADER_RE = /\bline\s*\|\s*(over|under)\b/i;
+const ODDS_DROP_TABLE_ROW_RE = /^\s*\d*\s*\|\s*\d+\s*-\s*\d+\s*\|\s*(\d+(?:[.,]\d+)?)\s*\|/m;
+
+function matchOddsDropTable(rawText: string): { market: string; selection: string } | null {
+  const header = rawText.match(ODDS_DROP_TABLE_HEADER_RE);
+  if (!header || header.index == null) return null;
+  const row = rawText.slice(header.index).match(ODDS_DROP_TABLE_ROW_RE);
+  if (!row) return null;
+  // These feeds always write the Line column with two decimals ("4.50"),
+  // unlike every other source (OCR bet slips, plain "Over 4.5" text) which
+  // writes one — normalize via Number() rather than a straight string swap
+  // so "4.50" and "4.5" collapse to the same selection ("OVER_4_5") and
+  // still count toward the same consensus fingerprint.
+  const line = String(Number.parseFloat(row[1].replace(",", "."))).replace(".", "_");
+  return { market: "OVER_UNDER", selection: `${header[1].toUpperCase()}_${line}` };
+}
 
 /**
  * Over/under goal lines aren't just 1.5/2.5 — real tipsters post 0.5 through
@@ -366,6 +408,9 @@ export function extractSelection(rawText: string, fixture: Fixture): { market: s
   if (!rawText) return null;
   const homeSlug = slugTeam(fixture.homeTeam);
   const awaySlug = slugTeam(fixture.awayTeam);
+
+  const oddsDropTable = matchOddsDropTable(rawText);
+  if (oddsDropTable) return oddsDropTable;
 
   const half: "" | "_HT" =
     FIRST_HALF_CUE_RE.test(rawText) && !SECOND_HALF_CUE_RE.test(rawText) ? "_HT" : "";

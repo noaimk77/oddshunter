@@ -10,7 +10,8 @@ import { sendConsensusAlert } from "./vipGroup";
 import { shouldSendConsensusAlert } from "./alertFormat";
 import { rememberFixture, recallFixture, isFirehoseChat } from "./chatFixtureContext";
 import { extractSelectionWithLLM, extractFullTipWithLLM } from "./tipLlmFallback";
-import { getTipConsensusConfig, getTipConsensusHtWindowMinutes, getChatFixtureContextWindowMinutes, getMaxTipMessageAgeMinutes, SEND_TIP_CONSENSUS_ALERTS } from "../config";
+import { getTipConsensusConfig, getTipConsensusHtWindowMinutes, getChatFixtureContextWindowMinutes, getMaxTipMessageAgeMinutes, SEND_TIP_CONSENSUS_ALERTS, TIP_LISTENER_CHANNELS_ONLY } from "../config";
+import { Api } from "telegram/tl";
 
 /**
  * Wires the MTProto client's NewMessage stream to the consensus pipeline.
@@ -51,21 +52,49 @@ async function handleMessage(client: TelegramClient, db: PrismaClient, event: Ne
   }
 
   let sourceChatTitle: string | null = null;
+  // Resolved once, then reused for both title AND the broadcast-channel gate
+  // below — we care about the same underlying entity for both.
+  let chatEntity: unknown = null;
   try {
     const chat = await event.getChat();
-    if (chat && "title" in chat && chat.title) {
-      sourceChatTitle = chat.title as string;
-    } else if (message.peerId) {
+    if (chat) {
+      chatEntity = chat;
+      if ("title" in chat && chat.title) sourceChatTitle = chat.title as string;
+    }
+    if (!sourceChatTitle && message.peerId) {
       // getChat() comes back bare for some broadcast channels even once
       // their entity is cached — a direct getEntity fills in the title so
       // ScrapedTip.sourceChatTitle isn't perpetually null (it always was
       // before 2026-08-27), which is what makes "which channels actually
       // feed consensus" answerable from the data.
       const entity = await client.getEntity(message.peerId);
-      if (entity && "title" in entity && entity.title) sourceChatTitle = entity.title as string;
+      if (entity) {
+        chatEntity = chatEntity ?? entity;
+        if ("title" in entity && entity.title) sourceChatTitle = entity.title as string;
+      }
     }
   } catch {
     // title is a nice-to-have for observability, never worth failing a message over
+  }
+
+  // Broadcast-channel gate (Noaim 2026-09-11: chats sont trop bruités et
+  // beaucoup de gens envoient des picks de merde qui polluent le
+  // consensus). `Api.Channel.broadcast === true` = announcement-only
+  // channel (one poster); `broadcast === false` on `Api.Channel` = a
+  // megagroup/supergroup, which is still a discussion chat. `Api.Chat` is
+  // the old basic-group type and is always a chat. So the strict test is
+  // "instance of Api.Channel AND its broadcast flag is set". If the entity
+  // couldn't be resolved (chatEntity === null) we err on the side of
+  // dropping — a message we can't classify shouldn't dilute consensus.
+  if (TIP_LISTENER_CHANNELS_ONLY) {
+    const isBroadcastChannel =
+      chatEntity instanceof Api.Channel && Boolean((chatEntity as Api.Channel).broadcast);
+    if (!isBroadcastChannel) {
+      // Keep it quiet-ish (megagroups fire a lot); log once with the title
+      // so we can spot mis-classified channels if any show up.
+      console.log(`[tipListener] skipping "${sourceChatTitle ?? sourceChatId}" — not a broadcast channel, chats disabled by TIP_LISTENER_CHANNELS_ONLY.`);
+      return;
+    }
   }
 
   const caption = message.message || null;
