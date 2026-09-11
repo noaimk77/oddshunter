@@ -222,3 +222,38 @@ export async function sendConsensusAlert(
   if (!chatId || !Number.isFinite(messageId)) return null;
   return { chatId, messageId };
 }
+
+/**
+ * Replies to an existing VIP alert with a cash-out warning. Used when a
+ * source chat that once endorsed the pick now says to cash out — rare (a
+ * few times per week at most, mostly esports) but time-critical: an
+ * abonné needs to see it while the match is still in play, so we post as
+ * a reply on the ORIGINAL message rather than a standalone message far
+ * down the group timeline (Noaim 2026-09-11: "tu réponds au message
+ * initial et tu mets qu'on doit cash-out"). Returns null on any Telegram
+ * failure — the caller then leaves the alert un-flagged and can retry on
+ * a later signal.
+ */
+export async function sendCashoutFollowup(
+  client: TelegramClient,
+  args: {
+    replyToMessageId: number;
+    homeTeam: string;
+    awayTeam: string;
+  },
+): Promise<{ messageId: number } | null> {
+  try {
+    const entity = await resolveVipGroup(client);
+    const body =
+      `⚠️ Cash-out demandé\n` +
+      `🏟️ ${args.homeTeam} vs ${args.awayTeam}\n\n` +
+      `D'autres groupes ont changé d'avis — sortez le pari maintenant si votre bookmaker le permet.`;
+    const sent = await client.sendMessage(entity, { message: body, replyTo: args.replyToMessageId });
+    const messageId = typeof sent.id === "number" ? sent.id : Number(sent.id);
+    if (!Number.isFinite(messageId)) return null;
+    return { messageId };
+  } catch (err) {
+    console.error(`[vipGroup] cash-out follow-up failed:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}

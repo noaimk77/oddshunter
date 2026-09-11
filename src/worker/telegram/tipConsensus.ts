@@ -1,6 +1,57 @@
+import { createHash } from "node:crypto";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { getDirectionKey, fuzzyFixtureMatch, slugTeam, type Fixture } from "./tipParser";
 import type { ParsedTip } from "./tipParser";
+
+/**
+ * Forwarded copies of the same tipster message land in two (or more) chats
+ * as independent `ScrapedTip` rows with distinct `sourceChatId`s but
+ * BYTE-IDENTICAL `rawText`. Left unchecked they inflate the consensus count
+ * artificially — a single origin channel forwarded to two others triggers
+ * MIN_GROUPS=2 alone (real miss 2026-09-11: the two 20:02 alerts, yTOON /
+ * Singanur, both fired off ONE Russian OCR screenshot mirrored across
+ * "Спортивный блог Антона Токарева" and "Betting Edge⚡️"). We collapse
+ * these before counting: a normalized hash of the raw text keeps ONE
+ * representative chat per unique message, so the same wording seen in five
+ * chats still counts as one vote toward consensus. Different tipsters
+ * independently writing the same pick with different wording collapse to
+ * different hashes and still count separately.
+ *
+ * Normalization: strip zero-width chars, collapse runs of whitespace, and
+ * lowercase — enough to defeat the "one extra space" or "an added emoji at
+ * the end" cases without collapsing genuinely different picks.
+ */
+function normalizedTextHash(rawText: string | null | undefined): string {
+  const normalized = (rawText ?? "")
+    .normalize("NFKC")
+    .replace(/[​-‏﻿]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  return createHash("sha1").update(normalized).digest("hex");
+}
+
+/**
+ * Counts distinct source chats after collapsing forwarded copies (see
+ * `normalizedTextHash`). Each unique raw-text hash contributes AT MOST ONE
+ * chat to the vote total — the first chat that carried it in the window.
+ * Exported for the directional counter which needs the same rule.
+ */
+function countDistinctChatsDedupedByText(
+  tips: readonly { sourceChatId: string; rawText?: string | null }[],
+): number {
+  const firstChatByHash = new Map<string, string>();
+  for (const t of tips) {
+    // A tip with no rawText — synthetic or malformed — can't be reliably
+    // compared to another, so it always counts as its own vote (fall back
+    // on sourceChatId as the dedup key). Real-world tips always carry
+    // rawText (Prisma model requires it), so this branch is defensive.
+    const text = t.rawText;
+    const hash = text ? normalizedTextHash(text) : `chat:${t.sourceChatId}`;
+    if (!firstChatByHash.has(hash)) firstChatByHash.set(hash, t.sourceChatId);
+  }
+  return new Set(firstChatByHash.values()).size;
+}
 
 export interface ConsensusCheckResult {
   triggered: boolean;
@@ -75,8 +126,7 @@ export async function checkConsensus(
     orderBy: { detectedAt: "desc" },
   });
 
-  const distinctChatIds = new Set(recentTips.map((t) => t.sourceChatId));
-  const groupCount = distinctChatIds.size;
+  const groupCount = countDistinctChatsDedupedByText(recentTips);
   if (groupCount < config.minGroups) {
     return { triggered: false, groupCount, fingerprint };
   }
@@ -145,7 +195,7 @@ export async function checkDirectionalConsensus(
     orderBy: { detectedAt: "desc" },
   });
 
-  const distinctChatIds = new Set<string>();
+  const matchingTips: (typeof recent)[number][] = [];
   let sample: (typeof recent)[number] | null = null;
   for (const tip of recent) {
     if (!tip.homeTeam || !tip.awayTeam) continue;
@@ -153,9 +203,11 @@ export async function checkDirectionalConsensus(
     const dir = getDirectionKey(tip.market ?? "", tip.selection ?? "", { homeTeam: tip.homeTeam, awayTeam: tip.awayTeam });
     if (dir !== currentDirection) continue;
     if (!sample) sample = tip;
-    distinctChatIds.add(tip.sourceChatId);
+    matchingTips.push(tip);
   }
-  const groupCount = distinctChatIds.size;
+  // Collapse forwarded copies (see countDistinctChatsDedupedByText) — a
+  // single OCR screenshot mirrored across chats must not read as consensus.
+  const groupCount = countDistinctChatsDedupedByText(matchingTips);
   if (groupCount < config.minGroups) {
     return { triggered: false, groupCount, fingerprint: dirFingerprint };
   }
@@ -239,6 +291,18 @@ export interface ConsensusApplyOptions {
   ) => Promise<{ chatId: string; messageId: number } | null>;
   /** Final quality gate (rejects OCR-broken picks). Optional; default: allow. */
   qualityGate?: (tip: ParsedTip) => { ok: boolean; reason?: string };
+  /**
+   * Async gate that runs AFTER the sync one, only for picks that will
+   * otherwise be posted — kept off the fast rejection path so its network
+   * cost never pays for a pick we already know we're dropping. Current
+   * concrete use: fixture-existence check (does the match resolve on
+   * TheSportsDB or BetExplorer?). Rejecting here is the *only* thing that
+   * kills OCR-hallucinated fixtures where the pipeline itself was
+   * internally consistent — 2026-09-11 20:02 (yTOON/Taum, Singanur/Mongolia,
+   * both mirrored across 2 Russian OCR-mangled chats). Optional; default:
+   * allow.
+   */
+  qualityGateAsync?: (tip: ParsedTip) => Promise<{ ok: boolean; reason?: string }>;
   /**
    * Lazily resolves every distinct labeled odds the contributing groups
    * stated (for the "Cotes au signalement" spread — never averaged). Only
@@ -324,7 +388,7 @@ export async function applyConsensusAndAlert(
   parsed: ParsedTip,
   opts: ConsensusApplyOptions,
 ): Promise<ConsensusApplyResult> {
-  const { config, sendEnabled, send, qualityGate, resolveOddsSamplesAtAlert } = opts;
+  const { config, sendEnabled, send, qualityGate, qualityGateAsync, resolveOddsSamplesAtAlert } = opts;
 
   // 1. Measure only. Claiming here is what let observation mode and failed
   //    sends burn a consensus for good.
@@ -389,6 +453,24 @@ export async function applyConsensusAndAlert(
       fingerprint: claimFingerprint,
       reason: `quality-gate:${gate.reason ?? "rejected"}`,
     };
+  }
+
+  // 3a. Async quality gate — runs only when we're otherwise about to post,
+  //     so its network cost never pays for a pick already rejected by the
+  //     sync gate. Concrete use: fixture-existence check.
+  if (qualityGateAsync) {
+    const asyncGate = await qualityGateAsync(parsed);
+    if (!asyncGate.ok) {
+      return {
+        mode,
+        triggered: true,
+        groupCount: fired.groupCount,
+        sent: false,
+        claimed: false,
+        fingerprint: claimFingerprint,
+        reason: `quality-gate:${asyncGate.reason ?? "async-rejected"}`,
+      };
+    }
   }
 
   // 3b. Cross-spelling / cross-line de-dup: this exact pick direction on

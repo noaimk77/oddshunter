@@ -10,6 +10,8 @@ import { sendConsensusAlert } from "./vipGroup";
 import { shouldSendConsensusAlert } from "./alertFormat";
 import { rememberFixture, recallFixture, isFirehoseChat } from "./chatFixtureContext";
 import { extractSelectionWithLLM, extractFullTipWithLLM } from "./tipLlmFallback";
+import { fixtureExistsOnTheSportsDb } from "../providers/thesportsdb";
+import { fetchRecentResults, type ResultRow } from "../providers/betexplorer";
 import { getTipConsensusConfig, getTipConsensusHtWindowMinutes, getChatFixtureContextWindowMinutes, getMaxTipMessageAgeMinutes, SEND_TIP_CONSENSUS_ALERTS, TIP_LISTENER_CHANNELS_ONLY } from "../config";
 import { Api } from "telegram/tl";
 
@@ -371,6 +373,14 @@ async function processCandidate(
     config,
     sendEnabled: SEND_TIP_CONSENSUS_ALERTS,
     qualityGate: shouldSendConsensusAlert,
+    // Only runs when the pick is otherwise about to post — see qualityGateAsync
+    // in tipConsensus.ts. Blocks OCR-hallucinated fixtures (the 2026-09-11
+    // 20:02 yTOON/Singanur cases) by requiring the match to actually exist
+    // on TheSportsDB or BetExplorer's results feed.
+    qualityGateAsync: async (tip) => {
+      const exists = await fixtureExistsOnAnySource(tip.homeTeam, tip.awayTeam);
+      return exists.ok ? { ok: true } : { ok: false, reason: exists.reason };
+    },
     resolveOddsSamplesAtAlert: () => resolveOddsSamplesAtAlert(db, rawTextForStore, parsed),
     send: (tip) => sendConsensusAlert(client, tip),
   });
@@ -433,4 +443,60 @@ async function resolveOddsSamplesAtAlert(db: PrismaClient, rawText: string, pars
     // odds are a nice-to-have — never fail the alert over them
   }
   return samples;
+}
+
+/**
+ * Composite fixture-existence check for the async quality gate. Passes if
+ * TheSportsDB knows the fixture (schedule or live feed) OR BetExplorer's
+ * recent-results listing carries a row that fuzzy-matches the same
+ * fixture. Both are the same sources the outcome resolver already trusts,
+ * so a fixture that grades WON/LOST later must also resolve here now.
+ * Returns a short reason on rejection so the caller's log line makes the
+ * "why nothing was sent" answerable at a glance.
+ *
+ * Cache: 5 min TTL keyed on lowercased "home|away". A directional consensus
+ * often re-checks the same fixture as several tips land in quick
+ * succession — no reason to hit both networks for each one. The window is
+ * short enough that a genuinely late-appearing fixture (kickoff during the
+ * cache lifetime) will still be picked up on the next tip.
+ */
+const fixtureExistenceCache = new Map<string, { at: number; result: { ok: true } | { ok: false; reason: string } }>();
+const FIXTURE_EXISTENCE_TTL_MS = 5 * 60_000;
+
+let cachedBetexplorerResults: { at: number; rows: ResultRow[] } | null = null;
+const BETEXPLORER_RESULTS_TTL_MS = 5 * 60_000;
+
+async function fixtureExistsOnAnySource(
+  homeTeam: string,
+  awayTeam: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const key = `${homeTeam}|${awayTeam}`.toLowerCase();
+  const hit = fixtureExistenceCache.get(key);
+  if (hit && Date.now() - hit.at < FIXTURE_EXISTENCE_TTL_MS) return hit.result;
+
+  if (await fixtureExistsOnTheSportsDb(homeTeam, awayTeam)) {
+    const r = { ok: true as const };
+    fixtureExistenceCache.set(key, { at: Date.now(), result: r });
+    return r;
+  }
+
+  try {
+    if (!cachedBetexplorerResults || Date.now() - cachedBetexplorerResults.at > BETEXPLORER_RESULTS_TTL_MS) {
+      cachedBetexplorerResults = { at: Date.now(), rows: [...(await fetchRecentResults()).values()] };
+    }
+    for (const row of cachedBetexplorerResults.rows) {
+      if (fuzzyFixtureMatch({ homeTeam, awayTeam }, { homeTeam: row.homeTeam, awayTeam: row.awayTeam })) {
+        const r = { ok: true as const };
+        fixtureExistenceCache.set(key, { at: Date.now(), result: r });
+        return r;
+      }
+    }
+  } catch (err) {
+    console.warn(`[tipListener] BetExplorer existence check failed for ${homeTeam} vs ${awayTeam}:`, err instanceof Error ? err.message : err);
+  }
+
+  const r = { ok: false as const, reason: "fixture-not-found" };
+  fixtureExistenceCache.set(key, { at: Date.now(), result: r });
+  console.log(`[tipListener] fixture-existence gate rejected "${homeTeam}" vs "${awayTeam}" — neither TheSportsDB nor BetExplorer knows this match.`);
+  return r;
 }

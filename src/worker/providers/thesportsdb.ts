@@ -326,6 +326,52 @@ export async function fetchFinishedEvent(homeTeam: string, awayTeam: string): Pr
   return null;
 }
 
+/**
+ * Existence check: does this fixture look like a REAL match on TheSportsDB?
+ * True when the home team resolves AND its schedule (recent + upcoming
+ * events) or the live-score feed carries a row that names the opponent
+ * with a distinctive token. Used as the primary source in the
+ * fixture-existence gate before posting a consensus alert — combined with
+ * a BetExplorer fallback so the small obscure leagues that BetExplorer
+ * covers but TheSportsDB doesn't (real miss: Croatian U19 sides) still
+ * pass. Returns `false` on the OCR-hallucinated fixtures Noaim flagged
+ * 2026-09-11 20:02 (yTOON/Taum, Singanur/Mongolia) — those names don't
+ * exist in TheSportsDB, so nothing matches. A resolve failure (network
+ * error, timeout) also returns false: if we can't check, we don't post,
+ * on Noaim's stated priority (never post a match that might not exist).
+ */
+export async function fixtureExistsOnTheSportsDb(homeTeam: string, awayTeam: string): Promise<boolean> {
+  try {
+    // 1. Recent + upcoming from the home team's schedule — same feeds
+    //    fetchFixtureTiming uses, but we accept ANY status (finished /
+    //    upcoming / in-play) since existence is the only question.
+    const home = await searchTeam(homeTeam);
+    if (home?.idTeam) {
+      const awayTokens = distinctiveTokens(awayTeam, homeTeam);
+      const homeTokens = distinctiveTokens(homeTeam, awayTeam);
+      if (awayTokens.length > 0) {
+        for (const ep of ["eventslast", "eventsnext"] as const) {
+          const data = await fetchJson<{ events?: TsdbEvent[] | null; results?: TsdbEvent[] | null }>(`${BASE}/${ep}.php?id=${home.idTeam}`);
+          for (const ev of data?.events ?? data?.results ?? []) {
+            const hay = `${ev.strHomeTeam ?? ""} ${ev.strAwayTeam ?? ""} ${ev.strEvent ?? ""}`.toLowerCase();
+            if (awayTokens.some((t) => hay.includes(t))) {
+              if (homeTokens.length === 0 || homeTokens.some((t) => hay.includes(t))) return true;
+            }
+          }
+        }
+      }
+    }
+    // 2. Live feed fallback — the home team may not resolve (obscure club,
+    //    reserve side) but the match can still be live right now.
+    const live = await fetchLiveScore(homeTeam, awayTeam);
+    if (live) return true;
+    return false;
+  } catch (err) {
+    console.warn(`[thesportsdb] fixtureExists check failed for ${homeTeam} vs ${awayTeam}:`, err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
 export interface LiveScore {
   homeScore: number;
   awayScore: number;

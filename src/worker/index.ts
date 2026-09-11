@@ -76,6 +76,7 @@ import { buildSignalContext } from "./telegram/signalContext";
 import { runLiveTriggerPass, runHTResultPass } from "./strategies/strategyRunner";
 import { createUserClient, isUserClientConfigured } from "./telegram/userClient";
 import { startTipListener } from "./telegram/tipListener";
+import { resolveCashoutSignals } from "./telegram/cashoutResolver";
 
 /**
  * Odds Hunter worker — the long-lived process (not a Netlify function).
@@ -1030,6 +1031,20 @@ async function main() {
             await resolvePendingOutcomes(db, getBotForDelivery());
           } catch (err) {
             console.error("[worker] outcome resolution failed", err);
+          }
+          // Cash-out follow-up pass: reply to VIP alerts when a source chat
+          // says to cash out on a match we already posted (Noaim 2026-09-11).
+          // Only runs when the user client is connected — the reply goes
+          // through the MTProto sender, same channel as the initial post.
+          if (tipUserClient && SEND_TIP_CONSENSUS_ALERTS) {
+            try {
+              const out = await resolveCashoutSignals(db, tipUserClient);
+              if (out.replied > 0 || out.skipped > 0) {
+                console.log(`[worker] cash-out resolver: replied ${out.replied}, skipped ${out.skipped}.`);
+              }
+            } catch (err) {
+              console.error("[worker] cash-out resolver failed", err);
+            }
           }
           // Momentum picks (stats-based live tips) turned off (Noaim,
           // 2026-08-23): the product targets match-fixing in obscure,

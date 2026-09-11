@@ -23,6 +23,7 @@ interface ScrapedTipRow {
   market: string | null;
   selection: string | null;
   detectedAt: Date;
+  rawText: string | null;
 }
 interface ConsensusAlertRow {
   id: string;
@@ -50,6 +51,7 @@ function makeFakeDb(tips: Array<Partial<ScrapedTipRow>> = []) {
     market: t.market ?? null,
     selection: t.selection ?? null,
     detectedAt: t.detectedAt ?? new Date(),
+    rawText: t.rawText ?? null,
   }));
   const alerts: ConsensusAlertRow[] = [];
   let seq = 0;
@@ -372,5 +374,49 @@ describe("consensus primitives", () => {
     expect(dup).toMatchObject({ sent: false, claimed: false, reason: "duplicate-direction" });
     expect(sendCalls).toBe(0);
     expect(db._alerts).toHaveLength(1); // still just the one
+  });
+
+  it("counts forwarded copies of the SAME message as ONE vote (real miss 2026-09-11: yTOON/Taum + Singanur/Mongolia — one Russian OCR screenshot mirrored across 2 chats, fired MIN_GROUPS=2 alone)", async () => {
+    const forwarded = (chat: string) => ({
+      ...strictTip(chat),
+      rawText: "🔥 Lyon vs Marseille — Over 2.5 buts   cote 1.85",
+    });
+    // 3 chats, but all carry byte-identical raw text (same forward)
+    const db = makeFakeDb([forwarded("c1"), forwarded("c2"), forwarded("c3")]);
+    const r = await checkConsensus(db, PARSED.fingerprint, CONFIG, { claim: false });
+    expect(r.triggered).toBe(false);
+    expect(r.groupCount).toBe(1);
+  });
+
+  it("still counts distinct sources when the same pick is phrased differently in each chat", async () => {
+    const worded = (chat: string, rawText: string) => ({ ...strictTip(chat), rawText });
+    const db = makeFakeDb([
+      worded("c1", "Lyon vs Marseille — Over 2.5 goals 1.85"),
+      worded("c2", "🎯 OL - OM: plus de 2,5 buts, cote 1,90"),
+      worded("c3", "Pick: Ligue 1 — Lyon/Marseille +2.5"),
+    ]);
+    const r = await checkConsensus(db, PARSED.fingerprint, CONFIG, { claim: false });
+    expect(r).toMatchObject({ triggered: true, groupCount: 3 });
+  });
+
+  it("async quality gate rejection reports quality-gate:<reason> and claims nothing (fixture-existence path)", async () => {
+    const db = makeFakeDb([strictTip("c1"), strictTip("c2"), strictTip("c3")]);
+    let sendCalls = 0;
+    const res = await applyConsensusAndAlert(db, PARSED, {
+      config: CONFIG,
+      sendEnabled: true,
+      qualityGateAsync: async () => ({ ok: false, reason: "fixture-not-found" }),
+      send: async () => {
+        sendCalls++;
+        return { chatId: "vip", messageId: 1 };
+      },
+    });
+    expect(res).toMatchObject({
+      sent: false,
+      claimed: false,
+      reason: "quality-gate:fixture-not-found",
+    });
+    expect(sendCalls).toBe(0);
+    expect(db._alerts).toHaveLength(0);
   });
 });

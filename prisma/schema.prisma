@@ -522,6 +522,12 @@ model ConsensusAlert {
   awayScore     Int?
   /// "WON" | "LOST" | "VOID" | "UNRESOLVED". Null until the resolver runs.
   outcome       String?
+  /// Set the first (and only) time a cash-out follow-up reply was posted
+  /// under this alert. Idempotency latch for the cash-out resolver — one
+  /// reply per alert, ever, however many source signals arrive. Null on
+  /// alerts that never received a cash-out signal, or received one but the
+  /// match was already finished (too late to act).
+  cashoutRepliedAt DateTime?
 
   @@index([outcome, sentAt])
 }
