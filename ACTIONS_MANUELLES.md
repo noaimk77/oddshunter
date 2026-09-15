@@ -236,5 +236,33 @@ Go ! 🚀
 
 ---
 
+---
+
+## Bot autobet privé (wallet Polygon) — ajouté 2026-09-16, PAS lié au transfert Codex
+
+Nouveau sous-système, séparé de tout le reste : un 2e bot Telegram privé
+(`src/worker/telegram/autobetBot.ts`, `src/worker/lib/polygonWallet.ts`),
+verrouillé à ton seul chat admin, pour gérer une bankroll USDC (Polygon)
+destinée à financer Polymarket. Code déployé et vérifié fonctionnel
+(RPC direct testé, `{usdc:0, pol:0}` — pas d'erreur, juste pas encore financé).
+
+**Ne PAS donner `AUTOBET_WALLET_PRIVATE_KEY` à Codex ni à personne** — Fly
+secrets ne sont de toute façon jamais lisibles après coup (même par toi),
+donc rien à faire de spécial pour ça, juste ne jamais le remettre ailleurs
+(un .env.local partagé, un email, etc.).
+
+**Seule action qui reste, et qui doit être faite par toi (pas automatisable,
+c'est un transfert d'argent réel) :**
+- [ ] Envoyer sur `AUTOBET_WALLET_ADDRESS` (demande `/solde` au bot `autobot`
+      sur Telegram pour l'adresse), **réseau Polygon uniquement** :
+      ~1 POL (gas, quelques centimes) + le montant USDC que tu veux tester
+- [ ] Revérifier `/solde` — doit afficher le nouveau solde
+- [ ] Tester `/retirer <petit montant>` puis `/retirer <montant> confirme`
+      pour valider le cycle complet vers ton adresse Kraken avant d'y mettre
+      plus
+
+Pas de PS3838/Polymarket branché derrière pour l'instant — ce bot ne fait
+que gérer la bankroll (voir/déplacer les fonds), pas encore parier.
+
 **Fait ?** Cocher tout ci-dessus → **Codex peut commencer.**
 
