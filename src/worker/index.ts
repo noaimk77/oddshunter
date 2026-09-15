@@ -70,6 +70,7 @@ let tipUserClient: TelegramClient | null = null;
 import type { MarketDataProvider } from "./providers/types";
 import { createBetExplorerProvider } from "./providers/betexplorer";
 import { createBot } from "./telegram/bot";
+import { createAutobetBot } from "./telegram/autobetBot";
 import { deliverSignal } from "./telegram/sendAlert";
 import { deliverSuspiciousSignal } from "./telegram/suspiciousFeed";
 import { buildSignalContext } from "./telegram/signalContext";
@@ -749,6 +750,29 @@ function getBotForDelivery(): Bot | null {
   return sharedBot;
 }
 
+// Second, unrelated bot instance (own token, own long-poll connection) —
+// Noaim's private auto-betting dashboard/remote-control, never public. See
+// ./telegram/autobetBot.ts. Optional: skipped entirely (not just silently
+// unresponsive) when the secrets aren't set, so this feature can stay
+// half-built without breaking the rest of the worker.
+let sharedAutobetBot: Bot | null = null;
+
+async function startAutobetBot(): Promise<void> {
+  if (!process.env.AUTOBET_BOT_TOKEN || !process.env.AUTOBET_ADMIN_CHAT_ID) {
+    console.log("[worker] Autobet bot skipped (AUTOBET_BOT_TOKEN/AUTOBET_ADMIN_CHAT_ID not set).");
+    return;
+  }
+  try {
+    sharedAutobetBot = createAutobetBot();
+  } catch (err) {
+    console.error("[worker] Autobet bot could not be created", err);
+    return;
+  }
+  sharedAutobetBot
+    .start({ onStart: () => console.log("[worker] Autobet bot listening for commands (long polling).") })
+    .catch((err) => console.error("[worker] Autobet bot polling stopped unexpectedly", err));
+}
+
 /**
  * Separate pipeline from the odds-movement bot above: connects as Noaim's
  * personal Telegram account (MTProto, not the bot API) and listens across
@@ -990,6 +1014,7 @@ async function main() {
   // linking (/start <token>) and status commands must work even while the
   // worker is only observing, not yet delivering alerts.
   await startTelegramBot();
+  await startAutobetBot();
   await startTipConsensusListener();
   await startStrategyLoop();
   startPurgeLoop();
