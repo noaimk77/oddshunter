@@ -31,8 +31,11 @@ const ERC20_ABI = [
   },
 ] as const;
 
+// "https://polygon-rpc.com" (the usual default people paste in tutorials) started
+// returning 401 "tenant disabled" 2026-09-16 — this one, PublicNode's Polygon
+// endpoint, was verified working (real eth_call round-trip) the same day.
 function getRpcUrl(): string {
-  return process.env.AUTOBET_POLYGON_RPC_URL || "https://polygon-rpc.com";
+  return process.env.AUTOBET_POLYGON_RPC_URL || "https://polygon-bor-rpc.publicnode.com";
 }
 
 function getPublicClient() {
