@@ -225,6 +225,22 @@ describe("getDirectionKey — similar picks bucket together", () => {
   it("keeps over-goals as 'over_goals'", () => {
     expect(getDirectionKey("OVER_UNDER", "OVER_4_5", fx)).toBe("over_goals");
   });
+
+  // 2026-09-17 regression guard — real case: "Deportivo Lara vs Atlético El
+  // Vigía" (football, Liga FUTVE 2) was posted to VIP as "🏀 Plus de 180,5
+  // points". A basketball tip (OVER_180_5) merged with a football tip
+  // (OVER_1_5) via the direction-consensus path because both were called
+  // "over_goals". Now they land in distinct buckets — a football over and a
+  // basketball over can never form a directional consensus on the same
+  // team-name pair again.
+  it("splits football-shape and basketball-shape totals into distinct buckets", () => {
+    expect(getDirectionKey("OVER_UNDER", "OVER_1_5", fx)).toBe("over_goals");
+    expect(getDirectionKey("OVER_UNDER", "OVER_4_5", fx)).toBe("over_goals");
+    expect(getDirectionKey("OVER_UNDER", "OVER_180_5", fx)).toBe("over_points");
+    expect(getDirectionKey("OVER_UNDER", "OVER_210", fx)).toBe("over_points");
+    expect(getDirectionKey("OVER_UNDER", "UNDER_2_5", fx)).toBe("under_goals");
+    expect(getDirectionKey("OVER_UNDER", "UNDER_171_5", fx)).toBe("under_points");
+  });
 });
 
 describe("fuzzyFixtureMatch — whole-word rescue for short OCR fragments", () => {

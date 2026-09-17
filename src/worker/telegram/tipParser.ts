@@ -476,6 +476,20 @@ export function buildParsedTip(
 }
 
 /**
+ * Parses the numeric line back out of a selection like "OVER_180_5" -> 180.5.
+ * Used by getDirectionKey to tell football-shape totals (goals, single digit)
+ * from basketball-shape totals (points, 100+).
+ */
+function parseOverUnderLine(selection: string): number | null {
+  const m = selection.match(/^(?:OVER|UNDER)_(\d+)(?:_(\d))?$/);
+  if (!m) return null;
+  const intPart = Number(m[1]);
+  const frac = m[2] ? Number(m[2]) / 10 : 0;
+  const n = intPart + frac;
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
  * Direction-level bucket for looser consensus: 3 tipsters betting the same
  * SIDE of the same match count as a consensus even if the exact market or
  * line differs. Real tipsters rarely pick identical lines — Over 4.5, Over
@@ -502,8 +516,18 @@ export function getDirectionKey(market: string, selection: string, fixture: Fixt
     // reader and a "over 2.5 full-time" reader are not backing the same
     // thing, so they must never merge into one directional consensus.
     const suffix = market === "OVER_UNDER_HT" ? "_ht" : "";
-    if (selection.startsWith("OVER_")) return `over_goals${suffix}`;
-    if (selection.startsWith("UNDER_")) return `under_goals${suffix}`;
+    // Sport-shape guard (2026-09-17): the line's magnitude tells the sport
+    // apart — 1.5-6.5 = football/hockey goals, 100+ = basketball points.
+    // Without this, a football tip "OVER 1.5" and a basketball tip "OVER
+    // 180.5" landed in the same "over_goals" bucket and could merge if the
+    // team names fuzzy-matched (real case: Deportivo Lara vs Atlético El
+    // Vigía, football, alerted as "🏀 Plus de 180,5 points"). Threshold 30
+    // sits comfortably above any real goals line and well below any real
+    // basketball total.
+    const line = parseOverUnderLine(selection);
+    const shape = line !== null && line >= 30 ? "_points" : "_goals";
+    if (selection.startsWith("OVER_")) return `over${shape}${suffix}`;
+    if (selection.startsWith("UNDER_")) return `under${shape}${suffix}`;
     return null;
   }
   if (market === "BTTS") {
