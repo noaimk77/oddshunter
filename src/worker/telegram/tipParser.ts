@@ -564,9 +564,17 @@ export function getDirectionKey(market: string, selection: string, fixture: Fixt
     const side = withSide[1].toLowerCase();
     const n = Number.parseFloat(withSide[2]);
     if (!Number.isFinite(n)) return null;
-    // A big favorite handicap (|n| ≥ 3) reads as "blowout / lots of goals";
-    // small handicap = "narrow win"; positive = "underdog covers".
-    if (n <= -3) return `${side}_wins_big`;
+    // Big-favorite handicap (|n| ≥ 3) reads as "blowout ≈ lots of goals" and
+    // is bucketed with over-goals so a "handicap -5 on team 1" tip and an
+    // "over 4.5 buts" tip on the same match count as one consensus (Noaim
+    // 2026-09-17: "les deux, on peut penser que c'est un match truqué").
+    // Threshold kept at -3 because a -3 handicap in football already implies
+    // a big scoring gap; basketball handicaps of that size do NOT correlate
+    // with over-totals but the goals-shape suffix on over_goals (line < 30
+    // = football-shape) keeps them from merging with real basketball over-
+    // point picks. Small handicaps (-0.5, -1, -2) stay side-tagged so a
+    // "narrow home win" tip and a "narrow away win" tip never merge.
+    if (n <= -3) return "over_goals";
     if (n < 0) return `${side}_wins_narrow`;
     return `${side}_covers_underdog`;
   }

@@ -199,9 +199,12 @@ describe("extractFixture / extractSelection (cross-message resolution)", () => {
 describe("getDirectionKey — similar picks bucket together", () => {
   const fx = { homeTeam: "Cruz Azul Hidalgo", awayTeam: "Tepatitlan" };
 
-  it("buckets a big favorite handicap (|N| ≥ 3) on a team as '<side>_wins_big'", () => {
-    expect(getDirectionKey("HANDICAP", "HOME_-5", fx)).toBe("home_wins_big");
-    expect(getDirectionKey("HANDICAP", "AWAY_-4.5", fx)).toBe("away_wins_big");
+  it("buckets a big favorite handicap (|N| ≥ 3) with over-goals — Noaim 2026-09-17: 'handicap -5 sur le favori = over 4.5 buts, c'est pareil'", () => {
+    expect(getDirectionKey("HANDICAP", "HOME_-5", fx)).toBe("over_goals");
+    expect(getDirectionKey("HANDICAP", "AWAY_-4.5", fx)).toBe("over_goals");
+    // And crucially, a real over-goals tip on the same match now shares
+    // the same bucket — the whole point of this merge.
+    expect(getDirectionKey("OVER_UNDER", "OVER_4_5", fx)).toBe("over_goals");
   });
 
   it("keeps a small favorite handicap as '<side>_wins_narrow'", () => {
