@@ -275,8 +275,12 @@ function matchOddsDropTable(rawText: string): { market: string; selection: strin
 // "Over (4.5)" or "Over: 4.5" from a bookmaker app's own goal-line panel,
 // not just a bare space (a real miss: "Total: Over (4.5) 1.755" was still
 // dropped by the first fix because "(" isn't whitespace).
-const OVER_RE = /(?:over\W{0,3}(\d+(?:[.,]\d)?)|plus de\W{0,3}(\d+(?:[.,]\d)?)|\+\s*(\d+(?:[.,]\d)?)\s*buts?)/i;
-const UNDER_RE = /(?:under\W{0,3}(\d+(?:[.,]\d)?)|moins de\W{0,3}(\d+(?:[.,]\d)?)|-\s*(\d+(?:[.,]\d)?)\s*buts?)/i;
+// Two decimal digits allowed to capture Asian split totals like 4.75 / 4.25 /
+// 4.5. Before, only ONE decimal was captured — "over 4.75" parsed as "over
+// 4.7", leaving "5" trailing, so the consensus sample could end up as
+// "over 5" for a real "over 4.75" tip.
+const OVER_RE = /(?:over\W{0,3}(\d+(?:[.,]\d{1,2})?)|plus de\W{0,3}(\d+(?:[.,]\d{1,2})?)|\+\s*(\d+(?:[.,]\d{1,2})?)\s*buts?)/i;
+const UNDER_RE = /(?:under\W{0,3}(\d+(?:[.,]\d{1,2})?)|moins de\W{0,3}(\d+(?:[.,]\d{1,2})?)|-\s*(\d+(?:[.,]\d{1,2})?)\s*buts?)/i;
 
 /**
  * A lot of tipster channels post first-half-only lines — nearly always
@@ -476,15 +480,22 @@ export function buildParsedTip(
 }
 
 /**
- * Parses the numeric line back out of a selection like "OVER_180_5" -> 180.5.
- * Used by getDirectionKey to tell football-shape totals (goals, single digit)
- * from basketball-shape totals (points, 100+).
+ * Parses the numeric line back out of a selection like "OVER_180_5" -> 180.5
+ * or "OVER_4_75" -> 4.75. Used by getDirectionKey (goals vs points shape),
+ * by pickConservativeOverUnderTip (choosing the safer line), and by the
+ * range-divergence guard (max - min).
  */
-function parseOverUnderLine(selection: string): number | null {
-  const m = selection.match(/^(?:OVER|UNDER)_(\d+)(?:_(\d))?$/);
+export function parseOverUnderLine(selection: string): number | null {
+  const m = selection.match(/^(?:OVER|UNDER)_(\d+)(?:_(\d{1,2}))?$/);
   if (!m) return null;
   const intPart = Number(m[1]);
-  const frac = m[2] ? Number(m[2]) / 10 : 0;
+  const fracRaw = m[2];
+  let frac = 0;
+  if (fracRaw) {
+    // "5" -> 0.5, "75" -> 0.75. Same rule as the parser side: one decimal for
+    // half-lines, two for Asian split lines.
+    frac = Number(fracRaw) / Math.pow(10, fracRaw.length);
+  }
   const n = intPart + frac;
   return Number.isFinite(n) ? n : null;
 }

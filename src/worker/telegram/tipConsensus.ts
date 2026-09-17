@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { PrismaClient } from "@/generated/prisma/client";
-import { getDirectionKey, fuzzyFixtureMatch, slugTeam, type Fixture } from "./tipParser";
+import { getDirectionKey, fuzzyFixtureMatch, slugTeam, parseOverUnderLine, type Fixture } from "./tipParser";
 import type { ParsedTip } from "./tipParser";
 
 /**
@@ -196,13 +196,11 @@ export async function checkDirectionalConsensus(
   });
 
   const matchingTips: (typeof recent)[number][] = [];
-  let sample: (typeof recent)[number] | null = null;
   for (const tip of recent) {
     if (!tip.homeTeam || !tip.awayTeam) continue;
     if (!fuzzyFixtureMatch(fixture, { homeTeam: tip.homeTeam, awayTeam: tip.awayTeam })) continue;
     const dir = getDirectionKey(tip.market ?? "", tip.selection ?? "", { homeTeam: tip.homeTeam, awayTeam: tip.awayTeam });
     if (dir !== currentDirection) continue;
-    if (!sample) sample = tip;
     matchingTips.push(tip);
   }
   // Collapse forwarded copies (see countDistinctChatsDedupedByText) — a
@@ -210,6 +208,45 @@ export async function checkDirectionalConsensus(
   const groupCount = countDistinctChatsDedupedByText(matchingTips);
   if (groupCount < config.minGroups) {
     return { triggered: false, groupCount, fingerprint: dirFingerprint };
+  }
+
+  // "Sample" = the one tip whose (market, selection) will be shown in the VIP
+  // message. For OVER/UNDER on the same direction (e.g. all "over goals"),
+  // the individual tipsters usually disagree on the exact line — one posts
+  // "over 4.5", another "over 5", another the Asian "over 4.75". Two things
+  // must happen here (Noaim 2026-09-17):
+  //   1. Divergence guard — if the range of lines is too wide, this isn't
+  //      "the same pick" any more, it's tipsters disagreeing on the volume
+  //      of goals ("over 4.5" vs "over 2.5" is 2 goals apart — too different
+  //      to bundle as one alert), so suppress the consensus outright.
+  //   2. Pick the conservative line — for OVER, the *smallest* line is the
+  //      safest bet (any bigger over implies the smaller one); for UNDER,
+  //      the *largest*. Before this, sample was just the newest tip, so the
+  //      VIP message could say "over 5" when a safer "over 4.5" was also in
+  //      the consensus and would have won a bet the "over 5" pick voided.
+  const overUnderTips = matchingTips.filter(
+    (t) => (t.market === "OVER_UNDER" || t.market === "OVER_UNDER_HT") && t.selection && parseOverUnderLine(t.selection) !== null,
+  );
+  let sample: (typeof recent)[number] | null;
+  if (overUnderTips.length >= 2) {
+    const lines = overUnderTips
+      .map((t) => parseOverUnderLine(t.selection!)!)
+      .sort((a, b) => a - b);
+    const spread = lines[lines.length - 1] - lines[0];
+    // 1.5 for goals-shape lines (foot/hockey: over 4.5 vs over 3 = borderline);
+    // 15 for points-shape (basketball spreads at higher magnitude). Threshold
+    // switch matches the goals/points shape split from getDirectionKey.
+    const shapeIsPoints = lines[0] >= 30;
+    const maxAllowedSpread = shapeIsPoints ? 15 : 1.5;
+    if (spread > maxAllowedSpread) {
+      return { triggered: false, groupCount, fingerprint: dirFingerprint };
+    }
+    const isOver = currentDirection.startsWith("over_");
+    const targetLine = isOver ? lines[0] : lines[lines.length - 1];
+    sample =
+      overUnderTips.find((t) => parseOverUnderLine(t.selection!) === targetLine) ?? overUnderTips[0];
+  } else {
+    sample = matchingTips[0] ?? null;
   }
 
   // Cross-spelling dedup: an alert for the SAME direction on this fixture

@@ -241,6 +241,33 @@ describe("getDirectionKey — similar picks bucket together", () => {
     expect(getDirectionKey("OVER_UNDER", "UNDER_2_5", fx)).toBe("under_goals");
     expect(getDirectionKey("OVER_UNDER", "UNDER_171_5", fx)).toBe("under_points");
   });
+
+  it("treats Asian split totals (4.75) as goals-shape too", () => {
+    expect(getDirectionKey("OVER_UNDER", "OVER_4_75", fx)).toBe("over_goals");
+    expect(getDirectionKey("OVER_UNDER", "OVER_4_25", fx)).toBe("over_goals");
+  });
+});
+
+describe("extractSelection — Asian split totals (2 decimal digits)", () => {
+  const fx = { homeTeam: "Real Madrid", awayTeam: "Barcelona" };
+  it("parses 'plus de 4,75 buts' as OVER_4_75 (was truncated to OVER_4_7 before)", () => {
+    expect(extractSelection("plus de 4,75 buts", fx)).toEqual({
+      market: "OVER_UNDER",
+      selection: "OVER_4_75",
+    });
+  });
+  it("parses 'over 4.25' correctly", () => {
+    expect(extractSelection("over 4.25", fx)).toEqual({
+      market: "OVER_UNDER",
+      selection: "OVER_4_25",
+    });
+  });
+  it("still parses plain half-lines the same way (regression guard)", () => {
+    expect(extractSelection("over 3.5", fx)).toEqual({
+      market: "OVER_UNDER",
+      selection: "OVER_3_5",
+    });
+  });
 });
 
 describe("fuzzyFixtureMatch — whole-word rescue for short OCR fragments", () => {
