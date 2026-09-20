@@ -131,6 +131,12 @@ describe("shouldSendConsensusAlert — quality gate", () => {
     expect(shouldSendConsensusAlert({ ...base, selection: "OVER_2" }).ok).toBe(true);
   });
 
+  it("keeps an explicit .0 integer line (real bug 2026-09-20: 'Plus de 2,0' -> OVER_2_0 was wrongly rejected, killed a real 2-group consensus on NK Lucko U19 vs Mladost Zdralovi U19 — frac '0' was missing from the allowlist)", () => {
+    expect(shouldSendConsensusAlert({ ...base, selection: "OVER_2_0" }).ok).toBe(true);
+    expect(shouldSendConsensusAlert({ ...base, selection: "UNDER_3_0" }).ok).toBe(true);
+    expect(shouldSendConsensusAlert({ ...base, selection: "OVER_5_0" }).ok).toBe(true);
+  });
+
   it("rejects a sub-range basketball total — team/half line, not the match total (real 2026-09-09: 'Dugave Odema vs Metalac — Plus de 71,5 points')", () => {
     expect(shouldSendConsensusAlert({ ...base, homeTeam: "Dugave Odema", awayTeam: "Metalac", selection: "OVER_71_5" }).ok).toBe(false);
     expect(shouldSendConsensusAlert({ ...base, selection: "OVER_45_5" }).ok).toBe(false);

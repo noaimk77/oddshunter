@@ -230,7 +230,13 @@ export function shouldSendConsensusAlert(
     const m = tip.selection.match(/^(?:OVER|UNDER)_(\d+)(?:_(\d+))?$/);
     if (m && m[2]) {
       const frac = m[2];
-      if (frac !== "5" && frac !== "25" && frac !== "75") {
+      // BUG (found 2026-09-20, real case: "Plus de 2,0" -> OVER_2_0 wrongly
+      // rejected, killed a real 2-group consensus): "0" (an explicit ".0" on
+      // a whole-number line, e.g. "Over 2.0") is one of the four legitimate
+      // shapes per the comment above, but was missing from this allowlist —
+      // only "5"/"25"/"75" were accepted, so every plain-integer line typed
+      // with an explicit decimal point got rejected as "non-standard".
+      if (frac !== "0" && frac !== "5" && frac !== "25" && frac !== "75") {
         return { ok: false, reason: `over/under line has non-standard fraction (${tip.selection}) — real lines are only .0/.25/.5/.75` };
       }
     }
