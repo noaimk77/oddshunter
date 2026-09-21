@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build --webpack",
-    "postinstall": "prisma generate",
+    "postinstall": "prisma generate && prisma generate --schema=prisma-consensus/schema.prisma",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
@@ -19,7 +19,9 @@
     "@anthropic-ai/sdk": "^0.122.0",
     "@auth/prisma-adapter": "^2.11.3",
     "@base-ui/react": "^1.7.0",
+    "@libsql/client": "^0.18.0",
     "@polymarket/clob-client": "^4.22.8",
+    "@prisma/adapter-libsql": "^7.10.0",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "agentmail": "^0.5.19",

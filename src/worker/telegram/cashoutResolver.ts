@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { PrismaClient } from "@/generated/prisma-consensus/client";
 import type { TelegramClient } from "telegram";
 import { fetchLiveScore, fetchFixtureTiming } from "../providers/thesportsdb";
 import { fuzzyFixtureMatch } from "./tipParser";

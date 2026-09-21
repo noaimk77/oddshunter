@@ -1,0 +1,92 @@
+// Consensus-only schema — split off 2026-09-22 because the shared Neon
+// Postgres kept running out of free-tier compute quota and taking the VIP
+// alert pipeline down with it. This is the smallest subset of tables the
+// pipeline actually reads/writes on every tip: ScrapedTip, GroupTicket,
+// ChatFixtureContext, ConsensusAlert. Everything else (Event, Market,
+// OddsSnapshot, User, …) stays on Neon in the main schema.prisma.
+//
+// Provider is SQLite (Turso serverless-SQLite over libSQL) so the pipeline
+// runs off a fresh, decoupled quota — Turso's free tier gives us 9 GB
+// storage, 500M reads / 10M writes per month, and is not billed by
+// compute time the way Neon is.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma-consensus"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// Every parsed tip stored by the consensus listener. `fingerprint` groups
+/// same-pick tips across chats; the (fingerprint, detectedAt) index is what
+/// checkConsensus scans for the 24h window.
+model ScrapedTip {
+  id              String   @id @default(cuid())
+  sourceChatId    String
+  sourceChatTitle String?
+  source          String   @default("TEXT")
+  rawText         String
+  fingerprint     String
+  homeTeam        String?
+  awayTeam        String?
+  market          String?
+  selection       String?
+  detectedAt      DateTime @default(now())
+
+  @@index([fingerprint, detectedAt])
+}
+
+/// Per-chat betting tickets — captured alongside tips for stats (win rate,
+/// tickets per day) even when the message doesn't parse into a full pick.
+model GroupTicket {
+  id              String   @id @default(cuid())
+  sourceChatId    String
+  sourceChatTitle String?
+  source          String   @default("TEXT")
+  rawText         String
+  homeTeam        String?
+  awayTeam        String?
+  market          String?
+  selection       String?
+  odds            Float?
+  result          String   @default("PENDING")
+  detectedAt      DateTime @default(now())
+
+  @@index([sourceChatId, detectedAt])
+}
+
+/// Last fixture mentioned per chat — lets a bare follow-up ("W2",
+/// "Victoire de Cuba") resolve against whichever match that chat just
+/// posted about.
+model ChatFixtureContext {
+  sourceChatId String   @id
+  homeTeam     String
+  awayTeam     String
+  updatedAt    DateTime @updatedAt
+}
+
+/// One row per consensus fired. The unique fingerprint is the concurrency
+/// latch that prevents duplicate VIP alerts; the outcome + score fields
+/// let the resolver reply "Passé / Perdu" under the original message.
+model ConsensusAlert {
+  id               String    @id @default(cuid())
+  fingerprint      String    @unique
+  groupCount       Int
+  sentAt           DateTime  @default(now())
+  homeTeam         String?
+  awayTeam         String?
+  market           String?
+  selection        String?
+  oddsAtAlert      Float?
+  sentChatId       String?
+  sentMessageId    BigInt?
+  resolvedAt       DateTime?
+  homeScore        Int?
+  awayScore        Int?
+  outcome          String?
+  cashoutRepliedAt DateTime?
+
+  @@index([outcome, sentAt])
+}

@@ -78,6 +78,7 @@ import { runLiveTriggerPass, runHTResultPass } from "./strategies/strategyRunner
 import { createUserClient, isUserClientConfigured } from "./telegram/userClient";
 import { startTipListener } from "./telegram/tipListener";
 import { resolveCashoutSignals } from "./telegram/cashoutResolver";
+import { consensusDb } from "./consensusDb";
 
 /**
  * Odds Hunter worker — the long-lived process (not a Netlify function).
@@ -811,7 +812,7 @@ async function startTipConsensusListener(): Promise<void> {
     // confirmed via a manual getMessages() pull showing real posts in
     // FixOdds888/STRANGE GAME FINDER that the live listener never saw).
     const dialogs = await withTimeout(client.getDialogs({ limit: 500 }), 30_000, "gramjs getDialogs");
-    startTipListener(client, db);
+    startTipListener(client, consensusDb);
     tipUserClient = client;
     console.log(
       `[worker] tip consensus listener connected — ${dialogs.length} chats/channels cached — ${SEND_TIP_CONSENSUS_ALERTS ? "LIVE" : "mode observation (no repost)"}.`,
@@ -1063,7 +1064,7 @@ async function main() {
           // through the MTProto sender, same channel as the initial post.
           if (tipUserClient && SEND_TIP_CONSENSUS_ALERTS) {
             try {
-              const out = await resolveCashoutSignals(db, tipUserClient);
+              const out = await resolveCashoutSignals(consensusDb, tipUserClient);
               if (out.replied > 0 || out.skipped > 0) {
                 console.log(`[worker] cash-out resolver: replied ${out.replied}, skipped ${out.skipped}.`);
               }

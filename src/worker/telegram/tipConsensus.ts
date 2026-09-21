@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { PrismaClient } from "@/generated/prisma-consensus/client";
 import { getDirectionKey, fuzzyFixtureMatch, slugTeam, parseOverUnderLine, type Fixture } from "./tipParser";
 import type { ParsedTip } from "./tipParser";
 

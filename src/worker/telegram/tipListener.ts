@@ -1,6 +1,12 @@
 import type { TelegramClient } from "telegram";
 import { NewMessage, type NewMessageEvent } from "telegram/events";
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { PrismaClient } from "@/generated/prisma-consensus/client";
+// resolveFixture reads from Event (Neon Postgres); we import the Postgres
+// singleton directly so that when the consensus pipeline runs off Turso
+// it can still look up canonical fixtures on Neon opportunistically. The
+// call is wrapped in try/catch inside resolveFixture, so a Neon throttle
+// only degrades fingerprint accuracy — it does NOT block the consensus.
+import { db as postgresDb } from "@/lib/db";
 import { extractFixture, extractSelection, buildParsedTip, getDirectionKey, fuzzyFixtureMatch, type ParsedTip, type Fixture } from "./tipParser";
 import { resolveFixture } from "./fixtureResolver";
 import { extractOdds, extractLabeledOdds, extractResult } from "./ticketParser";
@@ -181,7 +187,7 @@ async function processCandidate(
       }
     }
     if (marketSelection) {
-      const canonical = await resolveFixture(db, fixture);
+      const canonical = await resolveFixture(postgresDb, fixture);
       parsed = buildParsedTip(canonical ?? fixture, marketSelection, canonical ?? undefined);
     } else {
       await rememberFixture(db, sourceChatId, fixture);
@@ -199,7 +205,7 @@ async function processCandidate(
       if (llm) { marketSelection = llm; llmOdds = llm.odds; }
     }
     if (marketSelection) {
-      const canonical = await resolveFixture(db, sameMessageFixture);
+      const canonical = await resolveFixture(postgresDb, sameMessageFixture);
       parsed = buildParsedTip(canonical ?? sameMessageFixture, marketSelection, canonical ?? undefined);
       identifiedFixture = canonical ?? sameMessageFixture;
       console.log(
@@ -230,7 +236,7 @@ async function processCandidate(
         }
       }
       if (marketSelection) {
-        const canonical = await resolveFixture(db, remembered);
+        const canonical = await resolveFixture(postgresDb, remembered);
         parsed = buildParsedTip(canonical ?? remembered, marketSelection, canonical ?? undefined);
       }
     }
@@ -257,7 +263,7 @@ async function processCandidate(
         identifiedFixture = fixtureFromLlm; // hand it to the other candidate of this message even if no pick is found here
         if (full.odds != null) llmOdds = full.odds;
         if (full.market && full.selection) {
-          const canonical = await resolveFixture(db, fixtureFromLlm);
+          const canonical = await resolveFixture(postgresDb, fixtureFromLlm);
           parsed = buildParsedTip(canonical ?? fixtureFromLlm, { market: full.market, selection: full.selection }, canonical ?? undefined);
           console.log(`[tipListener] LLM full extraction from "${sourceChatTitle ?? sourceChatId}": ${full.homeTeam} vs ${full.awayTeam} — ${full.market} ${full.selection}`);
         } else {
@@ -273,7 +279,7 @@ async function processCandidate(
           const focused = await extractSelectionWithLLM({ rawText, fixture: fixtureFromLlm, imageBuffer });
           if (focused) {
             if (focused.odds != null) llmOdds = focused.odds;
-            const canonical = await resolveFixture(db, fixtureFromLlm);
+            const canonical = await resolveFixture(postgresDb, fixtureFromLlm);
             parsed = buildParsedTip(canonical ?? fixtureFromLlm, focused, canonical ?? undefined);
             console.log(`[tipListener] LLM full+focused extraction from "${sourceChatTitle ?? sourceChatId}": ${fixtureFromLlm.homeTeam} vs ${fixtureFromLlm.awayTeam} — ${focused.market} ${focused.selection}`);
           } else {

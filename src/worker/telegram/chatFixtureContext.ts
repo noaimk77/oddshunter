@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { PrismaClient } from "@/generated/prisma-consensus/client";
 import type { Fixture } from "./tipParser";
 
 export async function rememberFixture(db: PrismaClient, sourceChatId: string, fixture: Fixture): Promise<void> {

@@ -15,9 +15,12 @@ RUN apk add --no-cache libc6-compat openssl
 
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
+COPY prisma-consensus ./prisma-consensus
 COPY prisma.config.ts ./
-# `npm ci` runs `postinstall` which calls `prisma generate` — needs
-# schema.prisma present (copied above) and OPENSSL_CONF at runtime.
+# `npm ci` runs `postinstall` which calls `prisma generate` for BOTH the
+# main Postgres schema (prisma/) and the consensus-only SQLite schema
+# (prisma-consensus/) — the second one is on Turso and powers the VIP
+# alert pipeline, isolated from Neon's compute quota.
 RUN npm ci --include=dev
 
 FROM node:20-alpine AS runtime
@@ -31,6 +34,7 @@ RUN apk add --no-cache libc6-compat openssl tini
 # further would break `npm run worker:start`.
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/prisma ./prisma
+COPY --from=deps /app/prisma-consensus ./prisma-consensus
 COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src
 COPY scripts ./scripts
