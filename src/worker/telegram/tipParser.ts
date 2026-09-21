@@ -568,26 +568,46 @@ export function getDirectionKey(market: string, selection: string, fixture: Fixt
     // handicap picks on the same match cluster together only when they
     // back the SAME team (a "home wins big" reader and an "away covers +2"
     // reader are backing opposite sides of the match, not the same
-    // direction). Legacy no-side format (bare "-1.5") is treated as
-    // uninferable and returned null so the strict path handles those.
+    // direction).
     const withSide = selection.match(/^(HOME|AWAY)_([+-]?\d+(?:\.\d+)?)$/);
-    if (!withSide) return null;
-    const side = withSide[1].toLowerCase();
-    const n = Number.parseFloat(withSide[2]);
+    if (withSide) {
+      const side = withSide[1].toLowerCase();
+      const n = Number.parseFloat(withSide[2]);
+      if (!Number.isFinite(n)) return null;
+      // Big-favorite handicap (|n| ≥ 3) reads as "blowout ≈ lots of goals"
+      // and is bucketed with over-goals so a "handicap -5 on team 1" tip
+      // and an "over 4.5 buts" tip on the same match count as one consensus
+      // (Noaim 2026-09-17: "les deux, on peut penser que c'est un match
+      // truqué"). Threshold kept at -3 because a -3 handicap in football
+      // already implies a big scoring gap; basketball handicaps of that
+      // size do NOT correlate with over-totals but the goals-shape suffix
+      // on over_goals (line < 30 = football-shape) keeps them from merging
+      // with real basketball over-point picks. Small handicaps
+      // (-0.5, -1, -2) stay side-tagged so a "narrow home win" tip and a
+      // "narrow away win" tip never merge.
+      if (n <= -3) return "over_goals";
+      if (n < 0) return `${side}_wins_narrow`;
+      return `${side}_covers_underdog`;
+    }
+    // Legacy no-side format (bare "-1.5" / "+2.5"). Real 2026-09-20 miss:
+    // 3 chats posted "HANDICAP -1.5", "-2.5", "-1.5" on Botafogo Ribeirão
+    // Preto U20 vs GO Audax U20, all backing the favorite — but with no
+    // HOME/AWAY captured, this branch used to return null and drop the
+    // whole match out of the directional consensus path. We can still
+    // extract the SIGN (negative = backing favorite / positive = backing
+    // underdog), which is enough to make same-sign tips on the same
+    // fixture cluster together. Buckets stay separate from the sided
+    // ones (favorite_narrow_nosides ≠ home_wins_narrow) so no false
+    // fusion — the cost is just a legacy tip and a fresh sided tip on
+    // the same match won't merge, which is acceptable in exchange for
+    // recovering the all-legacy pattern this real case is.
+    const legacyMatch = selection.match(/^([+-]?\d+(?:\.\d+)?)$/);
+    if (!legacyMatch) return null;
+    const n = Number.parseFloat(legacyMatch[1]);
     if (!Number.isFinite(n)) return null;
-    // Big-favorite handicap (|n| ≥ 3) reads as "blowout ≈ lots of goals" and
-    // is bucketed with over-goals so a "handicap -5 on team 1" tip and an
-    // "over 4.5 buts" tip on the same match count as one consensus (Noaim
-    // 2026-09-17: "les deux, on peut penser que c'est un match truqué").
-    // Threshold kept at -3 because a -3 handicap in football already implies
-    // a big scoring gap; basketball handicaps of that size do NOT correlate
-    // with over-totals but the goals-shape suffix on over_goals (line < 30
-    // = football-shape) keeps them from merging with real basketball over-
-    // point picks. Small handicaps (-0.5, -1, -2) stay side-tagged so a
-    // "narrow home win" tip and a "narrow away win" tip never merge.
-    if (n <= -3) return "over_goals";
-    if (n < 0) return `${side}_wins_narrow`;
-    return `${side}_covers_underdog`;
+    if (n <= -3) return "over_goals"; // blowout — same bucket as sided/big-favorite
+    if (n < 0) return "favorite_narrow_nosides";
+    return "underdog_covers_nosides";
   }
   return null;
 }

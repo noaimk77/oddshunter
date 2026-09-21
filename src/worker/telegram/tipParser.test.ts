@@ -229,6 +229,23 @@ describe("getDirectionKey — similar picks bucket together", () => {
     expect(getDirectionKey("OVER_UNDER", "OVER_4_5", fx)).toBe("over_goals");
   });
 
+  // Real 2026-09-20 miss (Noaim 2026-09-21): 3 chats posted HANDICAP -1.5 /
+  // -2.5 / -1.5 on Botafogo Ribeirão vs GO Audax U20 — all backing the
+  // favorite — but every one arrived in the legacy no-side format ("-1.5",
+  // no HOME/AWAY prefix). getDirectionKey used to return null on those,
+  // dropping the whole match out of the directional path even though the
+  // sign alone tells us they're all on the same side of the market.
+  it("buckets legacy no-side handicap by sign so same-sign tips still cluster", () => {
+    expect(getDirectionKey("HANDICAP", "-1.5", fx)).toBe("favorite_narrow_nosides");
+    expect(getDirectionKey("HANDICAP", "-2.5", fx)).toBe("favorite_narrow_nosides");
+    expect(getDirectionKey("HANDICAP", "+1.5", fx)).toBe("underdog_covers_nosides");
+    expect(getDirectionKey("HANDICAP", "-5", fx)).toBe("over_goals"); // blowout still merges with over-goals
+    // Sided and legacy stay in DIFFERENT buckets by design — a legacy tip
+    // can't tell HOME from AWAY, so it must not silently fuse with a
+    // sided one that might be the opposite side of the market.
+    expect(getDirectionKey("HANDICAP", "HOME_-1.5", fx)).toBe("home_wins_narrow");
+  });
+
   it("keeps a small favorite handicap as '<side>_wins_narrow'", () => {
     expect(getDirectionKey("HANDICAP", "HOME_-1", fx)).toBe("home_wins_narrow");
     expect(getDirectionKey("HANDICAP", "AWAY_-2", fx)).toBe("away_wins_narrow");
@@ -239,9 +256,9 @@ describe("getDirectionKey — similar picks bucket together", () => {
     expect(getDirectionKey("HANDICAP", "AWAY_+2", fx)).toBe("away_covers_underdog");
   });
 
-  it("legacy no-side handicap stays uninferable (null)", () => {
-    expect(getDirectionKey("HANDICAP", "-1.5", fx)).toBeNull();
-  });
+  // NOTE: superseded 2026-09-21 — legacy no-side handicaps used to return
+  // null (see "buckets legacy no-side handicap by sign" test below for
+  // what they do now and why).
 
   it("keeps under-goals its own side", () => {
     expect(getDirectionKey("OVER_UNDER", "UNDER_2_5", fx)).toBe("under_goals");

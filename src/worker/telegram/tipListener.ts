@@ -378,7 +378,11 @@ async function processCandidate(
     // 20:02 yTOON/Singanur cases) by requiring the match to actually exist
     // on TheSportsDB or BetExplorer's results feed.
     qualityGateAsync: async (tip) => {
-      const exists = await fixtureExistsOnAnySource(tip.homeTeam, tip.awayTeam);
+      // Pass the freshly-stored raw text so the esports keyword detection
+      // inside fixtureExistsOnAnySource has the full context — team names
+      // alone often miss the signal ("BAKS" vs "Black Phoenix" — CS2 team
+      // names, but "esports" only appears in the surrounding rawText).
+      const exists = await fixtureExistsOnAnySource(tip.homeTeam, tip.awayTeam, rawTextForStore);
       return exists.ok ? { ok: true } : { ok: false, reason: exists.reason };
     },
     resolveOddsSamplesAtAlert: () => resolveOddsSamplesAtAlert(db, rawTextForStore, parsed),
@@ -466,10 +470,38 @@ const FIXTURE_EXISTENCE_TTL_MS = 5 * 60_000;
 let cachedBetexplorerResults: { at: number; rows: ResultRow[] } | null = null;
 const BETEXPLORER_RESULTS_TTL_MS = 5 * 60_000;
 
+/** Detects esports picks (CS2, Dota, LoL, Valorant, …) from team names and
+ *  any available raw text. Neither TheSportsDB nor BetExplorer covers
+ *  esports, so the fixture-existence gate would systematically reject every
+ *  esports tip — real 2026-09-20 miss (Noaim 2026-09-21): 3 chats reached
+ *  strict 1X2 consensus on "BakS eSports vs Black Phoenix" (CS2, CCT Europe
+ *  Series 9) and the gate killed it. When esports is detected we skip the
+ *  gate entirely: recall wins over the safeguard against hallucinated
+ *  fixtures for this class, since the safeguard cannot say anything
+ *  meaningful about esports either way. */
+// Kept intentionally narrow — every keyword here must have essentially NO
+// meaning outside esports, so we don't accidentally bypass the fixture-
+// existence gate on football/basket tips. Rejected candidates: "major"
+// (too generic in French), "lol" (also just laughter), "r6" (could be a
+// round number), "epl" (English Premier League too), "blast" (generic
+// English word).
+const ESPORTS_KEYWORD_RE = /\b(?:cs2|cs:go|csgo|counter[-\s]?strike|dota\s*2?|valorant|league\s*of\s*legends|rocket\s*league|overwatch|rainbow\s*six|esports?|e-sports?|cct[\s:]*(?:europe|eu|series)|hltv|starladder|map\s*[1-5]|bo[35])\b/i;
+function looksLikeEsports(homeTeam: string, awayTeam: string, rawText?: string): boolean {
+  if (ESPORTS_KEYWORD_RE.test(homeTeam) || ESPORTS_KEYWORD_RE.test(awayTeam)) return true;
+  if (rawText && ESPORTS_KEYWORD_RE.test(rawText)) return true;
+  return false;
+}
+
 async function fixtureExistsOnAnySource(
   homeTeam: string,
   awayTeam: string,
+  rawText?: string,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
+  // Esports carve-out (see looksLikeEsports comment above).
+  if (looksLikeEsports(homeTeam, awayTeam, rawText)) {
+    return { ok: true };
+  }
+
   const key = `${homeTeam}|${awayTeam}`.toLowerCase();
   const hit = fixtureExistenceCache.get(key);
   if (hit && Date.now() - hit.at < FIXTURE_EXISTENCE_TTL_MS) return hit.result;
