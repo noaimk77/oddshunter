@@ -238,6 +238,48 @@ Go ! 🚀
 
 ---
 
+## Migration DB VIP consensus vers Turso — ajouté 2026-09-22
+
+Le pipeline VIP consensus (ScrapedTip / GroupTicket / ChatFixtureContext /
+ConsensusAlert) tourne désormais sur **Turso** (SQLite serverless), pas
+Neon. C'est pour ça que les alertes VIP continuent de partir même quand
+Neon est throttled par son quota mensuel (100 CU-h/mois free tier —
+saturé le 2026-09-21 après 4 jours d'usage, exactement comme Supabase
+sur son quota egress le 2026-09-10 avant ça).
+
+**Ce qui change concrètement** :
+- Le SITE (Netlify) reste sur Neon, aucun changement
+- Le WORKER a maintenant DEUX databases : Neon Postgres pour tout ce qui
+  n'est pas le pipeline VIP (odds ingest, strategy engine, user auth
+  lookup) + Turso SQLite pour les 4 tables du pipeline VIP
+- Quand Neon est throttled : les alertes VIP continuent (Turso), mais
+  l'ingest de cotes et les strategy engine sont en pause silencieuse
+  jusqu'au reset mensuel Neon (~ 1er de chaque mois)
+
+**Compte Turso** :
+- Login via GitHub OAuth : https://api.turso.tech/signup
+- CLI : `curl -sSf https://get.tur.so/install.sh | sh` puis `turso auth login`
+- DB : `oddshunter-consensus` (EU-West-1)
+- URL : `libsql://oddshunter-consensus-noaimk77.aws-eu-west-1.turso.io`
+
+**Secrets Fly** (posés 2026-09-22, jamais dans le repo) :
+- `CONSENSUS_DATABASE_URL`
+- `CONSENSUS_DATABASE_AUTH_TOKEN` — regénérer via
+  `turso db tokens create oddshunter-consensus` si compromis
+
+**Fichiers-clés à connaître** :
+- `prisma-consensus/schema.prisma` — les 4 tables consensus en SQLite
+- `src/worker/consensusDb.ts` — client Prisma dédié Turso
+- Le pipeline utilise `consensusDb` (injecté depuis `src/worker/index.ts`)
+- `resolveFixture` continue de lire sur Neon (Event/Market) via
+  `postgresDb` importé dans `tipListener.ts` — dégradation gracieuse si
+  Neon down
+
+**Aucune action manuelle nécessaire de ta part** — tout est en place et
+tourne.
+
+---
+
 ## Bot autobet privé (wallet Polygon) — ajouté 2026-09-16, PAS lié au transfert Codex
 
 Nouveau sous-système, séparé de tout le reste : un 2e bot Telegram privé
