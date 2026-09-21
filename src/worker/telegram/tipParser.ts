@@ -168,18 +168,29 @@ function extractTeams(line: string): [string, string] | null {
 /** Live-score screenshots (OCR'd) usually read "Team A 1:1 Team B" rather
  *  than using a vs/dash separator — the score sits where the separator
  *  would be. Tried only when extractTeams finds nothing, so a genuine
- *  vs/dash fixture line is never overridden by a looser match. */
-const SCORE_SEPARATOR_RE = /^(.{2,30}?)\s+\d{1,3}\s*[:\-]\s*\d{1,3}\s+(.{2,30}?)$/;
+ *  vs/dash fixture line is never overridden by a looser match. The
+ *  score separator itself (:/-/–/—) is often lost by OCR, leaving just
+ *  whitespace between the two digits — so "Team A 1 0 Team B" must also
+ *  match (real 2026-09-20 miss: "Istra1961U19 1 0 NkVarazdinu19" from a
+ *  bet365 screenshot, which fell through this regex and got mislabeled
+ *  by the LLM fallback with completely wrong team names). */
+const SCORE_SEPARATOR_RE = /^(.{2,30}?)\s+\d{1,3}\s*[:\-–—\s]\s*\d{1,3}\s+(.{2,30}?)$/;
 
 function extractTeamsFromScoreLine(line: string): [string, string] | null {
   const match = line.match(SCORE_SEPARATOR_RE);
   if (!match) return null;
   const [, a, b] = match;
   // Guards against swallowing stats blobs like "3rd set (11-25," as a "team
-  // name" — real team names carry no leftover digits/punctuation once the
-  // score itself has been split off.
-  if (/\d/.test(a) || /\d/.test(b)) return null;
+  // name" — real team names carry no leftover punctuation once the score
+  // itself has been split off. NB: digits WITHIN a team name are legitimate
+  // ("Istra1961U19", "PSG 96", "NK Varazdin U19") — earlier code rejected
+  // any digit whatsoever and killed real fixtures; isRealTeamName below is
+  // the correct filter for phantom teams that are only numbers/keywords.
   if (/[(),]/.test(a) || /[(),]/.test(b)) return null;
+  // A part that is nothing but digits (with no letters) is a stray score
+  // fragment, not a team name — reject to preserve the original intent of
+  // the digit filter without killing legitimate alphanumeric team names.
+  if (!/[a-zA-Z]/.test(a) || !/[a-zA-Z]/.test(b)) return null;
   if (slugTeam(a).length < 2 || slugTeam(b).length < 2) return null;
   if (!isRealTeamName(a) || !isRealTeamName(b)) return null;
   return [a.trim(), b.trim()];

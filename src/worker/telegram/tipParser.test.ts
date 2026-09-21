@@ -184,6 +184,28 @@ describe("extractFixture / extractSelection (cross-message resolution)", () => {
     expect(extractFixture("Victoire de Cuba")).toBeNull();
   });
 
+  // Real 2026-09-20 miss (Noaim 2026-09-21: "encore raté plein de match par
+  // exemple le match de nk istra 1961 u19"). FIX HUNTER posted a bet365
+  // screenshot whose OCR came out as "Istra1961U19 1 0 NkVarazdinu19" —
+  // score with no colon/dash separator (just spaces), and team names with
+  // legitimate digits. Both older guards killed this: the score regex
+  // required `:` or `-`, and the digit-in-name filter rejected any team
+  // whose name contained a digit. Now that we accept whitespace-separated
+  // scores and alphanumeric names (as long as they're not pure digits),
+  // this parses correctly and fuzzy-matches "NK Istra 1961 U19" vs
+  // "NK Varazdin U19" from the other chat.
+  it("extracts a score line with only whitespace between the digits, and keeps digits inside team names (real 2026-09-20 FIX HUNTER OCR)", () => {
+    expect(extractFixture("Istra1961U19 1 0 NkVarazdinu19")).toEqual({
+      homeTeam: "Istra1961U19",
+      awayTeam: "NkVarazdinu19",
+    });
+  });
+
+  it("still rejects a score line where one side is only digits (stats fragment, not a team)", () => {
+    // e.g. a stray "42 2 1 Statistics" line: "42" is pure digits, not a team
+    expect(extractFixture("42 2 1 Statistics")).toBeNull();
+  });
+
   it("resolves a follow-up's selection against a fixture remembered from an earlier message, matching the same-message fingerprint", () => {
     const fixture = extractFixture("Puerto Rico vs Cuba\nLive now")!;
 
