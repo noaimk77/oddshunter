@@ -306,10 +306,13 @@ export function getFixingOddsRange(): { min: number; max: number } {
  * same pick hours apart, not minutes, and 3 distinct channels is the bar
  * Noaim actually watches for ("trois fois sur trois canaux"). Railway vars
  * mirror these; the defaults here keep code and prod in sync.
+ * 2026-09-24 — back to 2 groups (Noaim: "je veux juste que ce soit comme
+ * avant, une alerte automatique quand deux groupes envoient le même
+ * pronostic"). The window stays 24h.
  */
 export function getTipConsensusConfig(): { minGroups: number; windowMinutes: number } {
   return {
-    minGroups: envInt("TIP_CONSENSUS_MIN_GROUPS", 3),
+    minGroups: envInt("TIP_CONSENSUS_MIN_GROUPS", 2),
     windowMinutes: envInt("TIP_CONSENSUS_WINDOW_MINUTES", 1440),
   };
 }
@@ -336,12 +339,13 @@ export function getChatFixtureContextWindowMinutes(): number {
 }
 
 /**
- * Same observation-mode pattern as SEND_LIVE_ALERTS: the tip listener always
- * parses and stores what it sees, but only reposts to the VIP group once
- * this is explicitly turned on — so a fresh deploy never blasts unverified
- * parsing straight to paying subscribers.
+ * ON by default (Noaim 2026-09-24): consensus alerts are the product, and an
+ * unset secret silently dropping the worker into observation mode is how
+ * "2 groupes ont envoyé le même prono et rien n'est parti" kept happening.
+ * Set "false" explicitly to go back to observation mode (parse + store,
+ * never repost).
  */
-export const SEND_TIP_CONSENSUS_ALERTS = process.env.SEND_TIP_CONSENSUS_ALERTS === "true";
+export const SEND_TIP_CONSENSUS_ALERTS = (process.env.SEND_TIP_CONSENSUS_ALERTS ?? "true") === "true";
 
 /**
  * OFF by default (Noaim 2026-09-04: "détecte tous les match"). When set to

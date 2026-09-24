@@ -166,10 +166,14 @@ flyctl secrets set ODDS_DROP_THRESHOLD_PERCENT=7 -a oddshunter-worker
 - `src/worker/telegram/vipGroup.ts` — envoie au VIP
 - `src/worker/telegram/alertFormat.ts` — formate le message
 
-### Hausse du seuil (2 groups → 3)
+### Changer le seuil (défaut : 2 groupes)
 ```bash
-flyctl secrets set TIP_CONSENSUS_MIN_GROUPS=3 -a oddshunter-worker
+flyctl secrets set TIP_CONSENSUS_MIN_GROUPS=3 -a oddshunter-worker   # ou =2 pour revenir au défaut
 ```
+
+Au démarrage le worker logge la config effective :
+`tip consensus listener connected — … — LIVE — seuil 2 groupes / 1440 min — canaux broadcast uniquement`.
+Si tu lis `mode observation` ou `seuil 3`, un secret Fly écrase le défaut.
 
 Redeploy automatique en ~30s. Vérifier :
 ```bash
@@ -216,16 +220,17 @@ if (BLOCKED_CHAT_IDS.includes(message.chatId)) return; // skip
 ### Delivery
 - `SEND_LIVE_ALERTS` (default false) — flip to true when validating signals
 - `SEND_LEGACY_DETECTOR_ALERTS` (default false)
-- `SEND_SUSPICIOUS_ALERTS` (default true)
-- `SEND_TIP_CONSENSUS_ALERTS` (default true)
+- `SEND_SUSPICIOUS_ALERTS` (default false)
+- `SEND_TIP_CONSENSUS_ALERTS` (default true — `false` = mode observation, rien n'est posté)
 
 ### Consensus VIP
 - `TIP_CONSENSUS_MIN_GROUPS` (default 2)
 - `TIP_CONSENSUS_WINDOW_MINUTES` (default 1440 = 24h)
 - `TIP_CONSENSUS_HT_WINDOW_MINUTES` (default 25)
 - `TIP_LLM_FALLBACK_ENABLED` (default true) — Claude Haiku extraction
-- `CONSENSUS_REQUIRE_RESOLVABLE_FIXTURE` (default true)
-- `CONSENSUS_REQUIRE_PREMATCH` (default true)
+- `CONSENSUS_REQUIRE_RESOLVABLE_FIXTURE` (default false)
+- `CONSENSUS_SUPPRESS_INPLAY` (default false)
+- `TIP_MAX_MESSAGE_AGE_MINUTES` (default 30) — messages plus vieux ignorés
 
 ### Data & Providers
 - `API_FOOTBALL_TARGET_COUNTRIES` (default "India,Bolivia,Paraguay,Peru,Ecuador,Venezuela")
@@ -239,7 +244,7 @@ if (BLOCKED_CHAT_IDS.includes(message.chatId)) return; // skip
 - `TELEGRAM_USER_SESSION` — serialized gramjs session
 - `TELEGRAM_BOT_TOKEN` — bot API token
 - `TELEGRAM_VIP_INVITE_LINK` — private group link
-- `TIP_LISTENER_CHANNELS_ONLY` (default false) — filter broadcast channels only
+- `TIP_LISTENER_CHANNELS_ONLY` (default **true**) — seuls les canaux broadcast comptent ; `false` = écoute aussi les groupes de discussion
 
 ### LLM
 - `ANTHROPIC_API_KEY` (empty = LLM fallback disabled)
