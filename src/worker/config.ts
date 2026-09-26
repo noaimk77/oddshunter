@@ -354,6 +354,21 @@ export const CONSENSUS_REQUIRE_RESOLVABLE_FIXTURE =
   (process.env.CONSENSUS_REQUIRE_RESOLVABLE_FIXTURE ?? "false") === "true";
 
 /**
+ * OFF by default. The async fixture-existence gate in tipListener used to
+ * be unconditional: a consensus was only posted if TheSportsDB (free tier)
+ * or BetExplorer knew the match. BetExplorer is unreachable from the Fly box
+ * and TheSportsDB has almost no obscure/reserve/youth/Asian-league coverage,
+ * so from 2026-09-22 the gate silently rejected every non-esports consensus
+ * (Nangkiew Irat/Mawlai, Opava U19/Slovacko U19, Armed Forces/Bunga Raya…)
+ * — the only alert that got through on 2026-09-25 was an esports one, which
+ * bypasses the gate. Two independent chats naming the same fixture is
+ * already evidence it exists; the sync quality gate still drops OCR junk.
+ * Set "true" to restore the hard requirement.
+ */
+export const CONSENSUS_REQUIRE_KNOWN_FIXTURE =
+  (process.env.CONSENSUS_REQUIRE_KNOWN_FIXTURE ?? "false") === "true";
+
+/**
  * OFF by default (Noaim 2026-09-04: two channels posted the same in-play
  * pick and the bot never alerted). A consensus is now posted whether the
  * match is pre-match, live, or timing-unknown — only a CONFIRMED-finished

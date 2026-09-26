@@ -18,7 +18,7 @@ import { rememberFixture, recallFixture, isFirehoseChat } from "./chatFixtureCon
 import { extractSelectionWithLLM, extractFullTipWithLLM } from "./tipLlmFallback";
 import { fixtureExistsOnTheSportsDb } from "../providers/thesportsdb";
 import { fetchRecentResults, type ResultRow } from "../providers/betexplorer";
-import { getTipConsensusConfig, getTipConsensusHtWindowMinutes, getChatFixtureContextWindowMinutes, getMaxTipMessageAgeMinutes, SEND_TIP_CONSENSUS_ALERTS, TIP_LISTENER_CHANNELS_ONLY } from "../config";
+import { getTipConsensusConfig, getTipConsensusHtWindowMinutes, getChatFixtureContextWindowMinutes, getMaxTipMessageAgeMinutes, SEND_TIP_CONSENSUS_ALERTS, TIP_LISTENER_CHANNELS_ONLY, CONSENSUS_REQUIRE_KNOWN_FIXTURE } from "../config";
 import { Api } from "telegram/tl";
 
 /**
@@ -531,6 +531,14 @@ async function fixtureExistsOnAnySource(
     }
   } catch (err) {
     console.warn(`[tipListener] BetExplorer existence check failed for ${homeTeam} vs ${awayTeam}:`, err instanceof Error ? err.message : err);
+  }
+
+  if (!CONSENSUS_REQUIRE_KNOWN_FIXTURE) {
+    // Unverifiable but corroborated by N independent chats — post it.
+    const r = { ok: true as const };
+    fixtureExistenceCache.set(key, { at: Date.now(), result: r });
+    console.log(`[tipListener] fixture "${homeTeam}" vs "${awayTeam}" not on TheSportsDB/BetExplorer — posting anyway (CONSENSUS_REQUIRE_KNOWN_FIXTURE off).`);
+    return r;
   }
 
   const r = { ok: false as const, reason: "fixture-not-found" };

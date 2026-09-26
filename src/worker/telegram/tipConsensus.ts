@@ -232,7 +232,20 @@ export async function checkDirectionalConsensus(
     const lines = overUnderTips
       .map((t) => parseOverUnderLine(t.selection!)!)
       .sort((a, b) => a - b);
-    const spread = lines[lines.length - 1] - lines[0];
+    // Divergence is measured BETWEEN chats, not across every message: one
+    // firehose chat posting 3.5 / 4 / 5.5 on the same match must not read
+    // as "tipsters disagree" (2026-09-25 Armed Forces vs Bunga Raya — 3
+    // chats, over, suppressed by this guard). Each chat contributes its
+    // most conservative line (lowest for OVER, highest for UNDER).
+    const isOverDir = currentDirection.startsWith("over_");
+    const perChat = new Map<string, number>();
+    for (const t of overUnderTips) {
+      const line = parseOverUnderLine(t.selection!)!;
+      const prev = perChat.get(t.sourceChatId);
+      perChat.set(t.sourceChatId, prev === undefined ? line : isOverDir ? Math.min(prev, line) : Math.max(prev, line));
+    }
+    const chatLines = [...perChat.values()].sort((a, b) => a - b);
+    const spread = chatLines[chatLines.length - 1] - chatLines[0];
     // 1.5 for goals-shape lines (foot/hockey: over 4.5 vs over 3 = borderline);
     // 15 for points-shape (basketball spreads at higher magnitude). Threshold
     // switch matches the goals/points shape split from getDirectionKey.

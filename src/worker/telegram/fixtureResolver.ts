@@ -136,16 +136,30 @@ interface EventRow {
 let cache: { at: number; rows: EventRow[] } | null = null;
 const CACHE_TTL_MS = 120_000;
 
+// The main Postgres (Neon) hits its free-tier quota for days at a time. Every
+// tip used to pay a failing round-trip + a stack-trace-sized log line; after a
+// failure we now back off and serve "no canonical events" for a while so the
+// consensus pipeline (which lives on Turso) is never slowed by it.
+let failedUntil = 0;
+const FAILURE_BACKOFF_MS = 10 * 60_000;
+
 async function nearTermEvents(db: PrismaClient): Promise<EventRow[]> {
   if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.rows;
+  if (Date.now() < failedUntil) return [];
   const now = Date.now();
-  const rows = await db.event.findMany({
-    where: {
-      kickoff: { gte: new Date(now - 6 * 3_600_000), lte: new Date(now + 72 * 3_600_000) },
-    },
-    select: { id: true, homeTeam: true, awayTeam: true },
-    take: 2000,
-  });
+  let rows: EventRow[];
+  try {
+    rows = await db.event.findMany({
+      where: {
+        kickoff: { gte: new Date(now - 6 * 3_600_000), lte: new Date(now + 72 * 3_600_000) },
+      },
+      select: { id: true, homeTeam: true, awayTeam: true },
+      take: 2000,
+    });
+  } catch (err) {
+    failedUntil = Date.now() + FAILURE_BACKOFF_MS;
+    throw err;
+  }
   cache = { at: Date.now(), rows };
   return rows;
 }
