@@ -1,6 +1,8 @@
 import { Bot } from "grammy";
 import type { PrismaClient } from "@/generated/prisma-consensus/client";
 import { fetchWalletBalances, withdrawUsdc } from "../lib/polygonWallet";
+import { fetchPolymarketBankrollUsd } from "../autobet/bankroll";
+import { onboardDeposit } from "../autobet/usdcBridge";
 
 /**
  * Private bot — Noaim's own dashboard/remote-control for the auto-betting
@@ -52,7 +54,8 @@ export function createAutobetBot(consensusDb: PrismaClient): Bot {
       "🤖 Autobet en ligne.\n\nCommandes disponibles :\n" +
         "/solde — bankroll (USDC + POL pour le gas) et adresse de dépôt\n" +
         "/retirer <montant> — envoyer des USDC vers Kraken (2 étapes)\n" +
-        "/paris — 10 derniers tickets (foot -> PS3838, e-sport -> Polymarket)\n\n" +
+        "/paris — 10 derniers tickets (foot -> PS3838, e-sport -> Polymarket)\n" +
+        "/preparer <montant> — convertit l'USDC déposé en USDC.e et active Polymarket (2 étapes)\n\n" +
         `Mode: ${live ? "⚠️ RÉEL — de l'argent part vraiment" : "🧪 SIMULATION — rien n'est engagé"}.`,
     );
   });
@@ -82,14 +85,65 @@ export function createAutobetBot(consensusDb: PrismaClient): Bot {
   bot.command("solde", async (ctx) => {
     try {
       const { address, usdc, pol } = await fetchWalletBalances();
+      const usdce = await fetchPolymarketBankrollUsd();
       // Plain text on purpose: Telegram's MarkdownV2 requires escaping most
       // punctuation, and a parse error here would silently break the one
       // command that shows where to send money.
       await ctx.reply(
-        `💰 ${formatUsd(usdc)} USDC\n⛽ ${pol.toFixed(4)} POL (gas)\n\n📥 Adresse de dépôt (réseau Polygon UNIQUEMENT) :\n${address}`,
+        `💰 ${formatUsd(usdc)} USDC (natif — c'est ici que tu déposes depuis Kraken)\n` +
+          `🎯 ${formatUsd(usdce ?? 0)} USDC.e (celui que Polymarket utilise — via /preparer)\n` +
+          `⛽ ${pol.toFixed(4)} POL (gas)\n\n📥 Adresse de dépôt (réseau Polygon UNIQUEMENT) :\n${address}`,
       );
     } catch (err) {
       await ctx.reply(`❌ Erreur solde : ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  // Same 2-step confirm pattern as /retirer — this sends real on-chain
+  // transactions (a swap + up to 4 approvals), so a fat-fingered amount
+  // must not execute on the first message.
+  bot.command("preparer", async (ctx) => {
+    const parts = (ctx.match ?? "").trim().split(/\s+/);
+    const amount = Number(parts[0]?.replace(",", "."));
+    const confirmed = parts[1]?.toLowerCase() === "confirme";
+
+    if (!parts[0] || !Number.isFinite(amount) || amount <= 0) {
+      await ctx.reply("Usage : /preparer <montant>  (ex: /preparer 100 — convertit 100 USDC natif en USDC.e)");
+      return;
+    }
+
+    if (!confirmed) {
+      try {
+        const { usdc } = await fetchWalletBalances();
+        if (amount > usdc) {
+          await ctx.reply(`❌ Solde insuffisant : ${formatUsd(usdc)} USDC natif disponibles.`);
+          return;
+        }
+        await ctx.reply(
+          `⚠️ Confirme : convertir ${formatUsd(amount)} USDC (natif) en USDC.e et activer les autorisations Polymarket.\n` +
+            `Ça envoie plusieurs transactions on-chain (petits frais en POL).\n\nEnvoie exactement :\n/preparer ${parts[0]} confirme`,
+        );
+      } catch (err) {
+        await ctx.reply(`❌ Erreur : ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return;
+    }
+
+    try {
+      await ctx.reply("⏳ Conversion en cours (plusieurs transactions, ça peut prendre une minute)...");
+      const { swap, prepare } = await onboardDeposit(amount);
+      if (!swap.swapped) {
+        await ctx.reply(`❌ Conversion échouée : ${swap.reason ?? "raison inconnue"}`);
+        return;
+      }
+      let msg = `✅ ${formatUsd(swap.amountInUsdc)} USDC convertis en USDC.e.\nNouveau solde USDC.e : ${formatUsd(swap.amountOutUsdce ?? 0)}\nhttps://polygonscan.com/tx/${swap.txHash}\n`;
+      if (prepare) {
+        msg += prepare.ok ? "\n✅ Wallet prêt à trader sur Polymarket." : `\n⚠️ Autorisations Polymarket incomplètes : ${prepare.error}`;
+        msg += `\n${prepare.steps.map((s) => `• ${s}`).join("\n")}`;
+      }
+      await ctx.reply(msg);
+    } catch (err) {
+      await ctx.reply(`❌ Échoué : ${err instanceof Error ? err.message : String(err)}`);
     }
   });
 
