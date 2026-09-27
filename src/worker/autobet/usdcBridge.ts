@@ -86,28 +86,24 @@ export interface SwapResult {
   reason?: string;
 }
 
-/**
- * Swaps up to `amountUsdc` of native USDC into USDC.e via the Uniswap V3
- * pool, leaving `keepNativeForGas` worth untouched isn't relevant here
- * (gas is paid in POL, not USDC) — the whole requested amount is swapped.
- * 0.5% slippage tolerance: generous for a near-1:1 stable pair with deep
- * liquidity, tight enough to catch a genuinely broken quote/pool.
- */
-export async function swapNativeUsdcToUsdce(amountUsdc: number): Promise<SwapResult> {
-  if (amountUsdc <= 0) return { swapped: false, amountInUsdc: amountUsdc, reason: "amount must be > 0" };
+/** Shared implementation for both swap directions — same pool, tokens
+ *  flipped. 0.5% slippage tolerance: generous for a near-1:1 stable pair
+ *  with deep liquidity, tight enough to catch a genuinely broken quote. */
+async function swapExactIn(tokenIn: `0x${string}`, tokenOut: `0x${string}`, amount: number): Promise<SwapResult> {
+  if (amount <= 0) return { swapped: false, amountInUsdc: amount, reason: "amount must be > 0" };
   const { account, publicClient, walletClient } = clients();
 
-  const balance = await publicClient.readContract({ address: USDC_NATIVE, abi: ERC20_ABI, functionName: "balanceOf", args: [account.address] });
-  const amountIn = parseUnits(amountUsdc.toString(), DECIMALS);
+  const balance = await publicClient.readContract({ address: tokenIn, abi: ERC20_ABI, functionName: "balanceOf", args: [account.address] });
+  const amountIn = parseUnits(amount.toString(), DECIMALS);
   if (balance < amountIn) {
-    return { swapped: false, amountInUsdc: amountUsdc, reason: `solde USDC natif insuffisant (${formatUnits(balance, DECIMALS)} disponible)` };
+    return { swapped: false, amountInUsdc: amount, reason: `solde insuffisant (${formatUnits(balance, DECIMALS)} disponible)` };
   }
 
   // Approve the router for this amount if the current allowance is short —
   // never approve unlimited, each swap only unlocks what it needs.
-  const allowance = await publicClient.readContract({ address: USDC_NATIVE, abi: ERC20_ABI, functionName: "allowance", args: [account.address, SWAP_ROUTER02] });
+  const allowance = await publicClient.readContract({ address: tokenIn, abi: ERC20_ABI, functionName: "allowance", args: [account.address, SWAP_ROUTER02] });
   if (allowance < amountIn) {
-    const approveHash = await walletClient.writeContract({ address: USDC_NATIVE, abi: ERC20_ABI, functionName: "approve", args: [SWAP_ROUTER02, amountIn] });
+    const approveHash = await walletClient.writeContract({ address: tokenIn, abi: ERC20_ABI, functionName: "approve", args: [SWAP_ROUTER02, amountIn] });
     await publicClient.waitForTransactionReceipt({ hash: approveHash });
   }
 
@@ -116,15 +112,27 @@ export async function swapNativeUsdcToUsdce(amountUsdc: number): Promise<SwapRes
     address: SWAP_ROUTER02,
     abi: SWAP_ROUTER_ABI,
     functionName: "exactInputSingle",
-    args: [{ tokenIn: USDC_NATIVE, tokenOut: USDCE, fee: POOL_FEE, recipient: account.address, amountIn, amountOutMinimum, sqrtPriceLimitX96: BigInt(0) }],
+    args: [{ tokenIn, tokenOut, fee: POOL_FEE, recipient: account.address, amountIn, amountOutMinimum, sqrtPriceLimitX96: BigInt(0) }],
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") {
-    return { swapped: false, amountInUsdc: amountUsdc, txHash: hash, reason: "transaction reverted on-chain" };
+    return { swapped: false, amountInUsdc: amount, txHash: hash, reason: "transaction reverted on-chain" };
   }
 
-  const newUsdceBalance = await publicClient.readContract({ address: USDCE, abi: ERC20_ABI, functionName: "balanceOf", args: [account.address] });
-  return { swapped: true, txHash: hash, amountInUsdc: amountUsdc, amountOutUsdce: Number(formatUnits(newUsdceBalance, DECIMALS)) };
+  const newOutBalance = await publicClient.readContract({ address: tokenOut, abi: ERC20_ABI, functionName: "balanceOf", args: [account.address] });
+  return { swapped: true, txHash: hash, amountInUsdc: amount, amountOutUsdce: Number(formatUnits(newOutBalance, DECIMALS)) };
+}
+
+/** Native USDC -> USDC.e, for funding a Polymarket bet (see onboardDeposit). */
+export async function swapNativeUsdcToUsdce(amountUsdc: number): Promise<SwapResult> {
+  return swapExactIn(USDC_NATIVE, USDCE, amountUsdc);
+}
+
+/** USDC.e -> native USDC, the reverse — for pulling Polymarket winnings back
+ *  out so `/retirer` (which only reads/sends native USDC, same token Kraken
+ *  deposits expect) can actually withdraw them. */
+export async function swapUsdceToNativeUsdc(amountUsdce: number): Promise<SwapResult> {
+  return swapExactIn(USDCE, USDC_NATIVE, amountUsdce);
 }
 
 export interface PrepareResult {

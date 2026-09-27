@@ -2,7 +2,7 @@ import { Bot } from "grammy";
 import type { PrismaClient } from "@/generated/prisma-consensus/client";
 import { fetchWalletBalances, withdrawUsdc } from "../lib/polygonWallet";
 import { fetchPolymarketBankrollUsd } from "../autobet/bankroll";
-import { onboardDeposit } from "../autobet/usdcBridge";
+import { onboardDeposit, swapUsdceToNativeUsdc } from "../autobet/usdcBridge";
 
 /**
  * Private bot — Noaim's own dashboard/remote-control for the auto-betting
@@ -161,11 +161,23 @@ export function createAutobetBot(consensusDb: PrismaClient): Bot {
       return;
     }
 
+    // Polymarket winnings land as USDC.e, not the native USDC this command
+    // withdraws — so a shortfall in native USDC is topped up automatically
+    // from USDC.e first, rather than making Noaim learn a separate command
+    // just to move his own winnings.
     if (!confirmed) {
       try {
         const { usdc } = await fetchWalletBalances();
         if (amount > usdc) {
-          await ctx.reply(`❌ Solde insuffisant : ${formatUsd(usdc)} USDC disponibles.`);
+          const usdce = (await fetchPolymarketBankrollUsd()) ?? 0;
+          if (amount > usdc + usdce) {
+            await ctx.reply(`❌ Solde insuffisant : ${formatUsd(usdc)} USDC + ${formatUsd(usdce)} USDC.e (gains Polymarket) disponibles.`);
+            return;
+          }
+          await ctx.reply(
+            `⚠️ ${formatUsd(usdc)} USDC dispo, le reste (${formatUsd(amount - usdc)}) sera converti depuis tes gains Polymarket (USDC.e) d'abord.\n\n` +
+              `Confirme le retrait de ${formatUsd(amount)} USDC vers Kraken.\n\nEnvoie exactement :\n/retirer ${parts[0]} confirme`,
+          );
           return;
         }
         await ctx.reply(
@@ -178,6 +190,16 @@ export function createAutobetBot(consensusDb: PrismaClient): Bot {
     }
 
     try {
+      const { usdc } = await fetchWalletBalances();
+      if (amount > usdc) {
+        const shortfall = amount - usdc;
+        await ctx.reply(`⏳ Conversion de ${formatUsd(shortfall)} USDC.e (gains Polymarket) vers USDC...`);
+        const bridged = await swapUsdceToNativeUsdc(shortfall);
+        if (!bridged.swapped) {
+          await ctx.reply(`❌ Conversion échouée, retrait annulé : ${bridged.reason ?? "raison inconnue"}`);
+          return;
+        }
+      }
       await ctx.reply("⏳ Envoi en cours...");
       const { txHash, to } = await withdrawUsdc(amount);
       await ctx.reply(
