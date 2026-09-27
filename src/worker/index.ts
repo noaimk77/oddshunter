@@ -764,7 +764,7 @@ async function startAutobetBot(): Promise<void> {
     return;
   }
   try {
-    sharedAutobetBot = createAutobetBot();
+    sharedAutobetBot = createAutobetBot(consensusDb);
   } catch (err) {
     console.error("[worker] Autobet bot could not be created", err);
     return;

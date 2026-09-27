@@ -7,7 +7,7 @@ import type { PrismaClient } from "@/generated/prisma-consensus/client";
 // call is wrapped in try/catch inside resolveFixture, so a Neon throttle
 // only degrades fingerprint accuracy — it does NOT block the consensus.
 import { db as postgresDb } from "@/lib/db";
-import { extractFixture, extractSelection, buildParsedTip, getDirectionKey, fuzzyFixtureMatch, type ParsedTip, type Fixture } from "./tipParser";
+import { extractFixture, extractSelection, buildParsedTip, getDirectionKey, fuzzyFixtureMatch, looksLikeEsports, type ParsedTip, type Fixture } from "./tipParser";
 import { resolveFixture } from "./fixtureResolver";
 import { extractOdds, extractLabeledOdds, extractResult } from "./ticketParser";
 import { extractTextFromPhoto } from "./tipOcr";
@@ -19,6 +19,7 @@ import { extractSelectionWithLLM, extractFullTipWithLLM } from "./tipLlmFallback
 import { fixtureExistsOnTheSportsDb } from "../providers/thesportsdb";
 import { fetchRecentResults, type ResultRow } from "../providers/betexplorer";
 import { getTipConsensusConfig, getTipConsensusHtWindowMinutes, getChatFixtureContextWindowMinutes, getMaxTipMessageAgeMinutes, SEND_TIP_CONSENSUS_ALERTS, TIP_LISTENER_CHANNELS_ONLY, CONSENSUS_REQUIRE_KNOWN_FIXTURE } from "../config";
+import { autobetOnConsensus } from "../autobet/router";
 import { Api } from "telegram/tl";
 
 /**
@@ -399,6 +400,12 @@ async function processCandidate(
   console.log(`[tipListener] consensus reached (${outcome.mode}) for ${parsed.fingerprint} (${outcome.groupCount} groupes).`);
   if (outcome.sent) {
     console.log(`[tipListener] consensus alert posted to VIP group (${outcome.fingerprint}).`);
+    if (outcome.fingerprint) {
+      const fp = outcome.fingerprint;
+      autobetOnConsensus(db, { ...parsed, groupCount: outcome.groupCount }, fp).catch((err) =>
+        console.error("[autobet] unexpected failure routing consensus to autobet:", err),
+      );
+    }
   } else if (outcome.reason === "observation") {
     console.log("[tipListener] SEND_TIP_CONSENSUS_ALERTS=false — mode observation, rien envoyé, consensus non consommé.");
   } else {
@@ -485,19 +492,6 @@ const BETEXPLORER_RESULTS_TTL_MS = 5 * 60_000;
  *  gate entirely: recall wins over the safeguard against hallucinated
  *  fixtures for this class, since the safeguard cannot say anything
  *  meaningful about esports either way. */
-// Kept intentionally narrow — every keyword here must have essentially NO
-// meaning outside esports, so we don't accidentally bypass the fixture-
-// existence gate on football/basket tips. Rejected candidates: "major"
-// (too generic in French), "lol" (also just laughter), "r6" (could be a
-// round number), "epl" (English Premier League too), "blast" (generic
-// English word).
-const ESPORTS_KEYWORD_RE = /\b(?:cs2|cs:go|csgo|counter[-\s]?strike|dota\s*2?|valorant|league\s*of\s*legends|rocket\s*league|overwatch|rainbow\s*six|esports?|e-sports?|cct[\s:]*(?:europe|eu|series)|hltv|starladder|map\s*[1-5]|bo[35])\b/i;
-function looksLikeEsports(homeTeam: string, awayTeam: string, rawText?: string): boolean {
-  if (ESPORTS_KEYWORD_RE.test(homeTeam) || ESPORTS_KEYWORD_RE.test(awayTeam)) return true;
-  if (rawText && ESPORTS_KEYWORD_RE.test(rawText)) return true;
-  return false;
-}
-
 async function fixtureExistsOnAnySource(
   homeTeam: string,
   awayTeam: string,

@@ -509,3 +509,32 @@ export function getMinScoreToAlert(): number {
   // gets more coverage (see betexplorer.ts detail-fetch threshold change).
   return envFloat("MIN_SCORE_TO_ALERT", 35);
 }
+
+/**
+ * Autobet — OFF by default and safe by construction even when "on":
+ *
+ *   AUTOBET_LIVE_ENABLED   real money is only ever risked when this is
+ *                          explicitly "true" AND the relevant broker's
+ *                          credentials are present. Unset/false (default):
+ *                          every consensus alert still runs the full
+ *                          routing/staking logic and writes an
+ *                          AutobetTicket row with status SIMULATED — so
+ *                          Noaim can review exactly what the bot WOULD have
+ *                          done before ever turning real money on.
+ *   AUTOBET_STAKE_EUR      flat stake per bet (not a % of bankroll — simpler
+ *                          to reason about while this is new). Default 20.
+ *   AUTOBET_DAILY_CAP_EUR  circuit breaker: total stakes (SIMULATED count
+ *                          too) placed since 00:00 UTC. Once reached, every
+ *                          further consensus alert that day is logged as
+ *                          REJECTED ("daily-cap") and nothing is staked,
+ *                          live or simulated. Default 100.
+ */
+export const AUTOBET_LIVE_ENABLED = process.env.AUTOBET_LIVE_ENABLED === "true";
+
+export function getAutobetStakeEur(): number {
+  return envFloat("AUTOBET_STAKE_EUR", 20);
+}
+
+export function getAutobetDailyCapEur(): number {
+  return envFloat("AUTOBET_DAILY_CAP_EUR", 100);
+}

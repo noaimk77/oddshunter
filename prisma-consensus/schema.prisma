@@ -90,3 +90,28 @@ model ConsensusAlert {
 
   @@index([outcome, sentAt])
 }
+
+/// One row per autobet decision — SIMULATED (AUTOBET_LIVE_ENABLED off, or
+/// broker credentials missing) or an attempt at a real placement. Written
+/// even in simulation mode so `/autobet` reporting and the daily stake cap
+/// in riskEngine.ts have real history to sum, not just a log line no one
+/// reads. `consensusFingerprint` ties a ticket back to its ConsensusAlert.
+model AutobetTicket {
+  id                   String   @id @default(cuid())
+  consensusFingerprint String
+  broker               String // "PS3838" | "POLYMARKET"
+  sport                String // "football" | "esports" | ...
+  homeTeam             String
+  awayTeam             String
+  market               String
+  selection            String
+  stakeEur             Float
+  oddsAtBet            Float?
+  status               String // SIMULATED | PLACED | REJECTED | FAILED
+  brokerRef            String? // PS3838 betId, or Polymarket orderId
+  reason               String? // rejection/failure detail
+  createdAt            DateTime @default(now())
+
+  @@index([broker, createdAt])
+  @@index([createdAt])
+}

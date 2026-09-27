@@ -1,4 +1,5 @@
 import { Bot } from "grammy";
+import type { PrismaClient } from "@/generated/prisma-consensus/client";
 import { fetchWalletBalances, withdrawUsdc } from "../lib/polygonWallet";
 
 /**
@@ -27,7 +28,7 @@ function formatUsd(n: number): string {
   return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function createAutobetBot(): Bot {
+export function createAutobetBot(consensusDb: PrismaClient): Bot {
   const token = process.env.AUTOBET_BOT_TOKEN;
   if (!token) {
     throw new Error(
@@ -46,12 +47,36 @@ export function createAutobetBot(): Bot {
   });
 
   bot.command("start", async (ctx) => {
+    const live = process.env.AUTOBET_LIVE_ENABLED === "true";
     await ctx.reply(
       "🤖 Autobet en ligne.\n\nCommandes disponibles :\n" +
         "/solde — bankroll (USDC + POL pour le gas) et adresse de dépôt\n" +
-        "/retirer <montant> — envoyer des USDC vers Kraken (2 étapes)\n\n" +
-        "PS3838 et Polymarket restent manuels pour l'instant — ce bot gère juste la bankroll.",
+        "/retirer <montant> — envoyer des USDC vers Kraken (2 étapes)\n" +
+        "/paris — 10 derniers tickets (foot -> PS3838, e-sport -> Polymarket)\n\n" +
+        `Mode: ${live ? "⚠️ RÉEL — de l'argent part vraiment" : "🧪 SIMULATION — rien n'est engagé"}.`,
     );
+  });
+
+  bot.command("paris", async (ctx) => {
+    try {
+      const tickets = await consensusDb.autobetTicket.findMany({ orderBy: { createdAt: "desc" }, take: 10 });
+      if (tickets.length === 0) {
+        await ctx.reply("Aucun ticket pour l'instant.");
+        return;
+      }
+      const statusIcon: Record<string, string> = { SIMULATED: "🧪", PLACED: "✅", REJECTED: "🚫", FAILED: "❌" };
+      const lines = tickets.map((t) => {
+        const when = t.createdAt.toISOString().slice(5, 16).replace("T", " ");
+        return (
+          `${statusIcon[t.status] ?? "•"} ${when} — ${t.broker} — ${t.homeTeam} vs ${t.awayTeam}\n` +
+          `   ${t.market} ${t.selection} — ${formatUsd(t.stakeEur)}€${t.oddsAtBet ? ` @ ${t.oddsAtBet}` : ""}` +
+          `${t.reason ? `\n   ↳ ${t.reason}` : ""}`
+        );
+      });
+      await ctx.reply(lines.join("\n\n"));
+    } catch (err) {
+      await ctx.reply(`❌ Erreur : ${err instanceof Error ? err.message : String(err)}`);
+    }
   });
 
   bot.command("solde", async (ctx) => {

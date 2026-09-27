@@ -700,3 +700,20 @@ export function parseTipMessage(rawText: string): ParsedTip | null {
   if (!marketSelection) return null;
   return buildParsedTip(fixture, marketSelection);
 }
+
+/**
+ * Detects esports picks (CS2, Dota, LoL, Valorant, …) from team names and
+ * any available raw text. Used by the fixture-existence gate (neither
+ * TheSportsDB nor BetExplorer covers esports) and by the autobet router
+ * (esports consensus routes to Polymarket, everything else to PS3838).
+ * Kept intentionally narrow — every keyword here must have essentially NO
+ * meaning outside esports. Rejected candidates: "major" (too generic in
+ * French), "lol" (also just laughter), "r6" (could be a round number),
+ * "epl" (English Premier League too), "blast" (generic English word).
+ */
+const ESPORTS_KEYWORD_RE = /\b(?:cs2|cs:go|csgo|counter[-\s]?strike|dota\s*2?|valorant|league\s*of\s*legends|rocket\s*league|overwatch|rainbow\s*six|esports?|e-sports?|cct[\s:]*(?:europe|eu|series)|hltv|starladder|map\s*[1-5]|bo[35])\b/i;
+export function looksLikeEsports(homeTeam: string, awayTeam: string, rawText?: string): boolean {
+  if (ESPORTS_KEYWORD_RE.test(homeTeam) || ESPORTS_KEYWORD_RE.test(awayTeam)) return true;
+  if (rawText && ESPORTS_KEYWORD_RE.test(rawText)) return true;
+  return false;
+}

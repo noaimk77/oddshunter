@@ -21,6 +21,7 @@
     "@base-ui/react": "^1.7.0",
     "@libsql/client": "^0.18.0",
     "@polymarket/clob-client": "^4.22.8",
+    "@polymarket/clob-client-v2": "^1.2.0",
     "@prisma/adapter-libsql": "^7.10.0",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
