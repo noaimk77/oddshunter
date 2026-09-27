@@ -116,9 +116,9 @@ export async function checkConsensus(
   db: PrismaClient,
   fingerprint: string,
   config: { minGroups: number; windowMinutes: number },
-  options: { claim?: boolean } = {},
+  options: { claim?: boolean; sourceChatId?: string; trustedChatIds?: Set<string> } = {},
 ): Promise<ConsensusCheckResult> {
-  const { claim = true } = options;
+  const { claim = true, sourceChatId, trustedChatIds } = options;
   const windowStart = new Date(Date.now() - config.windowMinutes * 60_000);
 
   const recentTips = await db.scrapedTip.findMany({
@@ -127,7 +127,11 @@ export async function checkConsensus(
   });
 
   const groupCount = countDistinctChatsDedupedByText(recentTips);
-  if (groupCount < config.minGroups) {
+  // A trusted single-source chat waives the corroboration requirement for
+  // its OWN tips — groupCount is still the honest real count (shown in the
+  // VIP message / logs), just not what gates the trigger.
+  const trusted = !!sourceChatId && !!trustedChatIds?.has(sourceChatId);
+  if (groupCount < config.minGroups && !trusted) {
     return { triggered: false, groupCount, fingerprint };
   }
 
@@ -173,9 +177,9 @@ export async function checkDirectionalConsensus(
   fingerprint: string,
   fixture: Fixture,
   config: { minGroups: number; windowMinutes: number },
-  options: { claim?: boolean } = {},
+  options: { claim?: boolean; sourceChatId?: string; trustedChatIds?: Set<string> } = {},
 ): Promise<ConsensusCheckResult> {
-  const { claim = true } = options;
+  const { claim = true, sourceChatId, trustedChatIds } = options;
   const windowStart = new Date(Date.now() - config.windowMinutes * 60_000);
   const currentDirection = getDirectionKey(fingerprint.split("|").at(-2) ?? "", fingerprint.split("|").at(-1) ?? "", fixture);
   if (!currentDirection) return { triggered: false, groupCount: 0, fingerprint: "" };
@@ -206,7 +210,8 @@ export async function checkDirectionalConsensus(
   // Collapse forwarded copies (see countDistinctChatsDedupedByText) — a
   // single OCR screenshot mirrored across chats must not read as consensus.
   const groupCount = countDistinctChatsDedupedByText(matchingTips);
-  if (groupCount < config.minGroups) {
+  const trusted = !!sourceChatId && !!trustedChatIds?.has(sourceChatId);
+  if (groupCount < config.minGroups && !trusted) {
     return { triggered: false, groupCount, fingerprint: dirFingerprint };
   }
 
@@ -360,6 +365,12 @@ export interface ConsensusApplyOptions {
    * runs on the common "no consensus" path.
    */
   resolveOddsSamplesAtAlert?: () => Promise<number[]>;
+  /** The chat this specific tip came from, and the set of chat ids that
+   *  waive the `minGroups` corroboration requirement on their own (see
+   *  `getTrustedSingleSourceChatIds` in config.ts). Both optional; omitting
+   *  either just means no trusted-source bypass applies. */
+  sourceChatId?: string;
+  trustedChatIds?: Set<string>;
 }
 
 /**
@@ -438,11 +449,11 @@ export async function applyConsensusAndAlert(
   parsed: ParsedTip,
   opts: ConsensusApplyOptions,
 ): Promise<ConsensusApplyResult> {
-  const { config, sendEnabled, send, qualityGate, qualityGateAsync, resolveOddsSamplesAtAlert } = opts;
+  const { config, sendEnabled, send, qualityGate, qualityGateAsync, resolveOddsSamplesAtAlert, sourceChatId, trustedChatIds } = opts;
 
   // 1. Measure only. Claiming here is what let observation mode and failed
   //    sends burn a consensus for good.
-  const strict = await checkConsensus(db, parsed.fingerprint, config, { claim: false });
+  const strict = await checkConsensus(db, parsed.fingerprint, config, { claim: false, sourceChatId, trustedChatIds });
   let fired = strict;
   let mode: ConsensusMode | null = strict.triggered ? "strict" : null;
 
@@ -452,7 +463,7 @@ export async function applyConsensusAndAlert(
       parsed.fingerprint,
       { homeTeam: parsed.homeTeam, awayTeam: parsed.awayTeam },
       config,
-      { claim: false },
+      { claim: false, sourceChatId, trustedChatIds },
     );
     if (directional.triggered) {
       fired = directional;

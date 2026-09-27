@@ -18,7 +18,7 @@ import { rememberFixture, recallFixture, isFirehoseChat } from "./chatFixtureCon
 import { extractSelectionWithLLM, extractFullTipWithLLM } from "./tipLlmFallback";
 import { fixtureExistsOnTheSportsDb } from "../providers/thesportsdb";
 import { fetchRecentResults, type ResultRow } from "../providers/betexplorer";
-import { getTipConsensusConfig, getTipConsensusHtWindowMinutes, getChatFixtureContextWindowMinutes, getMaxTipMessageAgeMinutes, SEND_TIP_CONSENSUS_ALERTS, TIP_LISTENER_CHANNELS_ONLY, CONSENSUS_REQUIRE_KNOWN_FIXTURE } from "../config";
+import { getTipConsensusConfig, getTipConsensusHtWindowMinutes, getChatFixtureContextWindowMinutes, getMaxTipMessageAgeMinutes, SEND_TIP_CONSENSUS_ALERTS, TIP_LISTENER_CHANNELS_ONLY, CONSENSUS_REQUIRE_KNOWN_FIXTURE, getTrustedSingleSourceChatIds } from "../config";
 import { autobetOnConsensus } from "../autobet/router";
 import { Api } from "telegram/tl";
 
@@ -394,6 +394,8 @@ async function processCandidate(
     },
     resolveOddsSamplesAtAlert: () => resolveOddsSamplesAtAlert(db, rawTextForStore, parsed),
     send: (tip) => sendConsensusAlert(client, tip),
+    sourceChatId,
+    trustedChatIds: getTrustedSingleSourceChatIds(),
   });
 
   if (!outcome.mode) return identifiedFixture;

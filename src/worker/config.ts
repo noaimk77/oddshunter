@@ -538,3 +538,22 @@ export function getAutobetStakeEur(): number {
 export function getAutobetDailyCapEur(): number {
   return envFloat("AUTOBET_DAILY_CAP_EUR", 100);
 }
+
+/**
+ * Chat ids that don't need a 2nd corroborating group — a pick from one of
+ * these alone is treated as meeting the consensus threshold (still goes
+ * through the same VIP-post + autobet pipeline as any other consensus, just
+ * with the corroboration requirement waived for THIS specific source).
+ * Comma-separated Telegram chat ids, e.g. "-1004356842496".
+ *
+ * Scoped deliberately narrow (Noaim 2026-09-27): "Vip ESPORTS" (single
+ * dedicated e-sport tipster channel, 47 subscribers) trades reliability
+ * for reaction speed — trusting one unverified source has no cross-check,
+ * unlike the 2-group rule everything else still uses. A genuine 2-group
+ * e-sport consensus (this channel + any other) still fires too, same as
+ * before — this only ever LOWERS the bar, never raises it.
+ */
+export function getTrustedSingleSourceChatIds(): Set<string> {
+  const raw = process.env.TRUSTED_SINGLE_SOURCE_CHAT_IDS ?? "";
+  return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+}
