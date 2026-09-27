@@ -20,6 +20,7 @@ import { fixtureExistsOnTheSportsDb } from "../providers/thesportsdb";
 import { fetchRecentResults, type ResultRow } from "../providers/betexplorer";
 import { getTipConsensusConfig, getTipConsensusHtWindowMinutes, getChatFixtureContextWindowMinutes, getMaxTipMessageAgeMinutes, SEND_TIP_CONSENSUS_ALERTS, TIP_LISTENER_CHANNELS_ONLY, CONSENSUS_REQUIRE_KNOWN_FIXTURE, getTrustedSingleSourceChatIds } from "../config";
 import { autobetOnConsensus } from "../autobet/router";
+import { parseConfidenceTier } from "../autobet/confidenceTier";
 import { Api } from "telegram/tl";
 
 /**
@@ -404,7 +405,13 @@ async function processCandidate(
     console.log(`[tipListener] consensus alert posted to VIP group (${outcome.fingerprint}).`);
     if (outcome.fingerprint) {
       const fp = outcome.fingerprint;
-      autobetOnConsensus(db, { ...parsed, groupCount: outcome.groupCount }, fp).catch((err) =>
+      // Confidence tier only applies to the trusted channel's own captions
+      // (1/3, 2/3, 3/3, Max bet) — a stray "3/3" in any other chat must not
+      // size a bet. best-effort: read it off this tip's raw text (caption/OCR).
+      const confidenceTier = getTrustedSingleSourceChatIds().has(sourceChatId)
+        ? parseConfidenceTier(rawTextForStore)
+        : null;
+      autobetOnConsensus(db, { ...parsed, groupCount: outcome.groupCount, confidenceTier }, fp).catch((err) =>
         console.error("[autobet] unexpected failure routing consensus to autobet:", err),
       );
     }

@@ -531,12 +531,47 @@ export function getMinScoreToAlert(): number {
  */
 export const AUTOBET_LIVE_ENABLED = process.env.AUTOBET_LIVE_ENABLED === "true";
 
+/** Flat stake used only by the PS3838 (football) path, which has no
+ *  confidence tier to size from. Kept for that path; the esports/Polymarket
+ *  path uses % of bankroll (getAutobetStakePercents) instead. */
 export function getAutobetStakeEur(): number {
   return envFloat("AUTOBET_STAKE_EUR", 20);
 }
 
+/**
+ * Daily stake cap (sum of today's stakes). 0 = NO cap — that's now the
+ * default (Noaim 2026-09-27: "il n'y a pas de plafond", staking is % of
+ * bankroll which self-limits). Set a positive value to re-enable it.
+ */
 export function getAutobetDailyCapEur(): number {
-  return envFloat("AUTOBET_DAILY_CAP_EUR", 100);
+  return envFloat("AUTOBET_DAILY_CAP_EUR", 0);
+}
+
+/**
+ * % of bankroll to stake per confidence tier, from the trusted esports
+ * channel's own captions (Noaim 2026-09-27): 1/3 = safest-flagged … 3/3 =
+ * most confident, "max" = its "Max bet" / cash-out-and-flip calls. A
+ * consensus with no tier (e.g. a 2-group match) uses `default`. Keyed by
+ * the ConfidenceTier strings in autobet/confidenceTier.ts.
+ */
+export function getAutobetStakePercents(): Record<string, number> {
+  return {
+    "1/3": envFloat("AUTOBET_PCT_TIER1", 5),
+    "2/3": envFloat("AUTOBET_PCT_TIER2", 8),
+    "3/3": envFloat("AUTOBET_PCT_TIER3", 15),
+    max: envFloat("AUTOBET_PCT_MAX", 20),
+    default: envFloat("AUTOBET_PCT_DEFAULT", 8),
+  };
+}
+
+/**
+ * Fallback bankroll used ONLY for simulation display when the live wallet
+ * balance is 0/unreadable — so `/paris` shows realistic "would-have-staked"
+ * numbers before any money is deposited. Once the wallet is funded, the
+ * real balance is used and this is ignored.
+ */
+export function getAutobetAssumedBankrollEur(): number {
+  return envFloat("AUTOBET_ASSUMED_BANKROLL_EUR", 1000);
 }
 
 /**

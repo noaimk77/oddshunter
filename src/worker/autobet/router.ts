@@ -1,7 +1,8 @@
 import type { PrismaClient } from "@/generated/prisma-consensus/client";
 import { looksLikeEsports } from "../telegram/tipParser";
-import { AUTOBET_LIVE_ENABLED } from "../config";
-import { checkDailyCapAndReserveStake } from "./riskEngine";
+import { AUTOBET_LIVE_ENABLED, getAutobetStakeEur } from "../config";
+import { decideStake } from "./riskEngine";
+import { fetchPolymarketBankrollUsd } from "./bankroll";
 import { resolvePs3838Bet } from "./ps3838Matcher";
 import { placeBet as ps3838PlaceBet, Ps3838ConfigError } from "./ps3838Client";
 import { resolvePolymarketBet } from "./polymarketMatcher";
@@ -33,14 +34,29 @@ export async function autobetOnConsensus(db: PrismaClient, tip: AutobetCandidate
   const broker: AutobetBroker = esports ? "POLYMARKET" : "PS3838";
 
   try {
-    const cap = await checkDailyCapAndReserveStake(db);
-    if (!cap.allowed) {
-      const result: AutobetResult = { broker, status: "REJECTED", stakeEur: 0, reason: cap.reason };
-      await persist(db, tip, consensusFingerprint, result);
-      return result;
+    // Stake sizing differs by path: esports/Polymarket is % of the live
+    // wallet bankroll driven by the pick's confidence tier; PS3838
+    // (football) has no tier and stays on the flat EUR stake for now.
+    let stakeEur: number;
+    if (esports) {
+      const liveBankroll = await fetchPolymarketBankrollUsd();
+      const decided = await decideStake(db, { tier: tip.confidenceTier ?? null, liveBankroll });
+      if (!decided.allowed) {
+        const result: AutobetResult = { broker, status: "REJECTED", stakeEur: 0, reason: decided.reason };
+        await persist(db, tip, consensusFingerprint, result);
+        return result;
+      }
+      stakeEur = decided.decision.stakeEur;
+      const d = decided.decision;
+      console.log(
+        `[autobet] stake ${stakeEur} = ${d.pct}% of ${d.bankrollIsAssumed ? "assumed " : ""}bankroll ${d.bankroll}` +
+          ` (tier ${tip.confidenceTier ?? "default"}) — ${tip.homeTeam} vs ${tip.awayTeam}.`,
+      );
+    } else {
+      stakeEur = getAutobetStakeEur();
     }
 
-    const result = esports ? await runPolymarket(tip, cap.stakeEur) : await runPs3838(tip, cap.stakeEur);
+    const result = esports ? await runPolymarket(tip, stakeEur) : await runPs3838(tip, stakeEur);
     await persist(db, tip, consensusFingerprint, result);
     const ref = result.brokerRef ? ` — ref ${result.brokerRef}` : "";
     const line = `[autobet] ${result.status} ${result.broker} ${result.stakeEur}€${result.oddsAtBet ? ` @ ${result.oddsAtBet}` : ""} — ${tip.homeTeam} vs ${tip.awayTeam}${ref}.`;
@@ -122,7 +138,7 @@ async function runPolymarket(tip: AutobetCandidate, stakeEur: number): Promise<A
       status: "SIMULATED",
       stakeEur,
       oddsAtBet: outcome.price,
-      reason: `AUTOBET_LIVE_ENABLED=false — mode simulation. Marché: ${resolved.match.market.question}`,
+      reason: `simulation (tier ${tip.confidenceTier ?? "défaut"}). Marché: ${resolved.match.market.question}`,
     };
   }
 
