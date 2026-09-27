@@ -4,19 +4,14 @@ import { polygon } from "viem/chains";
 import { ClobClient, Chain, Side, OrderType } from "@polymarket/clob-client-v2";
 
 /**
- * NOT wired into the autobet router (see router.ts) — polymarket.com,
- * gamma-api.polymarket.com and clob.polymarket.com are all DNS-redirected
- * to the French gambling regulator's (ANJ) block page from Fly's `cdg`
- * (Paris) region, same as stake.com; ANJ-licensed books (bet365, betfair)
- * resolve fine. Polymarket is not authorized to operate in France. This
- * file exists so the integration is ready the moment that's resolved
- * (different Fly region outside France, or Noaim's own call on access) —
- * it is not meant to be deployed live as-is. See the 2026-09-27
- * conversation and router.ts's POLYMARKET_BLOCKED_REASON.
+ * Live since 2026-09-27 — Noaim confirmed Monaco residency (no ANJ
+ * jurisdiction there; the earlier "ANJ-blocked" finding was specific to a
+ * different network path, not this box). AUTOBET_LIVE_ENABLED=true.
  */
 
 const GAMMA_BASE = "https://gamma-api.polymarket.com";
 const CLOB_BASE = "https://clob.polymarket.com";
+const DATA_API_BASE = "https://data-api.polymarket.com";
 
 export interface PolymarketOutcome {
   name: string;
@@ -29,6 +24,11 @@ export interface PolymarketMarket {
   question: string;
   slug: string;
   outcomes: PolymarketOutcome[];
+  /** The parent event's own title — e.g. "Valorant: Team Vitality vs LOUD".
+   *  Sub-markets like totals ("Games Total: O/U 2.5") often don't restate
+   *  either team's name in their OWN question, only the event does; fixture
+   *  matching needs both, see polymarketMatcher.questionMatchesFixture. */
+  eventTitle: string;
 }
 
 /** Gamma API — public, unauthenticated. `/markets?search=` is NOT a real
@@ -36,7 +36,8 @@ export interface PolymarketMarket {
  *  returns whatever's most popular/recent) — the actual full-text search
  *  lives at `/public-search`, which returns EVENTS (each wrapping one or
  *  more markets), not markets directly. Flattened here so callers keep
- *  working with a flat market list. */
+ *  working with a flat market list, carrying the parent event's title along
+ *  (see PolymarketMarket.eventTitle). */
 export async function searchEsportsMarkets(query: string): Promise<PolymarketMarket[]> {
   const url = new URL(`${GAMMA_BASE}/public-search`);
   url.searchParams.set("q", query);
@@ -44,22 +45,24 @@ export async function searchEsportsMarkets(query: string): Promise<PolymarketMar
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Polymarket Gamma search failed: HTTP ${res.status}`);
   const body = (await res.json()) as { events?: any[] };
-  const markets = (body.events ?? []).flatMap((ev) => ev.markets ?? []);
-  return markets.map((r) => ({
-    conditionId: r.conditionId,
-    question: r.question,
-    slug: r.slug,
-    outcomes: (() => {
-      try {
-        const names: string[] = JSON.parse(r.outcomes ?? "[]");
-        const tokenIds: string[] = JSON.parse(r.clobTokenIds ?? "[]");
-        const prices: string[] = JSON.parse(r.outcomePrices ?? "[]");
-        return names.map((name, i) => ({ name, tokenId: tokenIds[i], price: Number.parseFloat(prices[i] ?? "0") }));
-      } catch {
-        return [];
-      }
-    })(),
-  }));
+  return (body.events ?? []).flatMap((ev) =>
+    (ev.markets ?? []).map((r: any) => ({
+      conditionId: r.conditionId,
+      question: r.question,
+      slug: r.slug,
+      eventTitle: ev.title ?? "",
+      outcomes: (() => {
+        try {
+          const names: string[] = JSON.parse(r.outcomes ?? "[]");
+          const tokenIds: string[] = JSON.parse(r.clobTokenIds ?? "[]");
+          const prices: string[] = JSON.parse(r.outcomePrices ?? "[]");
+          return names.map((name, i) => ({ name, tokenId: tokenIds[i], price: Number.parseFloat(prices[i] ?? "0") }));
+        } catch {
+          return [];
+        }
+      })(),
+    })),
+  );
 }
 
 function getAccount() {
@@ -109,4 +112,57 @@ export async function placePolymarketOrder(tokenId: string, stakeEur: number): P
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** SELL market order for `sizeShares` of one outcome token — used to cash
+ *  out (or as the first leg of a flip) an existing position. FAK, not FOK:
+ *  a cash-out that fills 90% is still a real cash-out, better than an
+ *  all-or-nothing order failing outright on thin end-of-match liquidity. */
+export async function sellPolymarketPosition(tokenId: string, sizeShares: number): Promise<PlacePolymarketOrderResult> {
+  try {
+    const client = await getClobClient();
+    const response = await client.createAndPostMarketOrder(
+      { tokenID: tokenId, amount: sizeShares, side: Side.SELL },
+      { tickSize: "0.01" as any },
+      OrderType.FAK,
+    );
+    return { ok: true, orderId: (response as any).orderID ?? (response as any).orderId, status: (response as any).status };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export interface PolymarketPosition {
+  asset: string; // tokenId
+  conditionId: string;
+  size: number;
+  outcome: string;
+}
+
+/** Data API, public/unauthenticated — the wallet's current on-chain-settled
+ *  positions. Used right after a BUY (to record the real filled share
+ *  count on the ticket — more reliable than parsing the order response's
+ *  own maker/taker amounts) and again at cash-out time (to know exactly
+ *  how many shares are left to sell, in case of a prior partial sell). */
+export async function fetchPolymarketPositions(): Promise<PolymarketPosition[]> {
+  const account = getAccount();
+  const res = await fetch(`${DATA_API_BASE}/positions?user=${account.address}`);
+  if (!res.ok) throw new Error(`Polymarket Data API positions failed: HTTP ${res.status}`);
+  const rows = (await res.json()) as any[];
+  return rows.map((r) => ({ asset: r.asset, conditionId: r.conditionId, size: Number(r.size), outcome: r.outcome }));
+}
+
+/** Polls fetchPolymarketPositions for `tokenId` until it shows a non-zero
+ *  size or `timeoutMs` elapses — settlement after a market order isn't
+ *  always instant. Returns 0 (not an error) on timeout; the caller decides
+ *  whether that's acceptable. */
+export async function waitForPolymarketFill(tokenId: string, timeoutMs = 15_000): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const positions = await fetchPolymarketPositions().catch(() => []);
+    const match = positions.find((p) => p.asset === tokenId);
+    if (match && match.size > 0) return match.size;
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return 0;
 }

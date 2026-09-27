@@ -14,7 +14,7 @@ export interface AutobetCandidate extends ParsedTip {
 
 export type AutobetBroker = "PS3838" | "POLYMARKET";
 
-export type AutobetStatus = "SIMULATED" | "PLACED" | "REJECTED" | "FAILED";
+export type AutobetStatus = "SIMULATED" | "PLACED" | "REJECTED" | "FAILED" | "CLOSED";
 
 export interface AutobetResult {
   broker: AutobetBroker;
@@ -23,4 +23,9 @@ export interface AutobetResult {
   oddsAtBet?: number | null;
   brokerRef?: string | null;
   reason?: string;
+  /** Polymarket only, set on a real PLACED buy — the exact position bought,
+   *  so a later cash-out/flip signal knows exactly what to sell. */
+  polyTokenId?: string | null;
+  polyConditionId?: string | null;
+  sizeShares?: number | null;
 }

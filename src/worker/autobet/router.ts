@@ -6,7 +6,7 @@ import { fetchPolymarketBankrollUsd } from "./bankroll";
 import { resolvePs3838Bet } from "./ps3838Matcher";
 import { placeBet as ps3838PlaceBet, Ps3838ConfigError } from "./ps3838Client";
 import { resolvePolymarketBet } from "./polymarketMatcher";
-import { placePolymarketOrder } from "./polymarketClient";
+import { placePolymarketOrder, waitForPolymarketFill } from "./polymarketClient";
 import type { AutobetBroker, AutobetCandidate, AutobetResult } from "./types";
 
 /**
@@ -144,13 +144,23 @@ async function runPolymarket(tip: AutobetCandidate, stakeEur: number): Promise<A
 
   try {
     const placed = await placePolymarketOrder(outcome.tokenId, stakeEur);
+    if (!placed.ok) {
+      return { broker, status: "FAILED", stakeEur, oddsAtBet: outcome.price, reason: placed.error };
+    }
+    // Settlement isn't instant — poll the Data API for the real filled
+    // share count rather than trust a computed estimate, so a cash-out
+    // later sells exactly what's actually held, not a guess.
+    const sizeShares = await waitForPolymarketFill(outcome.tokenId);
     return {
       broker,
-      status: placed.ok ? "PLACED" : "FAILED",
+      status: "PLACED",
       stakeEur,
       oddsAtBet: outcome.price,
       brokerRef: placed.orderId ?? null,
-      reason: placed.ok ? undefined : placed.error,
+      polyTokenId: outcome.tokenId,
+      polyConditionId: resolved.match.market.conditionId,
+      sizeShares: sizeShares > 0 ? sizeShares : null,
+      reason: sizeShares > 0 ? undefined : "achat confirmé mais taille de position pas encore visible (settlement lent) — vérifier /positions plus tard",
     };
   } catch (err) {
     return { broker, status: "FAILED", stakeEur, oddsAtBet: outcome.price, reason: `Polymarket order a échoué : ${err instanceof Error ? err.message : String(err)}` };
@@ -173,6 +183,9 @@ async function persist(db: PrismaClient, tip: AutobetCandidate, consensusFingerp
         status: result.status,
         brokerRef: result.brokerRef ?? null,
         reason: result.reason ?? null,
+        polyTokenId: result.polyTokenId ?? null,
+        polyConditionId: result.polyConditionId ?? null,
+        sizeShares: result.sizeShares ?? null,
       },
     });
   } catch (err) {

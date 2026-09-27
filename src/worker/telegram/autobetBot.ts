@@ -67,7 +67,7 @@ export function createAutobetBot(consensusDb: PrismaClient): Bot {
         await ctx.reply("Aucun ticket pour l'instant.");
         return;
       }
-      const statusIcon: Record<string, string> = { SIMULATED: "🧪", PLACED: "✅", REJECTED: "🚫", FAILED: "❌" };
+      const statusIcon: Record<string, string> = { SIMULATED: "🧪", PLACED: "✅", REJECTED: "🚫", FAILED: "❌", CLOSED: "🔒" };
       const lines = tickets.map((t) => {
         const when = t.createdAt.toISOString().slice(5, 16).replace("T", " ");
         return (

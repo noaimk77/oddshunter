@@ -50,7 +50,9 @@ import {
   SEND_TIP_CONSENSUS_ALERTS,
   BETEXPLORER_ENABLED,
   STRATEGY_POLL_INTERVAL_MS,
+  AUTOBET_LIVE_ENABLED,
 } from "./config";
+import { resolveCashoutExecutions } from "./autobet/cashoutExecutor";
 import { detectOddsDrop, type OddsDropOutcome } from "./detectors/oddsDrop";
 import { detectOddsRise, type OddsRiseOutcome } from "./detectors/oddsRise";
 import { detectVigExplosion } from "./detectors/vigExplosion";
@@ -1050,6 +1052,22 @@ async function main() {
         // also removes the BetExplorer/TheSportsDB result lookups that were
         // timing out every pass. resolvePendingConsensusOutcomes and its
         // helpers are kept in the tree in case grading is wanted back.
+
+        // Real-money cash-out/flip execution on OPEN Polymarket positions
+        // (Noaim 2026-09-27) - on the FAST cadence, not gated behind
+        // INGEST_POLL_INTERVAL_MS like the football-only VIP-reply cash-out
+        // below: a live esports match can flip in minutes, so this can't
+        // wait 15 min. See autobet/cashoutExecutor.ts.
+        if (AUTOBET_LIVE_ENABLED) {
+          try {
+            const out = await resolveCashoutExecutions(consensusDb);
+            if (out.closed > 0 || out.flippedIn > 0 || out.failed > 0) {
+              console.log(`[worker] autobet cash-out pass: closed ${out.closed}, flipped-in ${out.flippedIn}, failed ${out.failed}, skipped ${out.skipped}.`);
+            }
+          } catch (err) {
+            console.error("[worker] autobet cash-out executor failed", err);
+          }
+        }
 
         if (Date.now() - lastIngestAt >= INGEST_POLL_INTERVAL_MS) {
           await runIngestion();

@@ -107,10 +107,23 @@ model AutobetTicket {
   selection            String
   stakeEur             Float
   oddsAtBet            Float?
-  status               String // SIMULATED | PLACED | REJECTED | FAILED
+  status               String // SIMULATED | PLACED | REJECTED | FAILED | CLOSED
   brokerRef            String? // PS3838 betId, or Polymarket orderId
   reason               String? // rejection/failure detail
   createdAt            DateTime @default(now())
+
+  // Polymarket-only — the exact position bought, needed to sell it later
+  // on a cash-out/flip signal. null for PS3838 tickets and any Polymarket
+  // ticket that wasn't actually PLACED.
+  polyTokenId     String?
+  polyConditionId String?
+  sizeShares      Float?
+
+  // Set when a later cash-out/flip signal closed this position — points at
+  // the CLOSING ticket row (broker="POLYMARKET", a SELL, possibly paired
+  // with a fresh BUY on the opposite side for a flip) so the two are
+  // linked without guessing by fixture/time later.
+  closedByTicketId String?
 
   @@index([broker, createdAt])
   @@index([createdAt])
