@@ -27,7 +27,11 @@ export async function decideStake(
   opts: { tier: ConfidenceTier | null; liveBankroll: number | null },
 ): Promise<{ allowed: true; decision: StakeDecision } | { allowed: false; reason: string }> {
   const percents = getAutobetStakePercents();
-  const pct = opts.tier ? (percents[opts.tier] ?? percents.default) : percents.default;
+  // No tier caption at all (no "1/3"/"2/3"/"3/3"/"Max bet" under the pick)
+  // is treated as the channel's highest ordinary confidence, "3/3" — Noaim
+  // 2026-09-27: a pick posted with no explicit downgrade reads as full
+  // confidence, not as a separate lower "default" tier.
+  const pct = percents[opts.tier ?? "3/3"] ?? percents["3/3"];
 
   const hasLive = opts.liveBankroll != null && opts.liveBankroll > 0;
   const bankroll = hasLive ? (opts.liveBankroll as number) : getAutobetAssumedBankrollEur();
