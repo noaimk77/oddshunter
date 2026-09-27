@@ -31,20 +31,21 @@ export interface PolymarketMarket {
   outcomes: PolymarketOutcome[];
 }
 
-/** Gamma API — public, unauthenticated market metadata. Esports events are
- *  tagged and searchable by team name in the question text; there is no
- *  "search by two team names" endpoint, so this pulls active markets for
- *  a keyword and lets the caller pick the best question match. */
+/** Gamma API — public, unauthenticated. `/markets?search=` is NOT a real
+ *  keyword search (verified 2026-09-27: it silently ignores the param and
+ *  returns whatever's most popular/recent) — the actual full-text search
+ *  lives at `/public-search`, which returns EVENTS (each wrapping one or
+ *  more markets), not markets directly. Flattened here so callers keep
+ *  working with a flat market list. */
 export async function searchEsportsMarkets(query: string): Promise<PolymarketMarket[]> {
-  const url = new URL(`${GAMMA_BASE}/markets`);
-  url.searchParams.set("active", "true");
-  url.searchParams.set("closed", "false");
-  url.searchParams.set("limit", "50");
-  url.searchParams.set("search", query);
+  const url = new URL(`${GAMMA_BASE}/public-search`);
+  url.searchParams.set("q", query);
+  url.searchParams.set("events_status", "active");
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Polymarket Gamma search failed: HTTP ${res.status}`);
-  const rows = (await res.json()) as any[];
-  return rows.map((r) => ({
+  const body = (await res.json()) as { events?: any[] };
+  const markets = (body.events ?? []).flatMap((ev) => ev.markets ?? []);
+  return markets.map((r) => ({
     conditionId: r.conditionId,
     question: r.question,
     slug: r.slug,
