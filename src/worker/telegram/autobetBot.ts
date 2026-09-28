@@ -3,6 +3,11 @@ import type { PrismaClient } from "@/generated/prisma-consensus/client";
 import { fetchWalletBalances, withdrawUsdc } from "../lib/polygonWallet";
 import { fetchPolymarketBankrollUsd } from "../autobet/bankroll";
 import { onboardDeposit, swapUsdceToNativeUsdc } from "../autobet/usdcBridge";
+import { resolvePolymarketBet } from "../autobet/polymarketMatcher";
+import { autobetOnConsensus } from "../autobet/router";
+import { slugTeam } from "./tipParser";
+import type { ConfidenceTier } from "../autobet/confidenceTier";
+import type { AutobetCandidate } from "../autobet/types";
 
 /**
  * Private bot — Noaim's own dashboard/remote-control for the auto-betting
@@ -55,7 +60,8 @@ export function createAutobetBot(consensusDb: PrismaClient): Bot {
         "/solde — bankroll (USDC + POL pour le gas) et adresse de dépôt\n" +
         "/retirer <montant> — envoyer des USDC vers Kraken (2 étapes)\n" +
         "/paris — 10 derniers tickets (foot -> PS3838, e-sport -> Polymarket)\n" +
-        "/preparer <montant> — convertit l'USDC déposé en USDC.e et active Polymarket (2 étapes)\n\n" +
+        "/preparer <montant> — convertit l'USDC déposé en USDC.e et active Polymarket (2 étapes)\n" +
+        "/miser <home> | <away> | <marché> | <sélection> | <tier> — pari manuel Polymarket (2 étapes)\n\n" +
         `Mode: ${live ? "⚠️ RÉEL — de l'argent part vraiment" : "🧪 SIMULATION — rien n'est engagé"}.`,
     );
   });
@@ -207,6 +213,104 @@ export function createAutobetBot(consensusDb: PrismaClient): Bot {
       );
     } catch (err) {
       await ctx.reply(`❌ Retrait échoué : ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  // Manual override for a pick the automatic pipeline hasn't (yet, or won't)
+  // catch on its own — e.g. verifying the machine works, or a tip whose
+  // consensus fingerprint doesn't fire automatically. Same stateless 2-step
+  // confirm pattern as /retirer/preparer: "/miser A | B | 1X2 | A" previews
+  // the resolved Polymarket market + price, the real order only fires on
+  // "... | confirme". Esports/Polymarket only — football (PS3838) is
+  // disabled outright (see router.ts), so this always forces
+  // isTrustedEsportsSource so the router doesn't fall through to the
+  // disabled football path just because the team names carry no esports
+  // keyword (real case: "Sementes do Mal", "Damajuanaa", "Megoshort" — none
+  // of them match looksLikeEsports's keyword scan).
+  bot.command("miser", async (ctx) => {
+    const raw = (ctx.match ?? "").trim();
+    const confirmed = /\|\s*confirme\s*$/i.test(raw);
+    const body = confirmed ? raw.replace(/\|\s*confirme\s*$/i, "") : raw;
+    const parts = body.split("|").map((s) => s.trim());
+    const [home, away, marketRaw, selectionRaw, tierRaw] = parts;
+
+    if (!home || !away || !marketRaw || !selectionRaw) {
+      await ctx.reply(
+        "Usage : /miser <home> | <away> | <marché> | <sélection> | <tier optionnel>\n" +
+          "Marché : 1X2, OVER_UNDER, OVER_UNDER_HT, HANDICAP, BTTS, DOUBLE_CHANCE\n" +
+          "Sélection : \"home\"/\"away\" pour 1X2, sinon le code exact (ex: OVER_2_5, HOME_-1.5)\n" +
+          "Tier : 1, 2, 3 ou max (défaut : 3 si omis, comme une alerte sans tier)\n\n" +
+          "Ex : /miser Sementes do Mal | Damajuanaa | 1X2 | away | 2",
+      );
+      return;
+    }
+
+    const market = marketRaw.toUpperCase().replace(/\s+/g, "_");
+    let selection = selectionRaw;
+    const selLower = selectionRaw.toLowerCase();
+    if (market === "1X2" || market === "DOUBLE_CHANCE") {
+      if (selLower === "home") selection = slugTeam(home);
+      else if (selLower === "away") selection = slugTeam(away);
+      else selection = slugTeam(selectionRaw);
+    }
+
+    let confidenceTier: ConfidenceTier | null = null;
+    if (tierRaw) {
+      const t = tierRaw.toLowerCase();
+      if (t === "max") confidenceTier = "max";
+      else if (t === "1") confidenceTier = "1/3";
+      else if (t === "2") confidenceTier = "2/3";
+      else if (t === "3") confidenceTier = "3/3";
+      else {
+        await ctx.reply(`❌ Tier "${tierRaw}" invalide — utilise 1, 2, 3 ou max.`);
+        return;
+      }
+    }
+
+    const fixture = { homeTeam: home, awayTeam: away };
+
+    if (!confirmed) {
+      try {
+        const resolved = await resolvePolymarketBet(fixture, market, selection);
+        if (!resolved.ok) {
+          await ctx.reply(`❌ Marché introuvable sur Polymarket : ${resolved.reason}`);
+          return;
+        }
+        const { outcome, market: pm } = resolved.match;
+        await ctx.reply(
+          `⚠️ Confirme : ${home} vs ${away} — ${market} ${selection}\n` +
+            `Marché Polymarket : ${pm.question}\n` +
+            `Prix actuel : ${outcome.price}\n` +
+            `Tier : ${confidenceTier ?? "3/3 (défaut)"}\n\n` +
+            `Envoie exactement :\n/miser ${parts.slice(0, 4).join(" | ")}${tierRaw ? ` | ${tierRaw}` : ""} | confirme`,
+        );
+      } catch (err) {
+        await ctx.reply(`❌ Erreur résolution : ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return;
+    }
+
+    try {
+      await ctx.reply("⏳ Pari en cours...");
+      const fingerprint = `manual:${slugTeam(home)}|${slugTeam(away)}|${market}|${selection}|${Date.now()}`;
+      const tip: AutobetCandidate = {
+        homeTeam: home,
+        awayTeam: away,
+        market,
+        selection,
+        fingerprint,
+        groupCount: 1,
+        confidenceTier,
+        isTrustedEsportsSource: true,
+      };
+      const result = await autobetOnConsensus(consensusDb, tip, fingerprint);
+      const statusIcon: Record<string, string> = { SIMULATED: "🧪", PLACED: "✅", REJECTED: "🚫", FAILED: "❌", CLOSED: "🔒" };
+      await ctx.reply(
+        `${statusIcon[result.status] ?? "•"} ${result.status} — ${result.broker} — ${formatUsd(result.stakeEur)}€` +
+          `${result.oddsAtBet ? ` @ ${result.oddsAtBet}` : ""}${result.reason ? `\n↳ ${result.reason}` : ""}`,
+      );
+    } catch (err) {
+      await ctx.reply(`❌ Échoué : ${err instanceof Error ? err.message : String(err)}`);
     }
   });
 
