@@ -30,7 +30,12 @@ import type { AutobetBroker, AutobetCandidate, AutobetResult } from "./types";
  * path must never take down the VIP alert pipeline that calls it.
  */
 export async function autobetOnConsensus(db: PrismaClient, tip: AutobetCandidate, consensusFingerprint: string): Promise<AutobetResult> {
-  const esports = looksLikeEsports(tip.homeTeam, tip.awayTeam);
+  // The trusted single-source esports channel ("Vip ESPORTS") is esports by
+  // construction — real esports team names ("Forsaken", "Bushido Wildcats")
+  // almost never carry a keyword the scan below looks for, which was
+  // silently misrouting every one of its picks to the football broker
+  // (PS3838, permanently rejected) — see AutobetCandidate.isTrustedEsportsSource.
+  const esports = tip.isTrustedEsportsSource || looksLikeEsports(tip.homeTeam, tip.awayTeam);
   const broker: AutobetBroker = esports ? "POLYMARKET" : "PS3838";
 
   try {
@@ -173,7 +178,7 @@ async function persist(db: PrismaClient, tip: AutobetCandidate, consensusFingerp
       data: {
         consensusFingerprint,
         broker: result.broker,
-        sport: looksLikeEsports(tip.homeTeam, tip.awayTeam) ? "esports" : "football",
+        sport: tip.isTrustedEsportsSource || looksLikeEsports(tip.homeTeam, tip.awayTeam) ? "esports" : "football",
         homeTeam: tip.homeTeam,
         awayTeam: tip.awayTeam,
         market: tip.market,

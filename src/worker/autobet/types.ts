@@ -10,6 +10,15 @@ export interface AutobetCandidate extends ParsedTip {
    *  triggering tip came from it — drives the stake %. null for consensus
    *  picks with no tier (uses the default %). */
   confidenceTier?: ConfidenceTier | null;
+  /** True when the triggering tip came from a TRUSTED_SINGLE_SOURCE_CHAT_IDS
+   *  channel that is exclusively esports (currently "Vip ESPORTS"). Real
+   *  esports team names ("Forsaken", "Bushido Wildcats") almost never
+   *  contain an esports keyword, so `looksLikeEsports`'s keyword scan alone
+   *  routinely misses them and misroutes to the football broker (PS3838,
+   *  permanently rejected — see AUTOBET.md incident 2026-09-27/28). A pick
+   *  from this source is esports by construction, independent of the
+   *  keyword check. */
+  isTrustedEsportsSource?: boolean;
 }
 
 export type AutobetBroker = "PS3838" | "POLYMARKET";

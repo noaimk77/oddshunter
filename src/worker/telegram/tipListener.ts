@@ -408,10 +408,9 @@ async function processCandidate(
       // Confidence tier only applies to the trusted channel's own captions
       // (1/3, 2/3, 3/3, Max bet) — a stray "3/3" in any other chat must not
       // size a bet. best-effort: read it off this tip's raw text (caption/OCR).
-      const confidenceTier = getTrustedSingleSourceChatIds().has(sourceChatId)
-        ? parseConfidenceTier(rawTextForStore)
-        : null;
-      autobetOnConsensus(db, { ...parsed, groupCount: outcome.groupCount, confidenceTier }, fp).catch((err) =>
+      const isTrustedEsportsSource = getTrustedSingleSourceChatIds().has(sourceChatId);
+      const confidenceTier = isTrustedEsportsSource ? parseConfidenceTier(rawTextForStore) : null;
+      autobetOnConsensus(db, { ...parsed, groupCount: outcome.groupCount, confidenceTier, isTrustedEsportsSource }, fp).catch((err) =>
         console.error("[autobet] unexpected failure routing consensus to autobet:", err),
       );
     }
