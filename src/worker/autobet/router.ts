@@ -1,10 +1,8 @@
 import type { PrismaClient } from "@/generated/prisma-consensus/client";
 import { looksLikeEsports } from "../telegram/tipParser";
-import { AUTOBET_LIVE_ENABLED, getAutobetStakeEur } from "../config";
+import { AUTOBET_LIVE_ENABLED } from "../config";
 import { decideStake } from "./riskEngine";
 import { fetchPolymarketBankrollUsd } from "./bankroll";
-import { resolvePs3838Bet } from "./ps3838Matcher";
-import { placeBet as ps3838PlaceBet, Ps3838ConfigError } from "./ps3838Client";
 import { resolvePolymarketBet } from "./polymarketMatcher";
 import { placePolymarketOrder, waitForPolymarketFill } from "./polymarketClient";
 import type { AutobetBroker, AutobetCandidate, AutobetResult } from "./types";
@@ -37,33 +35,41 @@ export async function autobetOnConsensus(db: PrismaClient, tip: AutobetCandidate
   // silently misrouting every one of its picks to the football broker
   // (PS3838, permanently rejected) — see AutobetCandidate.isTrustedEsportsSource.
   const esports = tip.isTrustedEsportsSource || looksLikeEsports(tip.homeTeam, tip.awayTeam);
-  const broker: AutobetBroker = esports ? "POLYMARKET" : "PS3838";
+
+  // PS3838 (football) disabled outright (Noaim, 2026-09-28) — shelved since
+  // 2026-09-27 (10k$ deposit / 100k$ monthly turnover PER SPORT, declined,
+  // out of scale) and every attempt was a guaranteed REJECTED ticket, just
+  // burning a PS3838 API call for nothing. Skip football tips entirely
+  // rather than call a broker known dead — Polymarket/esports only for now.
+  if (!esports) {
+    const result: AutobetResult = {
+      broker: "PS3838",
+      status: "REJECTED",
+      stakeEur: 0,
+      reason: "PS3838 désactivé pour l'instant — Polymarket (esport) uniquement (Noaim, 2026-09-28).",
+    };
+    await persist(db, tip, consensusFingerprint, result);
+    return result;
+  }
+  const broker: AutobetBroker = "POLYMARKET";
 
   try {
-    // Stake sizing differs by path: esports/Polymarket is % of the live
-    // wallet bankroll driven by the pick's confidence tier; PS3838
-    // (football) has no tier and stays on the flat EUR stake for now.
-    let stakeEur: number;
-    if (esports) {
-      const liveBankroll = await fetchPolymarketBankrollUsd();
-      const decided = await decideStake(db, { tier: tip.confidenceTier ?? null, liveBankroll });
-      if (!decided.allowed) {
-        const result: AutobetResult = { broker, status: "REJECTED", stakeEur: 0, reason: decided.reason };
-        await persist(db, tip, consensusFingerprint, result);
-        await notifyOnMiss(tip, result);
-        return result;
-      }
-      stakeEur = decided.decision.stakeEur;
-      const d = decided.decision;
-      console.log(
-        `[autobet] stake ${stakeEur} = ${d.pct}% of ${d.bankrollIsAssumed ? "assumed " : ""}bankroll ${d.bankroll}` +
-          ` (tier ${tip.confidenceTier ?? "default"}) — ${tip.homeTeam} vs ${tip.awayTeam}.`,
-      );
-    } else {
-      stakeEur = getAutobetStakeEur();
+    const liveBankroll = await fetchPolymarketBankrollUsd();
+    const decided = await decideStake(db, { tier: tip.confidenceTier ?? null, liveBankroll });
+    if (!decided.allowed) {
+      const result: AutobetResult = { broker, status: "REJECTED", stakeEur: 0, reason: decided.reason };
+      await persist(db, tip, consensusFingerprint, result);
+      await notifyOnMiss(tip, result);
+      return result;
     }
+    const stakeEur = decided.decision.stakeEur;
+    const d = decided.decision;
+    console.log(
+      `[autobet] stake ${stakeEur} = ${d.pct}% of ${d.bankrollIsAssumed ? "assumed " : ""}bankroll ${d.bankroll}` +
+        ` (tier ${tip.confidenceTier ?? "default"}) — ${tip.homeTeam} vs ${tip.awayTeam}.`,
+    );
 
-    const result = esports ? await runPolymarket(tip, stakeEur) : await runPs3838(tip, stakeEur);
+    const result = await runPolymarket(tip, stakeEur);
     await persist(db, tip, consensusFingerprint, result);
     const ref = result.brokerRef ? ` — ref ${result.brokerRef}` : "";
     const line = `[autobet] ${result.status} ${result.broker} ${result.stakeEur}€${result.oddsAtBet ? ` @ ${result.oddsAtBet}` : ""} — ${tip.homeTeam} vs ${tip.awayTeam}${ref}.`;
@@ -102,55 +108,6 @@ async function notifyOnMiss(tip: AutobetCandidate, result: AutobetResult): Promi
     `⚠️ Autobet ${result.status} (Vip ESPORTS)\n${tip.homeTeam} vs ${tip.awayTeam} — ${tip.market} ${tip.selection}\n` +
       `Broker : ${result.broker}\nRaison : ${result.reason ?? "inconnue"}`,
   ).catch(() => {});
-}
-
-async function runPs3838(tip: AutobetCandidate, stakeEur: number): Promise<AutobetResult> {
-  const broker: AutobetBroker = "PS3838";
-
-  let resolved: Awaited<ReturnType<typeof resolvePs3838Bet>>;
-  try {
-    resolved = await resolvePs3838Bet(tip, tip.market, tip.selection);
-  } catch (err) {
-    const reason =
-      err instanceof Ps3838ConfigError
-        ? "PS3838_USERNAME/PS3838_PASSWORD non configurés."
-        : `PS3838 fixture/line lookup a échoué : ${err instanceof Error ? err.message : String(err)}`;
-    return { broker, status: "REJECTED", stakeEur, reason };
-  }
-  if (!resolved.ok) return { broker, status: "REJECTED", stakeEur, reason: resolved.reason };
-
-  if (!AUTOBET_LIVE_ENABLED) {
-    return { broker, status: "SIMULATED", stakeEur, oddsAtBet: resolved.price, reason: "AUTOBET_LIVE_ENABLED=false — mode simulation." };
-  }
-
-  try {
-    const placed = await ps3838PlaceBet({
-      lineId: resolved.lineId,
-      sportId: 29,
-      eventId: resolved.eventId,
-      periodNumber: resolved.spec.periodNumber,
-      betType: resolved.spec.betType,
-      team: resolved.spec.team,
-      side: resolved.spec.side,
-      handicap: resolved.spec.handicap,
-      stake: stakeEur,
-    });
-    const ok = placed.status === "ACCEPTED" || placed.status === "PENDING_ACCEPTANCE";
-    return {
-      broker,
-      status: ok ? "PLACED" : "REJECTED",
-      stakeEur,
-      oddsAtBet: resolved.price,
-      brokerRef: placed.betId ? String(placed.betId) : null,
-      reason: ok ? undefined : `PS3838 status ${placed.status}${placed.errorCode ? ` (${placed.errorCode})` : ""}`,
-    };
-  } catch (err) {
-    const reason =
-      err instanceof Ps3838ConfigError
-        ? "PS3838_USERNAME/PS3838_PASSWORD non configurés — bascule impossible en réel."
-        : `PS3838 place bet a échoué : ${err instanceof Error ? err.message : String(err)}`;
-    return { broker, status: "FAILED", stakeEur, oddsAtBet: resolved.price, reason };
-  }
 }
 
 async function runPolymarket(tip: AutobetCandidate, stakeEur: number): Promise<AutobetResult> {
