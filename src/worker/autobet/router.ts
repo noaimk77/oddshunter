@@ -8,6 +8,7 @@ import { placeBet as ps3838PlaceBet, Ps3838ConfigError } from "./ps3838Client";
 import { resolvePolymarketBet } from "./polymarketMatcher";
 import { placePolymarketOrder, waitForPolymarketFill } from "./polymarketClient";
 import type { AutobetBroker, AutobetCandidate, AutobetResult } from "./types";
+import { notifyAutobetAdmin } from "../telegram/adminNotify";
 
 /**
  * Polymarket routing enabled 2026-09-27: Noaim confirmed he is a Monaco
@@ -49,6 +50,7 @@ export async function autobetOnConsensus(db: PrismaClient, tip: AutobetCandidate
       if (!decided.allowed) {
         const result: AutobetResult = { broker, status: "REJECTED", stakeEur: 0, reason: decided.reason };
         await persist(db, tip, consensusFingerprint, result);
+        await notifyOnMiss(tip, result);
         return result;
       }
       stakeEur = decided.decision.stakeEur;
@@ -67,6 +69,7 @@ export async function autobetOnConsensus(db: PrismaClient, tip: AutobetCandidate
     const line = `[autobet] ${result.status} ${result.broker} ${result.stakeEur}€${result.oddsAtBet ? ` @ ${result.oddsAtBet}` : ""} — ${tip.homeTeam} vs ${tip.awayTeam}${ref}.`;
     if (result.status === "FAILED") console.error(line, result.reason ?? "");
     else console.log(line);
+    await notifyOnMiss(tip, result);
     return result;
   } catch (err) {
     const result: AutobetResult = {
@@ -77,8 +80,28 @@ export async function autobetOnConsensus(db: PrismaClient, tip: AutobetCandidate
     };
     console.error("[autobet] router failed unexpectedly:", err);
     await persist(db, tip, consensusFingerprint, result).catch(() => {});
+    await notifyOnMiss(tip, result);
     return result;
   }
+}
+
+/**
+ * A trusted single-source esports pick (see AutobetCandidate.isTrustedEsportsSource)
+ * has no second corroborating chat to fall back on — a REJECTED/FAILED
+ * ticket here means real money that should have been staked, wasn't, with
+ * nothing but a log line no one is watching (confirmed prod case:
+ * "Forsaken vs The Otter Side", 2026-09-27, misrouted to PS3838 and
+ * rejected — see tipListener.ts's adminNotify.ts for the mirror-image gap
+ * on the VIP-send side). DM Noaim so he finds out the same day, not by
+ * digging through Turso a week later.
+ */
+async function notifyOnMiss(tip: AutobetCandidate, result: AutobetResult): Promise<void> {
+  if (!tip.isTrustedEsportsSource) return;
+  if (result.status !== "REJECTED" && result.status !== "FAILED") return;
+  await notifyAutobetAdmin(
+    `⚠️ Autobet ${result.status} (Vip ESPORTS)\n${tip.homeTeam} vs ${tip.awayTeam} — ${tip.market} ${tip.selection}\n` +
+      `Broker : ${result.broker}\nRaison : ${result.reason ?? "inconnue"}`,
+  ).catch(() => {});
 }
 
 async function runPs3838(tip: AutobetCandidate, stakeEur: number): Promise<AutobetResult> {

@@ -13,6 +13,7 @@ import { extractOdds, extractLabeledOdds, extractResult } from "./ticketParser";
 import { extractTextFromPhoto } from "./tipOcr";
 import { applyConsensusAndAlert } from "./tipConsensus";
 import { sendConsensusAlert } from "./vipGroup";
+import { notifyAutobetAdmin } from "./adminNotify";
 import { shouldSendConsensusAlert } from "./alertFormat";
 import { rememberFixture, recallFixture, isFirehoseChat } from "./chatFixtureContext";
 import { extractSelectionWithLLM, extractFullTipWithLLM } from "./tipLlmFallback";
@@ -418,6 +419,16 @@ async function processCandidate(
     console.log("[tipListener] SEND_TIP_CONSENSUS_ALERTS=false — mode observation, rien envoyé, consensus non consommé.");
   } else {
     console.log(`[tipListener] consensus ${outcome.fingerprint} non envoyé — ${outcome.reason ?? "raison inconnue"}.`);
+    // A trusted single-source pick has no second corroborating chat to
+    // re-trigger it later — if it doesn't post now, it's gone for good
+    // (see adminNotify.ts). "already-claimed" is a harmless race (another
+    // message for the same fingerprint already sent it), not a loss.
+    if (getTrustedSingleSourceChatIds().has(sourceChatId) && outcome.reason !== "already-claimed") {
+      notifyAutobetAdmin(
+        `⚠️ Pick esport perdu (Vip ESPORTS)\n${parsed.homeTeam} vs ${parsed.awayTeam} — ${parsed.market} ${parsed.selection}\n` +
+          `Raison : ${outcome.reason ?? "inconnue"}\nNon posté en VIP, pas de bet auto. À vérifier/parier manuellement si encore jouable.`,
+      ).catch(() => {});
+    }
   }
   return identifiedFixture;
 }
