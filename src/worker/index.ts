@@ -48,6 +48,8 @@ import {
   SEND_LEGACY_DETECTOR_ALERTS,
   SEND_SUSPICIOUS_ALERTS,
   SEND_TIP_CONSENSUS_ALERTS,
+  TIP_LISTENER_CHANNELS_ONLY,
+  getTipConsensusConfig,
   BETEXPLORER_ENABLED,
   STRATEGY_POLL_INTERVAL_MS,
   AUTOBET_LIVE_ENABLED,
@@ -817,7 +819,9 @@ async function startTipConsensusListener(): Promise<void> {
     startTipListener(client, consensusDb);
     tipUserClient = client;
     console.log(
-      `[worker] tip consensus listener connected — ${dialogs.length} chats/channels cached — ${SEND_TIP_CONSENSUS_ALERTS ? "LIVE" : "mode observation (no repost)"}.`,
+      `[worker] tip consensus listener connected — ${dialogs.length} chats/channels cached — ${SEND_TIP_CONSENSUS_ALERTS ? "LIVE" : "mode observation (no repost)"} — ` +
+        `seuil ${getTipConsensusConfig().minGroups} groupes / ${getTipConsensusConfig().windowMinutes} min — ` +
+        `${TIP_LISTENER_CHANNELS_ONLY ? "canaux broadcast uniquement" : "tous groupes et canaux"}.`,
     );
 
     // Watchdog + dialog-cache refresh on one timer (every 5 min). Two jobs:

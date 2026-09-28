@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   applyConsensusAndAlert,
   checkConsensus,
@@ -418,5 +418,35 @@ describe("consensus primitives", () => {
     });
     expect(sendCalls).toBe(0);
     expect(db._alerts).toHaveLength(0);
+  });
+});
+
+describe("default consensus config — 2 groupes suffisent (Noaim 2026-09-24)", () => {
+  it("two distinct channels posting the same pick fire one VIP alert with the default config", async () => {
+    const saved = { min: process.env.TIP_CONSENSUS_MIN_GROUPS, send: process.env.SEND_TIP_CONSENSUS_ALERTS };
+    delete process.env.TIP_CONSENSUS_MIN_GROUPS;
+    delete process.env.SEND_TIP_CONSENSUS_ALERTS;
+    try {
+      vi.resetModules();
+      const cfg = await import("../config");
+      expect(cfg.getTipConsensusConfig().minGroups).toBe(2);
+      expect(cfg.SEND_TIP_CONSENSUS_ALERTS).toBe(true);
+
+      const db = makeFakeDb([
+        { ...strictTip("canalA"), rawText: "Lyon vs Marseille over 2.5 cote 1.80" },
+        { ...strictTip("canalB"), rawText: "LYON - MARSEILLE +2.5 buts @1.85" },
+      ]);
+      const r = await applyConsensusAndAlert(db, PARSED, {
+        config: cfg.getTipConsensusConfig(),
+        sendEnabled: cfg.SEND_TIP_CONSENSUS_ALERTS,
+        send: async () => ({ chatId: "vip", messageId: 1 }),
+      });
+      expect(r).toMatchObject({ mode: "strict", groupCount: 2, sent: true });
+    } finally {
+      if (saved.min === undefined) delete process.env.TIP_CONSENSUS_MIN_GROUPS;
+      else process.env.TIP_CONSENSUS_MIN_GROUPS = saved.min;
+      if (saved.send === undefined) delete process.env.SEND_TIP_CONSENSUS_ALERTS;
+      else process.env.SEND_TIP_CONSENSUS_ALERTS = saved.send;
+    }
   });
 });
