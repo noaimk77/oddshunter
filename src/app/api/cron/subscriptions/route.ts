@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isEmailConfigured, sendCryptoRenewalReminder } from "@/lib/email";
 import { expireCryptoEntitlements, findCryptoEntitlementsToRemind } from "@/lib/crypto-payments";
-import { ensureTelegramWebhook } from "@/lib/telegram";
 
 /** Vercel Cron sends `Authorization: Bearer $CRON_SECRET`. */
 function isAuthorized(request: Request): boolean {
@@ -16,15 +15,13 @@ function isAuthorized(request: Request): boolean {
 }
 
 /**
- * Daily: keeps the Telegram webhook registered, reminds crypto subscribers whose month ends soon, then expires the
+ * Daily: reminds crypto subscribers whose month ends soon, then expires the
  * ones that ended (which removes them from the VIP channel).
  */
 export async function GET(request: Request) {
   if (!isAuthorized(request)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
-  await ensureTelegramWebhook(appUrl).catch((err) => console.error("[cron] could not set the Telegram webhook", err));
-
   let reminded = 0;
   if (isEmailConfigured()) {
     for (const entitlement of await findCryptoEntitlementsToRemind()) {
