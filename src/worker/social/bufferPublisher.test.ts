@@ -58,6 +58,8 @@ describe("bufferPublisher", () => {
     expect(queries).toHaveLength(1);
     expect(queries[0]).toContain("mode: shareNow");
     expect(queries[0]).toContain('channelId: "6ad7845e778b240e2f6ad942"');
+    expect(queries[0]).toContain("assets: []");
+    expect(queries[0]).toContain("needsApproval: false");
   });
 
   it("falls back to the queue when Buffer's schema rejects shareNow", async () => {

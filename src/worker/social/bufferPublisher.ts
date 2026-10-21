@@ -95,12 +95,14 @@ type CreatePostResult =
 
 /**
  * One createPost mutation. Arguments are inlined (JSON string syntax is
- * valid GraphQL string syntax) so we don't depend on Buffer's input type
- * names, which their docs don't spell out.
+ * valid GraphQL string syntax). Field names and enum values checked against
+ * Buffer's schema by introspection (2026-10-22): assets and needsApproval
+ * are required; ShareMode has shareNow / addToQueue / shareNext /
+ * customScheduled.
  */
 async function createPost(text: string, channelId: string, mode: "shareNow" | "addToQueue"): Promise<CreatePostResult> {
   const query = `mutation {
-  createPost(input: { text: ${JSON.stringify(text)}, channelId: ${JSON.stringify(channelId)}, schedulingType: automatic, mode: ${mode} }) {
+  createPost(input: { text: ${JSON.stringify(text)}, channelId: ${JSON.stringify(channelId)}, schedulingType: automatic, mode: ${mode}, assets: [], needsApproval: false }) {
     __typename
     ... on PostActionSuccess { post { id } }
     ... on MutationError { message }
