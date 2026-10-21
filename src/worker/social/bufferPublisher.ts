@@ -20,23 +20,52 @@ export function isBufferConfigured(): boolean {
   return Boolean(process.env.BUFFER_API_KEY);
 }
 
-const INTROS = [
-  "✅ Prono VIP validé",
-  "✅ Encore un prono VIP qui passe",
-  "✅ Validé pour le VIP",
-  "✅ Prono VIP gagnant",
-];
+const INTROS = ["✅ Prono VIP validé", "✅ Encore un prono VIP qui passe", "✅ Validé pour le VIP", "✅ Prono VIP gagnant"];
 const OUTROS = [
-  `Pronos gratuits chaque jour : ${TELEGRAM_LINK}`,
-  `Rejoins le canal gratuit : ${TELEGRAM_LINK}`,
-  `Les prochains pronos gratuits sont ici : ${TELEGRAM_LINK}`,
+  `Pronos gratuits : ${TELEGRAM_LINK}`,
+  `Canal gratuit : ${TELEGRAM_LINK}`,
+  `Les prochains sont ici : ${TELEGRAM_LINK}`,
 ];
+const RISK_NOTICE = "18+ Jouer comporte des risques.";
+/** X counts a post's length with weights; the free X plan caps it at 280. */
+const X_MAX_WEIGHT = 280;
 
 /** Stable per alert, so a retried publish keeps the same wording. */
 function pick<T>(items: T[], seed: string): T {
   let hash = 0;
   for (const ch of seed) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
   return items[Math.abs(hash) % items.length];
+}
+
+/**
+ * Conservative take on X's weighted length: Latin-range characters weigh 1,
+ * everything else (emoji, CJK…) 2, and anything that looks like a link the
+ * fixed 23 of a t.co URL. Overestimating only costs a shorter team name.
+ */
+export function xWeightedLength(text: string): number {
+  const urls = text.match(/(?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/\S*)?/gi) ?? [];
+  let rest = text;
+  for (const url of urls) rest = rest.replace(url, "");
+  let weight = urls.length * 23;
+  for (const ch of rest) {
+    const cp = ch.codePointAt(0)!;
+    const light =
+      cp <= 0x10ff || (cp >= 0x2000 && cp <= 0x200d) || (cp >= 0x2010 && cp <= 0x201f) || (cp >= 0x2032 && cp <= 0x2037);
+    weight += light ? 1 : 2;
+  }
+  return weight;
+}
+
+/** Shortens the two team names until the post fits on X. */
+function fitToX(build: (home: string, away: string) => string, home: string, away: string): string {
+  let text = build(home, away);
+  let max = Math.max(home.length, away.length);
+  while (xWeightedLength(text) > X_MAX_WEIGHT && max > 8) {
+    max -= 4;
+    const cut = (name: string) => (name.length > max ? `${name.slice(0, max - 1).trimEnd()}…` : name);
+    text = build(cut(home), cut(away));
+  }
+  return text;
 }
 
 export interface ValidatedPick {
@@ -54,17 +83,25 @@ export function composeValidatedPost(p: ValidatedPick): string {
   const score = p.halfTimeScore
     ? `${p.halfTimeScore.homeScore}-${p.halfTimeScore.awayScore} à la mi-temps`
     : `${p.homeScore}-${p.awayScore}`;
-  return [
-    pick(INTROS, p.id),
-    "",
-    `⚽ ${sanitizeTeamName(p.homeTeam)} vs ${sanitizeTeamName(p.awayTeam)}`,
-    `🎯 ${formatMarketSelection(p)}`,
-    `📊 Score : ${score}`,
-    "",
-    pick(OUTROS, p.id),
-    "",
-    "🔞 Jouer comporte des risques.",
-  ].join("\n");
+  const pickLabel = formatMarketSelection(p);
+  return fitToX(
+    (home, away) =>
+      [pick(INTROS, p.id), "", `⚽ ${home} vs ${away}`, `🎯 ${pickLabel}`, `📊 Score : ${score}`, "", pick(OUTROS, p.id), RISK_NOTICE].join("\n"),
+    sanitizeTeamName(p.homeTeam),
+    sanitizeTeamName(p.awayTeam),
+  );
+}
+
+export type FreePick = Pick<ValidatedPick, "homeTeam" | "awayTeam" | "market" | "selection">;
+
+/** The free-channel pick, rebuilt short for X (the Telegram text is too long). */
+export function composeFreePickPost(tip: FreePick): string {
+  const pickLabel = formatMarketSelection(tip);
+  return fitToX(
+    (home, away) => ["🎁 Prono gratuit du jour", "", `⚽ ${home} vs ${away}`, `🎯 ${pickLabel}`, "", `Canal gratuit : ${TELEGRAM_LINK}`, RISK_NOTICE].join("\n"),
+    sanitizeTeamName(tip.homeTeam),
+    sanitizeTeamName(tip.awayTeam),
+  );
 }
 
 // In-memory daily cap: a restart resets it, which at worst allows a few
@@ -130,19 +167,14 @@ async function createPost(text: string, channelId: string, mode: "shareNow" | "a
   return { ok: true, postId: result.post?.id ?? null };
 }
 
-/** The free pick as posted on Telegram, with the channel link and risk notice. */
-export function composeFreePickPost(telegramText: string): string {
-  return [telegramText.trim(), "", `Pronos gratuits chaque jour : ${TELEGRAM_LINK}`, "", "🔞 Jouer comporte des risques."].join("\n");
-}
-
 /** Publishes a WON pick on X. Never throws. */
 export async function publishValidatedPick(p: ValidatedPick, now = new Date()): Promise<boolean> {
   return publish(p.id, composeValidatedPost(p), now);
 }
 
 /** Publishes the free-channel pick on X. Never throws. */
-export async function publishFreePick(label: string, telegramText: string, now = new Date()): Promise<boolean> {
-  return publish(label, composeFreePickPost(telegramText), now);
+export async function publishFreePick(tip: FreePick, now = new Date()): Promise<boolean> {
+  return publish(`free pick ${tip.homeTeam} vs ${tip.awayTeam}`, composeFreePickPost(tip), now);
 }
 
 async function publish(id: string, text: string, now: Date): Promise<boolean> {

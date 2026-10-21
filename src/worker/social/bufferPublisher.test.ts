@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { composeFreePickPost, composeValidatedPost, publishFreePick, publishValidatedPick, resetDailyCapForTests, type ValidatedPick } from "./bufferPublisher";
+import { composeFreePickPost, composeValidatedPost, publishFreePick, publishValidatedPick, xWeightedLength, resetDailyCapForTests, type ValidatedPick } from "./bufferPublisher";
 
 const pickFixture: ValidatedPick = {
   id: "alert_1",
@@ -40,6 +40,7 @@ describe("bufferPublisher", () => {
     expect(text).toContain("Score : 2-0");
     expect(text).toContain("t.me/oddshunter98");
     expect(text).toContain("Jouer comporte des risques");
+    expect(xWeightedLength(text)).toBeLessThanOrEqual(280);
   });
 
   it("shows the half-time score for a first-half pick", () => {
@@ -94,10 +95,32 @@ describe("bufferPublisher", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("posts the free pick with the channel link and the risk notice", async () => {
+  it("posts the free pick, rebuilt short, with the channel link and the risk notice", async () => {
     const queries = mockBuffer([]);
-    expect(composeFreePickPost("🎁 Prono gratuit\n\nA vs B")).toMatch(/A vs B[\s\S]*t\.me\/oddshunter98[\s\S]*risques/);
-    expect(await publishFreePick("A vs B", "🎁 Prono gratuit\n\nA vs B")).toBe(true);
-    expect(queries[0]).toContain("A vs B");
+    const text = composeFreePickPost(pickFixture);
+    expect(text).toContain("Aleksandrovac vs Drina Zvornik");
+    expect(text).toContain("Plus de 1,5 buts");
+    expect(text).toMatch(/t\.me\/oddshunter98[\s\S]*risques/);
+    expect(await publishFreePick(pickFixture)).toBe(true);
+    expect(queries[0]).toContain("Prono gratuit");
+  });
+
+  it("keeps every post within X's 280 limit, even with very long team names", () => {
+    const longNames = {
+      ...pickFixture,
+      homeTeam: "Club Atlético Deportivo Independiente Juventud Unida Reserva",
+      awayTeam: "Sociedad Deportiva Recreativa Universidad Nacional Sub-21",
+    };
+    for (const text of [composeValidatedPost(longNames), composeFreePickPost(longNames)]) {
+      expect(xWeightedLength(text)).toBeLessThanOrEqual(280);
+      expect(text).toContain("t.me/oddshunter98");
+    }
+    expect(xWeightedLength(composeValidatedPost(pickFixture))).toBeLessThanOrEqual(280);
+  });
+
+  it("weighs emoji double and links as 23, like X", () => {
+    expect(xWeightedLength("abc")).toBe(3);
+    expect(xWeightedLength("✅")).toBe(2);
+    expect(xWeightedLength("t.me/oddshunter98")).toBe(23);
   });
 });

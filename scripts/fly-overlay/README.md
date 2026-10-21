@@ -1,0 +1,26 @@
+# Worker deploy: production image + Buffer/X publisher
+
+Production (`oddshunter-worker`, v182, 2026-10-17) runs code that is newer
+than anything on GitHub. A normal `fly deploy` from this repo would roll the
+worker back by weeks. This kit instead starts FROM the exact production image
+and only adds `src/worker/social/bufferPublisher.ts` plus two small hooks.
+
+Steps (needs `FLY_API_TOKEN` and `BUFFER_API_KEY` in the environment):
+
+```sh
+mkdir -p /tmp/deploy/src/worker/social && cd /tmp/deploy
+cp <repo>/scripts/fly-overlay/{Dockerfile,patch.py} .
+cp <repo>/src/worker/social/bufferPublisher.ts src/worker/social/
+# the two production files to patch, straight from the running machine
+flyctl ssh console -a oddshunter-worker \
+  -C 'tar cf - -C /app src/worker/telegram/consensusOutcomeResolver.ts src/worker/telegram/pickShare.ts' | tar xf -
+python3 patch.py .                     # fails loudly if production code moved
+flyctl config save -a oddshunter-worker -y
+echo "BUFFER_API_KEY=$BUFFER_API_KEY" | flyctl secrets import --stage -a oddshunter-worker
+flyctl deploy --remote-only --dockerfile Dockerfile -a oddshunter-worker
+```
+
+The Dockerfile's last step imports the three patched modules, so a broken
+patch fails the build and production is left untouched.
+
+Rollback: `flyctl deploy -a oddshunter-worker --image registry.fly.io/oddshunter-worker:deployment-01M54SQFM8Q05F8NT1PEX0VBCE`.
