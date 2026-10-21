@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
 import { db } from "@/lib/db";
 import { PRICE_TO_ENTITLEMENT } from "@/lib/stripe";
+import { enforceVipChannelAccess } from "@/lib/telegram";
 
 /** Maps Stripe's subscription lifecycle onto our simpler internal states. */
 export function mapStripeStatus(status: Stripe.Subscription.Status): string {
@@ -56,4 +57,6 @@ export async function syncEntitlementFromSubscription(subscription: Stripe.Subsc
       currentPeriodEnd,
     },
   });
+
+  if (type === "VIP") await enforceVipChannelAccess(user.id, status);
 }

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/guards";
 import { isStripeConfigured } from "@/lib/stripe";
 import { getPlanDisplays } from "@/lib/plans";
+import { getOrCreateVipInviteLink, isTelegramConfigured } from "@/lib/telegram";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,16 @@ export default async function AccountPage() {
   ]);
 
   const entitlements = Object.fromEntries(entitlementRows.map((e) => [e.type, e.status]));
+
+  // Personal join-request link — the bot only lets this account's own
+  // Telegram user in, and only while VIP is ACTIVE (see lib/telegram.ts).
+  let vipInviteLink: string | null = null;
+  if (entitlements.VIP === "ACTIVE" && isTelegramConfigured()) {
+    vipInviteLink = await getOrCreateVipInviteLink(user.id).catch((err) => {
+      console.error("[account] could not get the VIP invite link", err);
+      return null;
+    });
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -86,20 +97,26 @@ export default async function AccountPage() {
             />
           </SectionCard>
 
-          {entitlements.VIP === "ACTIVE" && process.env.TELEGRAM_VIP_INVITE_LINK && (
+          {entitlements.VIP === "ACTIVE" && isTelegramConfigured() && (
             <SectionCard
               title="Canal VIP"
-              description="Lien d'invitation privé — réservé aux abonnés VIP actifs, ne le partage pas."
+              description="Lien personnel : seul ton compte Telegram sera accepté, tant que ton abonnement VIP est actif."
               className="lg:col-span-3"
             >
-              <Button
-                size="lg"
-                render={<a href={process.env.TELEGRAM_VIP_INVITE_LINK} target="_blank" rel="noopener noreferrer" />}
-                nativeButton={false}
-                className="gap-2"
-              >
-                <MessageCircle className="h-4 w-4" /> Rejoindre le canal Telegram VIP
-              </Button>
+              {vipInviteLink ? (
+                <Button
+                  size="lg"
+                  render={<a href={vipInviteLink} target="_blank" rel="noopener noreferrer" />}
+                  nativeButton={false}
+                  className="gap-2"
+                >
+                  <MessageCircle className="h-4 w-4" /> Rejoindre le canal Telegram VIP
+                </Button>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Le lien d&apos;accès est momentanément indisponible. Recharge la page dans quelques instants.
+                </p>
+              )}
             </SectionCard>
           )}
         </div>

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 
 const PUBLIC_PATHS = new Set(["/", "/login", "/register", "/forgot-password", "/reset-password", "/mentions-legales"]);
-const PUBLIC_API_PREFIXES = ["/api/auth", "/api/stripe/webhook"];
+const PUBLIC_API_PREFIXES = ["/api/auth", "/api/stripe/webhook", "/api/telegram/webhook"];
 
 /**
  * Next.js 16 renamed `middleware` to `proxy` — and crucially, `proxy`

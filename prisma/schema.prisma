@@ -36,6 +36,12 @@ model User {
 
   stripeCustomerId String? @unique
 
+  /// Telegram account approved into the VIP channel through this user's link
+  /// — the one removed when VIP access ends (see src/lib/telegram.ts).
+  telegramUserId     String? @unique
+  /// This user's personal join-request link to the VIP channel.
+  telegramInviteLink String? @unique
+
   accounts       Account[]
   sessions       Session[]
   entitlements   Entitlement[]

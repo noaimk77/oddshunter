@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type Stripe from "stripe";
 import { db } from "@/lib/db";
 import { stripe } from "@/lib/stripe";
@@ -44,7 +44,7 @@ describe("POST /api/stripe/webhook", () => {
   let user: Awaited<ReturnType<typeof db.user.create>>;
 
   beforeEach(async () => {
-    await db.entitlement.deleteMany({});
+    await db.entitlement.deleteMany({ where: { user: { email: "webhook-test@oddshunter.dev" } } });
     await db.stripeEvent.deleteMany({});
     await db.user.deleteMany({ where: { email: "webhook-test@oddshunter.dev" } });
     user = await db.user.create({
@@ -53,7 +53,7 @@ describe("POST /api/stripe/webhook", () => {
   });
 
   afterAll(async () => {
-    await db.entitlement.deleteMany({});
+    await db.entitlement.deleteMany({ where: { user: { email: "webhook-test@oddshunter.dev" } } });
     await db.stripeEvent.deleteMany({});
     await db.user.deleteMany({ where: { email: "webhook-test@oddshunter.dev" } });
   });
@@ -156,5 +156,80 @@ describe("POST /api/stripe/webhook", () => {
     });
     expect(entitlement?.status).toBe("PAST_DUE");
     vi.restoreAllMocks();
+  });
+
+  describe("VIP channel removal", () => {
+    const telegramCalls: { method: string; params: Record<string, unknown> }[] = [];
+
+    function mockTelegramApi(status = 200, body: unknown = { ok: true, result: true }) {
+      telegramCalls.length = 0;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        telegramCalls.push({ method: String(input).split("/").pop()!, params: JSON.parse(String(init?.body)) });
+        return new Response(JSON.stringify(body), { status });
+      });
+    }
+
+    beforeEach(async () => {
+      vi.stubEnv("TELEGRAM_BOT_TOKEN", "123:test-token");
+      vi.stubEnv("TELEGRAM_VIP_CHAT_ID", "-1001234567890");
+      await db.user.update({ where: { id: user.id }, data: { telegramUserId: "4242" } });
+      await POST(signedRequest(subscriptionEvent("evt_vip_start", { customer: user.stripeCustomerId })));
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+    });
+
+    it.each(["canceled", "past_due", "unpaid"] as const)(
+      "removes the bound Telegram account when the VIP subscription becomes %s",
+      async (status) => {
+        mockTelegramApi();
+        const res = await POST(
+          signedRequest(subscriptionEvent(`evt_vip_${status}`, { customer: user.stripeCustomerId, status }))
+        );
+        expect(res.status).toBe(200);
+        expect(telegramCalls).toEqual([
+          { method: "unbanChatMember", params: { chat_id: "-1001234567890", user_id: 4242 } },
+        ]);
+      }
+    );
+
+    it("leaves the member in place while the VIP subscription stays active", async () => {
+      mockTelegramApi();
+      await POST(signedRequest(subscriptionEvent("evt_vip_renewed", { customer: user.stripeCustomerId })));
+      expect(telegramCalls).toHaveLength(0);
+    });
+
+    it("doesn't touch the VIP channel when only the Bot subscription ends", async () => {
+      mockTelegramApi();
+      await POST(
+        signedRequest(
+          subscriptionEvent("evt_bot_canceled", {
+            customer: user.stripeCustomerId,
+            status: "canceled",
+            priceId: "price_test_bot",
+          })
+        )
+      );
+      expect(telegramCalls).toHaveLength(0);
+    });
+
+    it("answers 500 and leaves the event unrecorded when Telegram is down, so Stripe retries", async () => {
+      mockTelegramApi(502, { ok: false, error_code: 502, description: "Bad Gateway" });
+      const res = await POST(
+        signedRequest(subscriptionEvent("evt_vip_tg_down", { customer: user.stripeCustomerId, status: "canceled" }))
+      );
+      expect(res.status).toBe(500);
+      expect(await db.stripeEvent.findUnique({ where: { id: "evt_vip_tg_down" } })).toBeNull();
+    });
+
+    it("acknowledges a deterministic Telegram 400 instead of retrying for days", async () => {
+      mockTelegramApi(400, { ok: false, error_code: 400, description: "Bad Request: can't remove chat owner" });
+      const res = await POST(
+        signedRequest(subscriptionEvent("evt_vip_owner", { customer: user.stripeCustomerId, status: "canceled" }))
+      );
+      expect(res.status).toBe(200);
+    });
   });
 });
