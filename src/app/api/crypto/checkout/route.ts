@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/guards";
 import { getPlanDisplays } from "@/lib/plans";
-import { createCryptoInvoice, isCryptoConfigured } from "@/lib/crypto-payments";
+import { createCryptoInvoice, isCryptoCoin, isCryptoConfigured } from "@/lib/crypto-payments";
 
 export async function POST(request: Request) {
   if (!isCryptoConfigured()) {
@@ -16,6 +16,10 @@ export async function POST(request: Request) {
   const type = body?.type;
   if (type !== "VIP" && type !== "BOT") {
     return NextResponse.json({ error: "Unknown plan." }, { status: 400 });
+  }
+  const coin = body?.coin;
+  if (!isCryptoCoin(coin)) {
+    return NextResponse.json({ error: "Crypto non acceptée — Bitcoin ou USDC uniquement." }, { status: 400 });
   }
 
   // Same price as the Stripe plan, never an amount from the client.
@@ -32,6 +36,7 @@ export async function POST(request: Request) {
     const url = await createCryptoInvoice({
       userId: user.id,
       type,
+      coin,
       amount: plan.amount,
       currency: plan.currency,
       appUrl,

@@ -1,9 +1,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
 import { enforceVipChannelAccess } from "@/lib/telegram";
+import { revokeTelegramLink } from "@/worker/telegram/linking";
 
 /**
- * Crypto payments through NOWPayments (BTC, USDT, ETH, …).
+ * Crypto payments through NOWPayments — Bitcoin and USDC only.
  *
  * A blockchain payment is always pushed by the payer — nobody can debit a
  * wallet — so a crypto "subscription" is prepaid month by month: each paid
@@ -14,6 +15,14 @@ import { enforceVipChannelAccess } from "@/lib/telegram";
  */
 
 export type CryptoPlanType = "VIP" | "BOT";
+
+/** The only coins offered, keyed by what the client sends → NOWPayments ticker. */
+export const CRYPTO_COINS = { btc: "btc", usdc: "usdc" } as const;
+export type CryptoCoin = keyof typeof CRYPTO_COINS;
+
+export function isCryptoCoin(value: unknown): value is CryptoCoin {
+  return typeof value === "string" && Object.hasOwn(CRYPTO_COINS, value);
+}
 
 const NOWPAYMENTS_API = "https://api.nowpayments.io/v1";
 const REMINDER_DAYS_BEFORE_END = 3;
@@ -32,6 +41,7 @@ export function addOneMonth(date: Date): Date {
 export async function createCryptoInvoice(params: {
   userId: string;
   type: CryptoPlanType;
+  coin: CryptoCoin;
   amount: number; // in the currency's smallest unit, like Stripe prices
   currency: string;
   appUrl: string;
@@ -44,6 +54,7 @@ export async function createCryptoInvoice(params: {
     body: JSON.stringify({
       price_amount: params.amount / 100,
       price_currency: params.currency.toLowerCase(),
+      pay_currency: CRYPTO_COINS[params.coin],
       order_id: payment.id,
       order_description: `Odds Hunter ${params.type} — 1 mois`,
       ipn_callback_url: `${params.appUrl}/api/crypto/webhook`,
@@ -147,6 +158,7 @@ export async function expireCryptoEntitlements(now = new Date()): Promise<number
       // Remove from the channel first: if Telegram fails, the row stays
       // ACTIVE and tomorrow's run tries again.
       if (entitlement.type === "VIP") await enforceVipChannelAccess(entitlement.userId, "CANCELED");
+      if (entitlement.type === "BOT") await revokeTelegramLink(db, entitlement.userId);
       await db.entitlement.update({ where: { id: entitlement.id }, data: { status: "CANCELED" } });
       count++;
     } catch (err) {

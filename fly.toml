@@ -1,0 +1,45 @@
+# fly.toml app configuration file generated for oddshunter-worker on 2026-08-28T13:34:29+02:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'oddshunter-worker'
+primary_region = 'cdg'
+kill_signal = 'SIGTERM'
+kill_timeout = '30s'
+
+# swap_size_mb is a TOP-LEVEL fly.toml key. It was previously nested under
+# [[vm]] where Fly silently ignores it — so the box ran with 0 swap despite
+# the comment there claiming "512+512", and kept getting OOM-killed
+# (exit_code=137) every ~30 min, dropping every Telegram tip posted during
+# the reboot + gramjs re-cache window. Moved here 2026-09-01 so the 512MB
+# swap cushion the VM block always intended actually gets created.
+swap_size_mb = 512
+
+[build]
+  dockerfile = 'Dockerfile.worker'
+
+# [deploy] release_command was 'npx prisma migrate deploy' — removed
+# 2026-08-28 after first deploy failed with "datasource.url property is
+# required" despite DATABASE_URL being a valid Fly secret. Root cause not
+# yet diagnosed; migrations already applied against Prisma Postgres from
+# local dev anyway, so the release step was optional. Re-enable once we
+# confirm env-var propagation to release machines works (open one via
+# `flyctl ssh console -C 'printenv DATABASE_URL'` after deploy succeeds).
+
+[env]
+  NODE_ENV = 'production'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512
+  # 512MB RAM + 512MB swap (swap_size_mb is set at the top of this file —
+  # it does nothing here inside [[vm]]) to survive Node's occasional peaks
+  # (Prisma generate + tsx JIT + gramjs's 155-chat cache pushed us over
+  # 256MB and got the worker OOM-killed 10x in a row 2026-08-28, forcing
+  # Fly to stop restarting). Still in the free tier: Fly offers 3x
+  # shared-cpu 256MB = 768MB total; one 512MB machine + no standby = 512MB
+  # used.

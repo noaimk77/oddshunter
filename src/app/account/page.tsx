@@ -10,20 +10,33 @@ import { SectionCard } from "@/components/shared/section-card";
 import { Button } from "@/components/ui/button";
 import { ChangePasswordForm } from "@/features/account/change-password-form";
 import { LogoutButton } from "@/features/account/logout-button";
+import { TelegramLinkButton } from "@/features/account/telegram-link-button";
+import { TelegramAutoRedirect } from "@/features/account/telegram-auto-redirect";
 import { PlansAccess } from "@/features/billing/plans-access";
 import { LandingHeader } from "@/features/landing/landing-header";
+import { getLocale } from "@/i18n/get-locale";
+import { getDictionary } from "@/i18n/get-dictionary";
 import { LandingFooter } from "@/features/landing/landing-footer";
+import { createTelegramLinkToken, buildTelegramDeepLink } from "@/worker/telegram/linking";
 
 function initials(email: string) {
   return email.slice(0, 2).toUpperCase();
 }
 
-export default async function AccountPage() {
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ checkout?: string }>;
+}) {
+  const locale = await getLocale();
+  const dict = await getDictionary(locale);
   const sessionUser = await requireAuth();
-  const [user, entitlementRows, plans] = await Promise.all([
+  const { checkout } = await searchParams;
+  const [user, entitlementRows, plans, telegramLink] = await Promise.all([
     db.user.findUniqueOrThrow({ where: { id: sessionUser.id } }),
     db.entitlement.findMany({ where: { userId: sessionUser.id } }),
     getPlanDisplays(),
+    db.telegramLink.findUnique({ where: { userId: sessionUser.id } }),
   ]);
 
   const entitlements = Object.fromEntries(entitlementRows.map((e) => [e.type, e.status]));
@@ -35,17 +48,29 @@ export default async function AccountPage() {
 
   // Personal join-request link — the bot only lets this account's own
   // Telegram user in, and only while VIP is ACTIVE (see lib/telegram.ts).
+  // Until the bot manages the channel (TELEGRAM_VIP_CHAT_ID unset), fall back
+  // to the shared invite link so active subscribers keep their access.
   let vipInviteLink: string | null = null;
   if (entitlements.VIP === "ACTIVE" && isTelegramConfigured()) {
     vipInviteLink = await getOrCreateVipInviteLink(user.id).catch((err) => {
       console.error("[account] could not get the VIP invite link", err);
       return null;
     });
+  } else if (entitlements.VIP === "ACTIVE") {
+    vipInviteLink = process.env.TELEGRAM_VIP_INVITE_LINK ?? null;
   }
+
+  // "Pay once, land on Telegram" — right after a successful Bot checkout,
+  // skip the extra "click to link Telegram" step and send the browser
+  // straight there. Only fires once (no existing, non-revoked link yet).
+  const botJustPurchased = checkout === "success" && entitlements.BOT === "ACTIVE" && (!telegramLink || telegramLink.revokedAt);
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME;
+  const autoRedirectUrl =
+    botJustPurchased && botUsername ? buildTelegramDeepLink(botUsername, await createTelegramLinkToken(db, sessionUser.id)) : null;
 
   return (
     <div className="flex min-h-screen flex-col">
-      <LandingHeader isAuthenticated />
+      <LandingHeader isAuthenticated locale={locale} t={dict.nav} />
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10 sm:px-6">
         <PageHeader eyebrow="Compte" title="Mon compte" description="Ton profil et tes abonnements Odds Hunter." />
 
@@ -105,10 +130,14 @@ export default async function AccountPage() {
             />
           </SectionCard>
 
-          {entitlements.VIP === "ACTIVE" && isTelegramConfigured() && (
+          {entitlements.VIP === "ACTIVE" && (isTelegramConfigured() || vipInviteLink) && (
             <SectionCard
               title="Canal VIP"
-              description="Lien personnel : seul ton compte Telegram sera accepté, tant que ton abonnement VIP est actif."
+              description={
+                isTelegramConfigured()
+                  ? "Lien personnel : seul ton compte Telegram sera accepté, tant que ton abonnement VIP est actif."
+                  : "Lien d'invitation privé — réservé aux abonnés VIP actifs, ne le partage pas."
+              }
               className="lg:col-span-3"
             >
               {vipInviteLink ? (
@@ -127,9 +156,27 @@ export default async function AccountPage() {
               )}
             </SectionCard>
           )}
+
+          {entitlements.BOT === "ACTIVE" && (
+            <SectionCard
+              title="Bot automatisé"
+              description="Lie ton compte pour recevoir les signaux du bot directement sur Telegram."
+              className="lg:col-span-3"
+            >
+              {autoRedirectUrl ? (
+                <TelegramAutoRedirect url={autoRedirectUrl} />
+              ) : telegramLink && !telegramLink.revokedAt ? (
+                <p className="text-sm text-foreground">
+                  Compte lié à Telegram{telegramLink.telegramUsername ? ` (@${telegramLink.telegramUsername})` : ""}.
+                </p>
+              ) : (
+                <TelegramLinkButton />
+              )}
+            </SectionCard>
+          )}
         </div>
       </main>
-      <LandingFooter />
+      <LandingFooter t={dict.footer} />
     </div>
   );
 }

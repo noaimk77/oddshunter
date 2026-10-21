@@ -1,16 +1,20 @@
 import Link from "next/link";
 import { LandingHeader } from "@/features/landing/landing-header";
+import { getLocale } from "@/i18n/get-locale";
+import { getDictionary } from "@/i18n/get-dictionary";
 import { LandingFooter } from "@/features/landing/landing-footer";
 import { auth } from "@/lib/auth";
 
 export const metadata = { title: "Mentions légales" };
 
 export default async function MentionsLegalesPage() {
+  const locale = await getLocale();
+  const dict = await getDictionary(locale);
   const session = await auth();
 
   return (
     <div className="flex min-h-screen flex-col">
-      <LandingHeader isAuthenticated={Boolean(session?.user)} />
+      <LandingHeader isAuthenticated={Boolean(session?.user)} locale={locale} t={dict.nav} />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-12 sm:px-6">
         <Link href="/" className="text-sm text-muted-foreground hover:text-foreground">
           ← Retour
@@ -73,7 +77,7 @@ export default async function MentionsLegalesPage() {
           </section>
         </div>
       </main>
-      <LandingFooter />
+      <LandingFooter t={dict.footer} />
     </div>
   );
 }

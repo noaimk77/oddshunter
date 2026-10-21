@@ -28,6 +28,56 @@
       "redirectUrl": null,
       "requestedAt": "2026-08-15T10:16:03.042Z",
       "status": "complete"
+    },
+    "netlify": {
+      "accountRequestId": "facctrq_61VFblpRevDeOgF0x16VDilxQFDPp9yDAk1l2dCemB8C",
+      "configuration": {},
+      "linkedAt": "2026-08-19T18:02:10.177Z",
+      "providerId": "prvdr_61UXju1taz9UCvkk95GEK",
+      "providerName": "Netlify",
+      "redirectUrl": null,
+      "requestedAt": "2026-08-19T18:02:10.176Z",
+      "status": "complete"
+    },
+    "prisma": {
+      "accountRequestId": "facctrq_61VHQvClQ37NxQEHr16VDilxQFDPp9yDAk1l2dCemSxs",
+      "configuration": {},
+      "linkedAt": "2026-08-24T18:51:24.623Z",
+      "providerId": "prvdr_61Ulq2NBoEkAzhMKC50vA",
+      "providerName": "Prisma",
+      "redirectUrl": null,
+      "requestedAt": "2026-08-24T18:51:24.623Z",
+      "status": "complete"
+    },
+    "railway": {
+      "accountRequestId": "facctrq_61VEQfV4BqpTwA09C16VDilxQFDPp9yDAk1l2dCemMgK",
+      "configuration": {},
+      "linkedAt": "2026-08-16T11:58:47.864Z",
+      "providerId": "prvdr_61UK2uWsoydL7tUBp57Fg",
+      "providerName": "Railway",
+      "redirectUrl": null,
+      "requestedAt": "2026-08-16T11:58:47.863Z",
+      "status": "complete"
+    },
+    "render": {
+      "accountRequestId": "facctrq_61VER3XTb0KeBCNvg16VDilxQFDPp9yDAk1l2dCemPMu",
+      "configuration": {},
+      "linkedAt": "2026-08-16T12:23:35.836Z",
+      "providerId": "prvdr_61UVwArXdJpejOfkn5POi",
+      "providerName": "Render",
+      "redirectUrl": null,
+      "requestedAt": "2026-08-16T12:23:35.836Z",
+      "status": "complete"
+    },
+    "supabase": {
+      "accountRequestId": "facctrq_61VHQu1ZuwdJHGhge16VDilxQFDPp9yDAk1l2dCem4k4",
+      "configuration": {},
+      "linkedAt": "2026-08-24T18:50:24.032Z",
+      "providerId": "prvdr_61UIXYHdsyF69pZbG52n2",
+      "providerName": "Supabase",
+      "redirectUrl": null,
+      "requestedAt": "2026-08-24T18:50:24.031Z",
+      "status": "complete"
     }
   },
   "resources": {
@@ -74,6 +124,125 @@
       "providerName": "Neon",
       "resourceId": "fres_61VE2abGzB655A4Eq16VDilxQFDPp9yDAk1l2dCemNui",
       "serviceId": "postgres"
+    },
+    "netlify-project": {
+      "configuration": {
+        "name": "oddscope"
+      },
+      "createdAt": "2026-08-16T11:15:58.600Z",
+      "lastRevealedAt": "2026-08-16T11:15:58.886Z",
+      "lastStatus": "complete",
+      "name": "netlify-project",
+      "providerId": "prvdr_61UXju1taz9UCvkk95GEK",
+      "providerName": "Netlify",
+      "resourceId": "fres_61VEQ051Dc402CAzo16VDilxQFDPp9yDAk1l2dCem5Ue",
+      "serviceId": "project"
+    },
+    "oddshunter": {
+      "configuration": {
+        "name": "oddshunter",
+        "repo": "https://github.com/noaimk77/oddshunter",
+        "branch": "redesign/odds-hunter",
+        "runtime": "node",
+        "build_command": "npm install && npm run build",
+        "start_command": "node .next/standalone/server.js",
+        "region": "frankfurt"
+      },
+      "createdAt": "2026-08-16T12:27:28.016Z",
+      "lastRevealedAt": "2026-08-16T12:27:28.314Z",
+      "lastStatus": "complete",
+      "name": "oddshunter",
+      "providerId": "prvdr_61UVwArXdJpejOfkn5POi",
+      "providerName": "Render",
+      "resourceId": "fres_61VER7DNAo5C5EXjO16VDilxQFDPp9yDAk1l2dCem5Ls",
+      "serviceId": "web-service"
+    },
+    "oddshunter-db": {
+      "configuration": {
+        "name": "oddscope"
+      },
+      "createdAt": "2026-08-28T17:25:23.470Z",
+      "lastRevealedAt": "2026-08-28T17:25:23.805Z",
+      "lastStatus": "complete",
+      "name": "oddshunter-db",
+      "providerId": "prvdr_61UIXYHdsyF69pZbG52n2",
+      "providerName": "Supabase",
+      "resourceId": "fres_61VIrTuvGpeWF9Cu616VDilxQFDPp9yDAk1l2dCemPVo",
+      "serviceId": "project"
+    },
+    "prisma-db": {
+      "configuration": {
+        "region": "us-east-1"
+      },
+      "createdAt": "2026-08-24T18:51:35.774Z",
+      "lastRevealedAt": "2026-08-24T18:51:36.085Z",
+      "lastStatus": "complete",
+      "name": "prisma-db",
+      "providerId": "prvdr_61Ulq2NBoEkAzhMKC50vA",
+      "providerName": "Prisma",
+      "resourceId": "fres_61VHQvNh0BdWpgG6216VDilxQFDPp9yDAk1l2dCem4cK",
+      "serviceId": "database"
+    },
+    "prisma-plan": {
+      "configuration": {},
+      "createdAt": "2026-08-24T18:51:25.873Z",
+      "lastRevealedAt": "2026-08-24T18:51:26.229Z",
+      "lastStatus": "complete",
+      "name": "prisma-plan",
+      "providerId": "prvdr_61Ulq2NBoEkAzhMKC50vA",
+      "providerName": "Prisma",
+      "resourceId": "fres_61VHQvFDexbnOF9aS16VDilxQFDPp9yDAk1l2dCemAXw",
+      "serviceId": "free"
+    },
+    "railway-hosting": {
+      "configuration": {},
+      "createdAt": "2026-08-16T12:02:17.292Z",
+      "lastRevealedAt": null,
+      "lastStatus": "needs_information",
+      "name": "railway-hosting",
+      "providerId": "prvdr_61UK2uWsoydL7tUBp57Fg",
+      "providerName": "Railway",
+      "resourceId": "fres_61VEQiuQXPw4c4c3m16VDilxQFDPp9yDAk1l2dCemAAC",
+      "serviceId": "hosting"
+    },
+    "railway-plan": {
+      "configuration": {},
+      "createdAt": "2026-08-16T11:58:49.532Z",
+      "lastRevealedAt": "2026-08-16T11:58:49.830Z",
+      "lastStatus": "complete",
+      "name": "railway-plan",
+      "providerId": "prvdr_61UK2uWsoydL7tUBp57Fg",
+      "providerName": "Railway",
+      "resourceId": "fres_61VEQfYvpAnTiaZbA16VDilxQFDPp9yDAk1l2dCem8mO",
+      "serviceId": "free"
+    },
+    "supabase-plan": {
+      "configuration": {},
+      "createdAt": "2026-08-28T17:25:03.522Z",
+      "lastRevealedAt": "2026-08-28T17:25:03.859Z",
+      "lastStatus": "complete",
+      "name": "supabase-plan",
+      "providerId": "prvdr_61UIXYHdsyF69pZbG52n2",
+      "providerName": "Supabase",
+      "resourceId": "fres_61VIrTZ496v6KxYBR16VDilxQFDPp9yDAk1l2dCemXUm",
+      "serviceId": "free"
     }
+  },
+  "managedProjectVariableEnvKeys": {
+    ".env": [
+      "API_FOOTBALL_KEY",
+      "AUTH_SECRET",
+      "AUTH_URL",
+      "DATABASE_URL",
+      "NEXT_PUBLIC_APP_URL",
+      "STRIPE_PRICE_BOT",
+      "STRIPE_PRICE_VIP",
+      "STRIPE_SECRET_KEY",
+      "STRIPE_WEBHOOK_SECRET",
+      "TELEGRAM_BOT_TOKEN",
+      "TELEGRAM_BOT_USERNAME",
+      "TELEGRAM_VIP_INVITE_LINK",
+      "THE_ODDS_API_KEY"
+    ]
   }
 }

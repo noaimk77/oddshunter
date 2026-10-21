@@ -23,22 +23,22 @@ function PlanCard({
   /** End of the prepaid crypto month, when the plan is active through crypto. */
   cryptoEndsAt?: string;
 }) {
-  const [loading, setLoading] = useState<"card" | "crypto" | null>(null);
+  const [loading, setLoading] = useState<"card" | "btc" | "usdc" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isActive = status === "ACTIVE";
 
-  const startCheckout = async (method: "card" | "crypto") => {
+  const startCheckout = async (method: "card" | "btc" | "usdc") => {
     setLoading(method);
     setError(null);
     try {
       const res = await fetch(method === "card" ? "/api/stripe/checkout" : "/api/crypto/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(method === "card" ? { priceId: plan.priceId } : { type: plan.type }),
+        body: JSON.stringify(method === "card" ? { priceId: plan.priceId } : { type: plan.type, coin: method }),
       });
       const data = await res.json().catch(() => null);
       if (data?.url) {
-        window.location.href = data.url;
+        window.location.assign(data.url);
         return;
       }
       setError(data?.error ?? "Une erreur est survenue au démarrage du paiement.");
@@ -49,10 +49,14 @@ function PlanCard({
     }
   };
 
-  const cryptoButton = cryptoConfigured && (
-    <Button variant="outline" className="mt-2 w-full" disabled={loading !== null} onClick={() => startCheckout("crypto")}>
-      {loading === "crypto" ? "Redirection…" : cryptoEndsAt ? "Prolonger d'un mois en crypto" : "Payer en crypto (BTC, USDT…)"}
-    </Button>
+  const cryptoButtons = cryptoConfigured && (
+    <div className="mt-2 grid grid-cols-2 gap-2">
+      {(["btc", "usdc"] as const).map((coin) => (
+        <Button key={coin} variant="outline" disabled={loading !== null} onClick={() => startCheckout(coin)}>
+          {loading === coin ? "Redirection…" : coin === "btc" ? "Payer en Bitcoin" : "Payer en USDC"}
+        </Button>
+      ))}
+    </div>
   );
 
   return (
@@ -80,9 +84,9 @@ function PlanCard({
           <p className="mt-4 text-xs text-positive">
             Payé en crypto jusqu&apos;au{" "}
             {new Date(cryptoEndsAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "Europe/Paris" })}.
-            Un rappel t&apos;est envoyé par e-mail avant la fin.
+            Un rappel t&apos;est envoyé par e-mail avant la fin{cryptoConfigured ? " — tu peux aussi prolonger d'un mois dès maintenant :" : "."}
           </p>
-          {cryptoButton}
+          {cryptoButtons}
         </>
       ) : isActive ? (
         <p className="mt-4 text-xs text-positive">Actif — gère-le avec « Gérer la facturation » ci-dessous.</p>
@@ -91,7 +95,7 @@ function PlanCard({
           <Button className="mt-4 w-full" disabled={!billingConfigured || loading !== null} onClick={() => startCheckout("card")}>
             {!billingConfigured ? "Facturation non configurée" : loading === "card" ? "Redirection…" : `Rejoindre — ${PLAN_LABEL[plan.type]}`}
           </Button>
-          {cryptoButton}
+          {cryptoButtons}
         </>
       )}
       {error && (

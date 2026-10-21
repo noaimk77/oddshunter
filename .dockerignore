@@ -1,0 +1,21 @@
+# Fly.io worker build context trimming. Dockerfile.worker only needs
+# package*.json, prisma/, prisma.config.ts, tsconfig.json, src/, scripts/
+# and the *.traineddata files — it runs its own `npm ci`, so none of the
+# build artifacts or the local node_modules belong in the upload.
+node_modules
+.next
+.netlify
+.git
+.vercel
+coverage
+*.tar.gz
+.env
+.env.*
+!.env.example
+.DS_Store
+npm-debug.log*
+
+# Site-only / non-worker source the worker image never imports.
+public
+business
+oddscope-preview.tar.gz
