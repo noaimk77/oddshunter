@@ -87,11 +87,13 @@ export function SubscriptionSection({
   bot,
   isAuthenticated,
   billingConfigured,
+  cryptoConfigured = false,
 }: {
   vip?: PlanDisplay;
   bot?: PlanDisplay;
   isAuthenticated: boolean;
   billingConfigured: boolean;
+  cryptoConfigured?: boolean;
 }) {
   return (
     <div id="abonnement" className="scroll-mt-20 overflow-hidden rounded-2xl border border-border/70 bg-card/40">
@@ -119,7 +121,7 @@ export function SubscriptionSection({
           ctaLabel={`Rejoindre le VIP – ${frPrice(vip)} €/mois`}
           priceId={vip?.priceId}
           isAuthenticated={isAuthenticated}
-          footnote={billingConfigured ? "Paiement sécurisé via Stripe." : "La facturation n'est pas encore configurée sur cet environnement."}
+          footnote={billingConfigured ? (cryptoConfigured ? "Paiement par carte (Stripe) ou en crypto (BTC, USDT…) depuis ton compte." : "Paiement sécurisé via Stripe.") : "La facturation n'est pas encore configurée sur cet environnement."}
           accent
         />
         <Column

@@ -40,18 +40,25 @@ export async function syncEntitlementFromSubscription(subscription: Stripe.Subsc
   const status = mapStripeStatus(subscription.status);
   const currentPeriodEnd = item?.current_period_end ? new Date(item.current_period_end * 1000) : null;
 
+  // A prepaid crypto month still running isn't Stripe's to end — only a
+  // Stripe subscription that becomes ACTIVE takes the row back.
+  const existing = await db.entitlement.findUnique({ where: { userId_type: { userId: user.id, type } } });
+  if (existing?.provider === "CRYPTO" && existing.status === "ACTIVE" && status !== "ACTIVE") return;
+
   await db.entitlement.upsert({
     where: { userId_type: { userId: user.id, type } },
     create: {
       userId: user.id,
       type,
       status,
+      provider: "STRIPE",
       stripeSubscriptionId: subscription.id,
       stripePriceId: priceId,
       currentPeriodEnd,
     },
     update: {
       status,
+      provider: "STRIPE",
       stripeSubscriptionId: subscription.id,
       stripePriceId: priceId,
       currentPeriodEnd,

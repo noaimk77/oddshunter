@@ -2,6 +2,7 @@ import { Sparkles } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getPlanDisplays, type PlanDisplay } from "@/lib/plans";
 import { isStripeConfigured } from "@/lib/stripe";
+import { isCryptoConfigured } from "@/lib/crypto-payments";
 import { LandingHeader } from "@/features/landing/landing-header";
 import { LandingFooter } from "@/features/landing/landing-footer";
 import { Reveal } from "@/features/landing/reveal";
@@ -105,7 +106,7 @@ export default async function LandingPage() {
         {/* 3. Subscription — VIP + Bot, one section */}
         <section className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
           <Reveal>
-            <SubscriptionSection vip={vip} bot={bot} isAuthenticated={isAuthenticated} billingConfigured={billingConfigured} />
+            <SubscriptionSection vip={vip} bot={bot} isAuthenticated={isAuthenticated} billingConfigured={billingConfigured} cryptoConfigured={isCryptoConfigured()} />
           </Reveal>
         </section>
 

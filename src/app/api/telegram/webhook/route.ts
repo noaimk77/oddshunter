@@ -38,7 +38,10 @@ async function shouldApprove(request: ChatJoinRequest): Promise<boolean> {
     where: { telegramInviteLink: link },
     include: { entitlements: { where: { type: "VIP" } } },
   });
-  if (!user || user.entitlements[0]?.status !== "ACTIVE") return false;
+  const vip = user?.entitlements[0];
+  if (!user || vip?.status !== "ACTIVE") return false;
+  // A prepaid crypto month past its end is expired even before the cron runs.
+  if (vip.provider === "CRYPTO" && (!vip.currentPeriodEnd || vip.currentPeriodEnd <= new Date())) return false;
 
   const telegramUserId = String(request.from.id);
   if (user.telegramUserId) return user.telegramUserId === telegramUserId;

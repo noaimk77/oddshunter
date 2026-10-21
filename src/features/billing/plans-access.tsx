@@ -13,23 +13,28 @@ function PlanCard({
   plan,
   status,
   billingConfigured,
+  cryptoConfigured,
+  cryptoEndsAt,
 }: {
   plan: PlanDisplay;
   status?: string;
   billingConfigured: boolean;
+  cryptoConfigured: boolean;
+  /** End of the prepaid crypto month, when the plan is active through crypto. */
+  cryptoEndsAt?: string;
 }) {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<"card" | "crypto" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isActive = status === "ACTIVE";
 
-  const handleCheckout = async () => {
-    setLoading(true);
+  const startCheckout = async (method: "card" | "crypto") => {
+    setLoading(method);
     setError(null);
     try {
-      const res = await fetch("/api/stripe/checkout", {
+      const res = await fetch(method === "card" ? "/api/stripe/checkout" : "/api/crypto/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId: plan.priceId }),
+        body: JSON.stringify(method === "card" ? { priceId: plan.priceId } : { type: plan.type }),
       });
       const data = await res.json().catch(() => null);
       if (data?.url) {
@@ -40,9 +45,15 @@ function PlanCard({
     } catch {
       setError("Impossible de contacter le serveur. Vérifie ta connexion.");
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   };
+
+  const cryptoButton = cryptoConfigured && (
+    <Button variant="outline" className="mt-2 w-full" disabled={loading !== null} onClick={() => startCheckout("crypto")}>
+      {loading === "crypto" ? "Redirection…" : cryptoEndsAt ? "Prolonger d'un mois en crypto" : "Payer en crypto (BTC, USDT…)"}
+    </Button>
+  );
 
   return (
     <div className="rounded-lg border border-border/70 bg-card/40 p-5">
@@ -64,19 +75,29 @@ function PlanCard({
       <p className="mt-2 font-mono text-2xl font-semibold text-foreground">{formatPlanPrice(plan)}</p>
       <p className="mt-2 text-sm text-muted-foreground">{plan.description}</p>
 
-      {isActive ? (
+      {isActive && cryptoEndsAt ? (
+        <>
+          <p className="mt-4 text-xs text-positive">
+            Payé en crypto jusqu&apos;au{" "}
+            {new Date(cryptoEndsAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "Europe/Paris" })}.
+            Un rappel t&apos;est envoyé par e-mail avant la fin.
+          </p>
+          {cryptoButton}
+        </>
+      ) : isActive ? (
         <p className="mt-4 text-xs text-positive">Actif — gère-le avec « Gérer la facturation » ci-dessous.</p>
       ) : (
         <>
-          <Button className="mt-4 w-full" disabled={!billingConfigured || loading} onClick={handleCheckout}>
-            {!billingConfigured ? "Facturation non configurée" : loading ? "Redirection…" : `Rejoindre — ${PLAN_LABEL[plan.type]}`}
+          <Button className="mt-4 w-full" disabled={!billingConfigured || loading !== null} onClick={() => startCheckout("card")}>
+            {!billingConfigured ? "Facturation non configurée" : loading === "card" ? "Redirection…" : `Rejoindre — ${PLAN_LABEL[plan.type]}`}
           </Button>
-          {error && (
-            <p role="alert" className="mt-2 text-xs text-signal-extreme">
-              {error}
-            </p>
-          )}
+          {cryptoButton}
         </>
+      )}
+      {error && (
+        <p role="alert" className="mt-2 text-xs text-signal-extreme">
+          {error}
+        </p>
       )}
     </div>
   );
@@ -86,11 +107,15 @@ export function PlansAccess({
   plans,
   entitlements,
   billingConfigured,
+  cryptoConfigured,
+  cryptoEndsAt,
   hasCustomer,
 }: {
   plans: PlanDisplay[];
   entitlements: Record<string, string>;
   billingConfigured: boolean;
+  cryptoConfigured: boolean;
+  cryptoEndsAt: Record<string, string>;
   hasCustomer: boolean;
 }) {
   const [portalLoading, setPortalLoading] = useState(false);
@@ -122,7 +147,14 @@ export function PlansAccess({
     <div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {plans.map((plan) => (
-          <PlanCard key={plan.type} plan={plan} status={entitlements[plan.type]} billingConfigured={billingConfigured} />
+          <PlanCard
+            key={plan.type}
+            plan={plan}
+            status={entitlements[plan.type]}
+            billingConfigured={billingConfigured}
+            cryptoConfigured={cryptoConfigured}
+            cryptoEndsAt={cryptoEndsAt[plan.type]}
+          />
         ))}
       </div>
       {hasCustomer && (

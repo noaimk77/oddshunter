@@ -117,3 +117,16 @@ export async function enforceVipChannelAccess(userId: string, status: string): P
     throw err;
   }
 }
+
+/**
+ * Points the bot's webhook at this deployment (idempotent — the daily cron
+ * calls it, so a new domain or a fresh bot is picked up without a manual step).
+ */
+export async function ensureTelegramWebhook(appUrl: string): Promise<void> {
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!isTelegramConfigured() || !secret) return;
+  const url = new URL("/api/telegram/webhook", appUrl).toString();
+  const info = await callTelegram<{ url: string; allowed_updates?: string[] }>("getWebhookInfo", {});
+  if (info.url === url && info.allowed_updates?.includes("chat_join_request")) return;
+  await callTelegram("setWebhook", { url, secret_token: secret, allowed_updates: ["chat_join_request"] });
+}

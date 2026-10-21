@@ -49,6 +49,7 @@ model User {
   alertRules     AlertRule[]
   notifications  Notification[]
   resetTokens    PasswordResetToken[]
+  cryptoPayments CryptoPayment[]
 }
 
 model Account {
@@ -108,20 +109,40 @@ model PasswordResetToken {
 
 /// type: "VIP" | "BOT"
 /// status: "ACTIVE" | "PAST_DUE" | "CANCELED" | "INCOMPLETE"
+/// provider: "STRIPE" (renews itself) | "CRYPTO" (prepaid month by month,
+/// expired by the daily cron once currentPeriodEnd passes)
 model Entitlement {
-  id                   String    @id @default(cuid())
-  userId               String
-  type                 String
-  status               String
-  stripeSubscriptionId String?   @unique
-  stripePriceId        String?
-  currentPeriodEnd     DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id                    String    @id @default(cuid())
+  userId                String
+  type                  String
+  status                String
+  provider              String    @default("STRIPE")
+  renewalReminderSentAt DateTime?
+  stripeSubscriptionId  String?   @unique
+  stripePriceId         String?
+  currentPeriodEnd      DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, type])
+}
+
+/// One crypto invoice (NOWPayments). Its id is the invoice's order_id, so the
+/// payment notification finds it back; creditedAt makes crediting the month
+/// happen once even if the notification is redelivered.
+model CryptoPayment {
+  id         String    @id @default(cuid())
+  userId     String
+  type       String
+  invoiceId  String?   @unique
+  status     String    @default("waiting")
+  creditedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 /// Processed Stripe webhook event IDs, so a redelivered event is a no-op.

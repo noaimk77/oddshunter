@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/guards";
 import { isStripeConfigured } from "@/lib/stripe";
 import { getPlanDisplays } from "@/lib/plans";
 import { getOrCreateVipInviteLink, isTelegramConfigured } from "@/lib/telegram";
+import { isCryptoConfigured } from "@/lib/crypto-payments";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,11 @@ export default async function AccountPage() {
   ]);
 
   const entitlements = Object.fromEntries(entitlementRows.map((e) => [e.type, e.status]));
+  const cryptoEndsAt = Object.fromEntries(
+    entitlementRows
+      .filter((e) => e.provider === "CRYPTO" && e.status === "ACTIVE" && e.currentPeriodEnd)
+      .map((e) => [e.type, e.currentPeriodEnd!.toISOString()])
+  );
 
   // Personal join-request link — the bot only lets this account's own
   // Telegram user in, and only while VIP is ACTIVE (see lib/telegram.ts).
@@ -88,11 +94,13 @@ export default async function AccountPage() {
             <ChangePasswordForm />
           </SectionCard>
 
-          <SectionCard title="Abonnements" description="Groupe VIP et Bot, facturés par Stripe." className="lg:col-span-3">
+          <SectionCard title="Abonnements" description="Groupe VIP et Bot — par carte (Stripe) ou en crypto." className="lg:col-span-3">
             <PlansAccess
               plans={plans}
               entitlements={entitlements}
               billingConfigured={isStripeConfigured()}
+              cryptoConfigured={isCryptoConfigured()}
+              cryptoEndsAt={cryptoEndsAt}
               hasCustomer={Boolean(user.stripeCustomerId)}
             />
           </SectionCard>
