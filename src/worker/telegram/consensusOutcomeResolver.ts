@@ -11,6 +11,7 @@ import {
   evaluateConsensusOutcome,
   replaceConsensusStatusLine,
 } from "./alertFormat";
+import { publishValidatedPick } from "../social/bufferPublisher";
 
 /** Common shape both result sources resolve to, so the grading logic below
  *  doesn't care which one actually found the match. */
@@ -282,6 +283,21 @@ export async function resolvePendingConsensusOutcomes(
       data: { outcome, resolvedAt: new Date(), homeScore, awayScore },
     });
     resolved++;
+
+    // Public proof on X, after the match and only for winners — the VIP
+    // pick itself never goes out before kick-off. Never throws.
+    if (outcome === "WON") {
+      await publishValidatedPick({
+        id: alert.id,
+        homeTeam: alert.homeTeam ?? "",
+        awayTeam: alert.awayTeam ?? "",
+        market: alert.market ?? "",
+        selection: alert.selection ?? "",
+        homeScore,
+        awayScore,
+        halfTimeScore: alert.market === "OVER_UNDER_HT" ? halfTimeScore : null,
+      });
+    }
   };
 
   for (const alert of pending) {

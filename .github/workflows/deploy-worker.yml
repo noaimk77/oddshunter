@@ -1,0 +1,40 @@
+# Deploys the Telegram worker (src/worker) to Fly.io from GitHub, so a deploy
+# doesn't depend on a laptop with flyctl logged in.
+# Needs two repository secrets: FLY_API_TOKEN (Fly deploy token for
+# oddshunter-worker) and BUFFER_API_KEY (Buffer personal API key).
+name: Deploy worker to Fly
+
+on:
+  push:
+    branches: [claude/worker-buffer-autopost]
+  workflow_dispatch:
+
+concurrency: deploy-worker
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::error::Add the FLY_API_TOKEN repository secret (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Current release (for rollback reference)
+        run: flyctl releases --app oddshunter-worker | head -5
+
+      - name: Set Buffer key on Fly
+        if: env.BUFFER_API_KEY != ''
+        run: echo "BUFFER_API_KEY=$BUFFER_API_KEY" | flyctl secrets import --stage --app oddshunter-worker
+
+      - name: Deploy
+        run: flyctl deploy --remote-only --app oddshunter-worker
