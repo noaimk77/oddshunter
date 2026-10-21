@@ -130,28 +130,41 @@ async function createPost(text: string, channelId: string, mode: "shareNow" | "a
   return { ok: true, postId: result.post?.id ?? null };
 }
 
+/** The free pick as posted on Telegram, with the channel link and risk notice. */
+export function composeFreePickPost(telegramText: string): string {
+  return [telegramText.trim(), "", `Pronos gratuits chaque jour : ${TELEGRAM_LINK}`, "", "🔞 Jouer comporte des risques."].join("\n");
+}
+
 /** Publishes a WON pick on X. Never throws. */
 export async function publishValidatedPick(p: ValidatedPick, now = new Date()): Promise<boolean> {
+  return publish(p.id, composeValidatedPost(p), now);
+}
+
+/** Publishes the free-channel pick on X. Never throws. */
+export async function publishFreePick(label: string, telegramText: string, now = new Date()): Promise<boolean> {
+  return publish(label, composeFreePickPost(telegramText), now);
+}
+
+async function publish(id: string, text: string, now: Date): Promise<boolean> {
   if (!isBufferConfigured()) return false;
   if (!takeDailySlot(now)) {
-    console.log(`[buffer] daily cap of ${MAX_POSTS_PER_DAY} posts reached — skipping ${p.id}`);
+    console.log(`[buffer] daily cap of ${MAX_POSTS_PER_DAY} posts reached — skipping ${id}`);
     return false;
   }
   const channelId = process.env.BUFFER_X_CHANNEL_ID || DEFAULT_X_CHANNEL_ID;
-  const text = composeValidatedPost(p);
   try {
     let result = await createPost(text, channelId, "shareNow");
     // If Buffer's schema doesn't take "shareNow", the next queue slot is
     // still a post within hours — better than nothing.
     if (!result.ok && result.schemaRejected) result = await createPost(text, channelId, "addToQueue");
     if (!result.ok) {
-      console.error(`[buffer] publish failed for ${p.id}: ${result.error}`);
+      console.error(`[buffer] publish failed for ${id}: ${result.error}`);
       return false;
     }
-    console.log(`[buffer] published validated pick ${p.id} (post ${result.postId ?? "?"})`);
+    console.log(`[buffer] published ${id} on X (post ${result.postId ?? "?"})`);
     return true;
   } catch (err) {
-    console.error(`[buffer] publish failed for ${p.id}:`, err instanceof Error ? err.message : err);
+    console.error(`[buffer] publish failed for ${id}:`, err instanceof Error ? err.message : err);
     return false;
   }
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { composeValidatedPost, publishValidatedPick, resetDailyCapForTests, type ValidatedPick } from "./bufferPublisher";
+import { composeFreePickPost, composeValidatedPost, publishFreePick, publishValidatedPick, resetDailyCapForTests, type ValidatedPick } from "./bufferPublisher";
 
 const pickFixture: ValidatedPick = {
   id: "alert_1",
@@ -92,5 +92,12 @@ describe("bufferPublisher", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     expect(await publishValidatedPick(pickFixture)).toBe(false);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("posts the free pick with the channel link and the risk notice", async () => {
+    const queries = mockBuffer([]);
+    expect(composeFreePickPost("🎁 Prono gratuit\n\nA vs B")).toMatch(/A vs B[\s\S]*t\.me\/oddshunter98[\s\S]*risques/);
+    expect(await publishFreePick("A vs B", "🎁 Prono gratuit\n\nA vs B")).toBe(true);
+    expect(queries[0]).toContain("A vs B");
   });
 });
