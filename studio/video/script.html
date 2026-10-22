@@ -1,0 +1,131 @@
+<script>
+// Voice-over lines = on-screen subtitles, timed on the recorded voice.
+const CAPS = [{"sc": "s1", "text": "618 matchs de foot suspects.", "a": 0.53, "b": 2.02}, {"sc": "s1", "text": "En une seule année.", "a": 2.66, "b": 3.46}, {"sc": "s1", "text": "Ça fait presque deux par jour, tu imagines ?", "a": 4.1, "b": 5.64}, {"sc": "s2", "text": "Un des derniers exemples ? C'était cet été, en Asie.", "a": 6.56, "b": 8.56}, {"sc": "s2", "text": "Le Laos enchaîne les défaites : 5-0, 4-0, 4-1…", "a": 9.2, "b": 13.0}, {"sc": "s2", "text": "Et pour finir, grosse claque : 7-2 contre la Birmanie.", "a": 13.64, "b": 16.48}, {"sc": "s3", "text": "Neuf buts dans un match international.", "a": 17.4, "b": 19.55}, {"sc": "s3", "text": "Deux buts contre son camp…", "a": 20.19, "b": 21.15}, {"sc": "s3", "text": "et trois cartons rouges.", "a": 21.79, "b": 22.6}, {"sc": "s3", "text": "Bizarre, non ?", "a": 23.24, "b": 23.87}, {"sc": "s3", "text": "C'est la seule équipe du tournoi dans ce cas.", "a": 24.51, "b": 26.4}, {"sc": "s4", "text": "Du coup, la fédé convoque tous les joueurs.", "a": 27.32, "b": 29.08}, {"sc": "s4", "text": "Ensuite, elle file le dossier à la police.", "a": 29.72, "b": 32.03}, {"sc": "s4", "text": "Et en octobre, d'après la presse…", "a": 32.67, "b": 34.27}, {"sc": "s4", "text": "un joueur a été arrêté.", "a": 34.91, "b": 36.08}, {"sc": "s4b", "text": "Et une autre source du Guardian raconte même", "a": 37.0, "b": 38.91}, {"sc": "s4b", "text": "qu'un joueur se serait vanté d'avoir truqué trois matchs…", "a": 39.36, "b": 41.59}, {"sc": "s4b", "text": "à plus de 10 000 dollars chacun.", "a": 42.23, "b": 43.92}, {"sc": "s4b", "text": "Alors que leur salaire était seulement de 10 par jour.", "a": 44.21, "b": 46.85}, {"sc": "s4b", "text": "Rien d'officiel pour l'instant, on reste prudents.", "a": 47.33, "b": 49.68}, {"sc": "s5", "text": "Et le pire, c'est que c'est loin d'être le seul.", "a": 50.6, "b": 52.87}, {"sc": "s5", "text": "En juin, à Hong Kong : 19 arrestations.", "a": 53.51, "b": 55.91}, {"sc": "s5", "text": "Joueurs et entraîneurs compris.", "a": 56.55, "b": 57.92}, {"sc": "s5", "text": "Et au Laos, 45 joueurs avaient déjà été bannis à vie…", "a": 58.56, "b": 61.33}, {"sc": "s5", "text": "de tous les matchs.", "a": 61.89, "b": 62.62}, {"sc": "s6", "text": "Et concrètement, comment ça se voit ?", "a": 63.42, "b": 64.93}, {"sc": "s6", "text": "Ce genre de match, d'habitude,", "a": 65.57, "b": 67.28}, {"sc": "s6", "text": "il y a quelques centaines d'euros misés, pas plus.", "a": 67.63, "b": 69.87}, {"sc": "s6", "text": "Et là, maintenant, imagine : d'un coup, plus de 10 000 €", "a": 70.51, "b": 74.05}, {"sc": "s6", "text": "qui tombent sur le « plus de 5,5 buts »…", "a": 74.69, "b": 76.81}, {"sc": "s6", "text": "La cote s'écroule, de 9 à 2,40.", "a": 77.45, "b": 80.37}, {"sc": "s6", "text": "L'argent arrive avant le scandale.", "a": 81.39, "b": 82.83}, {"sc": "s7", "text": "Ce genre de mouvement, notre bot le repère direct.", "a": 83.75, "b": 85.78}, {"sc": "s7", "text": "Et l'alerte tombe aussitôt dans notre canal Telegram.", "a": 86.42, "b": 88.67}, {"sc": "s7", "text": "Mon canal est gratuit, et en bio.", "a": 89.31, "b": 90.99}, {"sc": "s7", "text": "N'hésite pas à cliquer", "a": 90.99, "b": 92.11}, {"sc": "s7", "text": "si tu veux détecter plus de matchs truqués", "a": 92.11, "b": 93.53}, {"sc": "s7", "text": "et pouvoir parier dessus.", "a": 93.53, "b": 94.39}];
+// Phrase times come from the recorded voice-over (caps.json).
+const TAIL = 3.6, PH = [], SCENES = [];
+{
+  let prev = null;
+  CAPS.forEach((c, i) => {
+    if (c.sc !== prev) { SCENES.push([c.sc, i === 0 ? 0 : c.a - Math.min(0.35, (c.a - CAPS[i - 1].b) / 2), 0]); prev = c.sc; }
+    const words = c.text.replace(/ ([?:!»])/g, "\u00a0$1").replace(/« /g, "«\u00a0").split(" ");
+    const wts = words.map((w) => /\d/.test(w) ? Math.max(w.length, 6) : w.length + 1);
+    const tot = wts.reduce((x, y) => x + y, 0), dur = c.b - c.a;
+    let acc = 0; const wt = wts.map((x) => { const st = c.a + dur * acc / tot; acc += x; return st; });
+    PH.push({ sc: c.sc, text: c.text, words, wt, a: c.a, b: c.b });
+  });
+}
+const DURATION = PH[PH.length - 1].b + TAIL;
+SCENES.forEach((s, i) => { s[2] = i < SCENES.length - 1 ? SCENES[i + 1][1] : DURATION; });
+const CUTS = SCENES.slice(1).map((s) => s[1]);
+const P = (i) => PH[i - 1].a, E = (i) => PH[i - 1].b;
+const W = (i, w) => { const p = PH[i - 1], k = p.words.findIndex((x) => x.toLowerCase().startsWith(w.toLowerCase())); if (k < 0) throw new Error(`cue ${i} ${w}`); return p.wt[k]; };
+const S = (id) => SCENES.find((s) => s[0] === id)[1];
+// Key beats the music hits on (besides scene cuts).
+const DROP_A = W(31, "cote"), DROP_B = W(31, "2,40") + 0.15;
+const HITS = [W(1, "suspects"), W(6, "7-2"), W(18, "10"), DROP_B, W(33, "repère")];
+window.TIMING = { DURATION, SCENES, CUTS, HITS, PH: PH.map(({ text, a, b }) => ({ text, a, b })) };
+
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a=0, b=1) => Math.max(a, Math.min(b, x));
+const ease = (x) => { x = clamp(x); return 1 - Math.pow(1 - x, 3); };
+const inout = (x) => { x = clamp(x); return x < .5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3) / 2; };
+const back = (x) => { x = clamp(x); const c1 = 1.9, c3 = c1 + 1; return 1 + c3*Math.pow(x-1,3) + c1*Math.pow(x-1,2); };
+function rise(id, t, at, dur=0.45, dy=60) {
+  const p = ease((t - at) / dur), el = $(id);
+  el.style.opacity = p; el.style.transform = `translateY(${(1-p)*dy}px)`; el.style.filter = `blur(${(1-p)*10}px)`;
+}
+function slideL(id, t, at, dur=0.45) {
+  const p = ease((t - at) / dur), el = $(id);
+  el.style.opacity = p; el.style.transform = `translateX(${(1-p)*-260}px)`; el.style.filter = `blur(${(1-p)*8}px)`;
+}
+function slam(id, t, at, dur=0.4) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 2); el.style.transform = `scale(${2.2 - 1.2*ease(p)})`; el.style.filter = `blur(${(1-ease(p))*14}px)`;
+}
+function pop(id, t, at, dur=0.5) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 1.8); el.style.transform = `scale(${p === 0 ? .6 : .6 + .4*back(p)})`;
+}
+let shake = 0, red = 0;
+const impact = (t, at, amp=18) => { const d = t - at; if (d >= 0 && d < 0.35) shake = Math.max(shake, (1 - d/0.35) * amp); };
+const redHit = (t, at) => { if (t > at && t < at + 0.4) red = Math.max(red, 0.22 * (1 - (t - at) / 0.4)); };
+
+let shownPh = -2;
+function renderSubs(t) {
+  let idx = -1;
+  for (let i = 0; i < PH.length; i++) if (t >= PH[i].a - 0.05) idx = i;
+  if (idx === PH.length - 1 && t > PH[idx].b + 1.2) idx = -1;
+  const subs = $("subs");
+  if (idx !== shownPh) { subs.innerHTML = idx < 0 ? "" : PH[idx].words.map((w) => `<span>${w}</span>`).join(" "); shownPh = idx; }
+  if (idx < 0) { subs.style.opacity = 0; return; }
+  const p = PH[idx];
+  [...subs.children].forEach((el, k) => {
+    const end = k + 1 < p.wt.length ? p.wt[k + 1] : p.b;
+    el.className = t >= end ? "said" : t >= p.wt[k] ? "now" : "next";
+  });
+  const q = ease((t - p.a + 0.05) / 0.15);
+  subs.style.fontSize = p.text.length > 50 ? "50px" : "58px"; subs.style.opacity = q; subs.style.transform = `translateY(${(1-q)*16}px)`;
+}
+
+window.render = function (t) {
+  shake = 0; red = 0;
+  $("progress").style.width = (t / DURATION * 100) + "%";
+  for (const [id, a, b] of SCENES) {
+    const vis = (t >= a && t < b) ? Math.min(ease((t - a) / 0.2), id === "s7" ? 1 : 1 - ease((t - (b - 0.2)) / 0.2)) : 0;
+    $(id).style.opacity = vis;
+  }
+  let fl = 0; for (const c of CUTS) { const d = t - c; if (d >= -0.05 && d < 0.25) fl = Math.max(fl, 1 - Math.abs(d + 0.05) / 0.3); }
+  $("flash").style.opacity = fl * 0.55;
+  const cur = SCENES.find(([, a, b]) => t >= a && t < b) || SCENES[SCENES.length - 1];
+  let camScale = 1 + 0.05 * inout((t - cur[1]) / (cur[2] - cur[1]));
+
+  // S1
+  rise("s1tag", t, 0.1); pop("s1n", t, P(1) - 0.1, 0.4);
+  $("s1n").textContent = Math.max(0, Math.round(618 * inout((t - P(1) + 0.1) / 1.0)));
+  $("s1n").style.textShadow = `0 0 ${50 + 30*Math.sin(t*5)}px rgba(245,184,0,.5)`;
+  slam("s1a", t, W(1, "matchs")); impact(t, W(1, "matchs") + 0.1);
+  slam("s1b", t, W(1, "suspects")); impact(t, W(1, "suspects") + 0.2); redHit(t, W(1, "suspects") + 0.2);
+  rise("s1c", t, P(2)); rise("s1d", t, W(3, "presque"));
+  // S2
+  rise("s2tag", t, P(4) + 0.2); slam("s2t", t, W(4, "cet")); impact(t, W(4, "cet") + 0.2);
+  slideL("s2r1", t, W(5, "5-0")); slideL("s2r2", t, W(5, "4-0")); slideL("s2r3", t, W(5, "4-1"));
+  slideL("s2r4", t, W(6, "7-2")); impact(t, W(6, "7-2") + 0.3, 22); redHit(t, W(6, "7-2") + 0.3);
+  // S3
+  slam("s3a", t, S("s3") + 0.1); impact(t, S("s3") + 0.3, 22); rise("s3b", t, W(7, "match"));
+  pop("s3f1", t, P(8)); impact(t, P(8) + 0.2, 10); pop("s3f2", t, W(9, "trois")); impact(t, W(9, "trois") + 0.2, 10);
+  rise("s3d", t, P(11));
+  // S4
+  rise("s4tag", t, S("s4") + 0.1);
+  $("s4rail").style.height = (600 * inout((t - W(12, "convoque")) / (E(15) - W(12, "convoque")))) + "px";
+  slideL("s4e1", t, W(12, "convoque")); slideL("s4e2", t, W(13, "file")); impact(t, W(13, "file") + 0.3, 10); slideL("s4e3", t, P(14));
+  // S4b
+  rise("s4btag", t, P(16)); pop("s4b1", t, W(18, "10")); impact(t, W(18, "10") + 0.2, 14);
+  pop("s4b2", t, W(19, "10")); impact(t, W(19, "10") + 0.2, 10); rise("s4bnote", t, P(20));
+  // S5
+  rise("s5a", t, P(21)); pop("s5b", t, W(22, "19")); impact(t, W(22, "19") + 0.2, 10);
+  pop("s5c", t, W(24, "45")); impact(t, W(24, "45") + 0.2, 10);
+  // S6
+  rise("s6tag", t, P(26)); rise("s6a", t, P(27)); pop("s6m", t, W(29, "10")); impact(t, W(29, "10") + 0.2, 10);
+  rise("s6odds", t, P(30)); rise("s6chart", t, P(30) + 0.2, 0.4, 30);
+  const op = inout((t - DROP_A) / (DROP_B - DROP_A));
+  $("s6num").textContent = (9 - (9 - 2.4) * op).toFixed(2).replace(".", ",");
+  $("s6num").style.color = op > 0.05 ? "var(--red)" : "var(--text)";
+  const line = $("s6line"), len = line.getTotalLength();
+  line.style.strokeDasharray = len; line.style.strokeDashoffset = len * (1 - op);
+  if (t > DROP_A && t < DROP_B) { shake = Math.max(shake, 2.5); camScale += 0.05 * inout((t - DROP_A) / 1.5); }
+  impact(t, DROP_B); redHit(t, DROP_B);
+  rise("s6b", t, P(32));
+  // S7
+  rise("s7a", t, P(33)); pop("s7logo", t, W(33, "repère"), 0.6); impact(t, W(33, "repère") + 0.2);
+  pop("s7cta", t, P(35), 0.5); rise("s7foot", t, E(38) + 0.2, 0.4, 20);
+  $("s7cta").style.boxShadow = `0 0 ${30 + 25*Math.sin(t*4)}px rgba(245,184,0,.55)`;
+
+  renderSubs(t);
+  $("redflash").style.opacity = red;
+  const sx = shake ? Math.sin(t * 97) * shake : 0, sy = shake ? Math.cos(t * 83) * shake : 0;
+  $("cam").style.transform = `translate(${sx}px, ${sy}px) scale(${camScale})`;
+};
+window.render(0);
+</script>
+</body>
+</html>
