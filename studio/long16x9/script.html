@@ -1,0 +1,230 @@
+<script>
+// Voice-over lines = on-screen subtitles. Noaim reads them over the finished
+// video, so timing comes from text length (CPS), numbers counted as spoken.
+const CAPS = [
+  ["s1", "16 à 4."],
+  ["s1", "Sur le papier, c'est juste une défaite."],
+  ["s1", "Sauf que derrière ce score, il y a la meilleure équipe d'Amérique du Nord,"],
+  ["s1", "des milliers de dollars en skins, et sept personnes bannies à vie."],
+  ["s2", "On est en août 2014. Counter-Strike: Global Offensive explose."],
+  ["s2", "Et en Amérique du Nord, une équipe fait rêver tout le monde : iBUYPOWER."],
+  ["s2", "Des joueurs comme DaZeD, swag, steel, AZK, Skadoodle."],
+  ["s2", "Pour les fans, c'est l'équipe qui va enfin faire jeu égal avec les Européens."],
+  ["s3", "À l'époque, il y a un truc énorme autour de CS:GO : les paris en skins."],
+  ["s3", "Les skins, c'est les apparences d'armes dans le jeu."],
+  ["s3", "Certaines valent quelques centimes, d'autres des centaines, voire des milliers de dollars."],
+  ["s3", "Et sur des sites comme CSGOLounge, tu pouvais miser tes skins sur le résultat d'un match."],
+  ["s3", "Pas d'argent liquide, pas de bookmaker officiel, quasiment aucun contrôle."],
+  ["s3", "Et ces skins, tu pouvais les revendre. Donc en vrai, c'était de l'argent."],
+  ["s3", "Sauf que sur ces sites, personne ne vérifiait vraiment qui pariait."],
+  ["s3", "Pas de pièce d'identité, pas d'âge minimum contrôlé."],
+  ["s3", "Un gamin de 14 ans pouvait miser ses skins sur un match pro en deux clics."],
+  ["s3", "Et un joueur pro pouvait parier sur son propre match avec le compte d'un pote."],
+  ["s4", "Le 20 août 2014, iBUYPOWER joue un match de ligue, sur la CEVO,"],
+  ["s4", "contre une équipe beaucoup plus faible : NetcodeGuides.com."],
+  ["s4", "Franchement, personne ne regarde ce match pour le suspense."],
+  ["s4", "iBUYPOWER est grand favori. Tout le monde s'attend à une victoire facile."],
+  ["s4", "Et là, il se passe un truc bizarre. iBUYPOWER se fait marcher dessus."],
+  ["s4", "16 à 4."],
+  ["s4", "Des actions qui n'ont aucun sens, des joueurs qui foncent seuls,"],
+  ["s4", "des rounds lâchés sans se battre."],
+  ["s4", "Sur le moment, certains rigolent. D'autres trouvent ça louche."],
+  ["s4", "Mais bon, ça reste un match de ligue en ligne. L'histoire s'arrête là."],
+  ["s5", "Sauf qu'elle ne s'arrête pas là."],
+  ["s5", "Le 16 janvier 2015, un journaliste esport, Richard Lewis, publie une enquête."],
+  ["s5", "Et ce qu'il raconte, c'est que ce match n'a jamais été un vrai match."],
+  ["s6", "Selon son enquête, des gros paris ont été placés contre iBUYPOWER sur CSGOLounge."],
+  ["s6", "Avec l'aide d'un employé du site, il repère des mises inhabituellement élevées"],
+  ["s6", "sur ce match précis. Des paris passés via plusieurs comptes."],
+  ["s6", "Et derrière ces comptes, on retrouve des proches de l'équipe."],
+  ["s6", "Les chiffres qui sortent : environ 10 000 dollars de skins misés,"],
+  ["s6", "et autour de 7 000 dollars de skins récupérés."],
+  ["s6", "Pour une équipe comme iBUYPOWER, c'est même pas une somme énorme."],
+  ["s6", "C'est ça qui choque le plus. Ils auraient risqué toute leur carrière pour ça."],
+  ["s6", "Et Lewis ne s'arrête pas aux paris."],
+  ["s6", "Il publie aussi des conversations entre les personnes impliquées."],
+  ["s6", "On y voit qu'avant le match, certains savaient déjà comment ça allait finir."],
+  ["s7", "Onze jours plus tard, le 27 janvier 2015, Valve, l'éditeur du jeu, tombe."],
+  ["s7", "Et Valve ne fait pas semblant."],
+  ["s7", "Dans son communiqué, Valve explique que les skins de grande valeur gagnés sur ce match"],
+  ["s7", "ont été transférés, via un intermédiaire,"],
+  ["s7", "aux joueurs d'iBUYPOWER et au fondateur de NetcodeGuides."],
+  ["s7", "Résultat : sept personnes bannies de tous les tournois soutenus par Valve."],
+  ["s7", "Les quatre joueurs : DaZeD, swag, AZK et steel."],
+  ["s7", "Et trois personnes côté organisation et paris :"],
+  ["s7", "Duc « cud » Pham, Derek « dboorn » Boorn et Casey Foster."],
+  ["s7", "Skadoodle, lui, n'est pas sanctionné."],
+  ["s8", "Et derrière, c'est l'effet domino."],
+  ["s8", "CEVO, la ligue où le match s'est joué, FACEIT et ESEA suivent et suspendent les sept."],
+  ["s8", "Du jour au lendemain, la meilleure équipe d'Amérique du Nord disparaît."],
+  ["s9", "Le plus cruel, c'est la suite."],
+  ["s9", "En janvier 2018, une équipe nord-américaine gagne enfin un Major :"],
+  ["s9", "Cloud9, au Major de Boston."],
+  ["s9", "Et dans l'équipe, il y a un nom que tu connais déjà. Skadoodle."],
+  ["s9", "Le seul joueur d'iBUYPOWER qui n'avait pas été sanctionné."],
+  ["s9", "Forcément, tout le monde s'est posé la question :"],
+  ["s9", "et si les autres n'avaient jamais vendu ce match ?"],
+  ["s10", "Maintenant, pourquoi on te raconte ça sur une chaîne qui parle de cotes ?"],
+  ["s10", "Parce que ce qui a fait tomber ce match, au départ, c'est l'argent."],
+  ["s10", "Des mises énormes, sur un match qui n'intéresse presque personne,"],
+  ["s10", "toutes du même côté, contre le grand favori."],
+  ["s10", "C'est exactement le genre de signal qu'on regarde."],
+  ["s10", "Un, le volume. Un petit match de ligue qui attire d'un coup des mises énormes,"],
+  ["s10", "ça n'est pas normal."],
+  ["s10", "Deux, le sens. Quand tout l'argent part du même côté, et en plus contre le favori,"],
+  ["s10", "il faut se demander qui sait quelque chose."],
+  ["s10", "Trois, les comptes. Ici, les paris venaient de plusieurs comptes liés aux mêmes personnes."],
+  ["s10", "C'est ce qui a permis de remonter jusqu'à l'équipe."],
+  ["s10", "Quand l'argent arrive trop fort, trop tôt, et au mauvais endroit,"],
+  ["s10", "il y a souvent une histoire derrière."],
+  ["s11", "D'ailleurs, cette affaire a ouvert les yeux de tout le monde sur les paris en skins."],
+  ["s11", "En 2016, Valve finit par s'attaquer à ces sites"],
+  ["s11", "et leur demande d'arrêter d'utiliser les comptes Steam"],
+  ["s11", "pour faire tourner leurs paris."],
+  ["s11", "La même année, il y a même un autre scandale :"],
+  ["s11", "deux gros youtubeurs faisaient la promo d'un site de paris en skins…"],
+  ["s11", "sans dire qu'ils en étaient propriétaires."],
+  ["s11", "Bref, tout un système qui tournait sans règles."],
+  ["s12", "Et la fin de l'histoire ? En 2017, ESL et DreamHack lèvent leurs propres bannissements."],
+  ["s12", "Les joueurs peuvent rejouer sur certains tournois."],
+  ["s12", "Mais Valve, lui, ne bouge pas pendant des années."],
+  ["s12", "Il faudra attendre plus de dix ans pour que steel et swag"],
+  ["s12", "soient enfin autorisés à revenir sur les tournois Valve."],
+  ["s12", "Dix ans de carrière pour quelques milliers de dollars de skins."],
+  ["s12", "Et un match que plus personne n'a oublié."],
+  ["s13", "Si ce genre d'histoire te parle, abonne-toi."],
+  ["s13", "La prochaine affaire arrive bientôt."],
+];
+const CPS = 14.5, GAP = 0.35, SCENE_GAP = 0.45, LEAD = 0.8, TAIL = 4;
+const spokenLen = (t) => t.replace(/\b(19|20)\d\d\b/g, "x".repeat(18)).replace(/\d+[  ]000/g, "x".repeat(10)).replace(/\d+/g, "x".repeat(6)).length;
+const PH = [], SCENES = [];
+{
+  let cur = LEAD, prev = null;
+  for (const [sc, text] of CAPS) {
+    if (sc !== prev) { if (prev) cur += SCENE_GAP; SCENES.push([sc, Math.max(0, cur - 0.35), 0]); prev = sc; }
+    const words = text.replace(/ ([?:!»])/g, " $1").replace(/« /g, "« ").split(" ");
+    const wts = words.map((w) => /\d/.test(w) ? Math.max(w.length, 6) : w.length + 1);
+    const tot = wts.reduce((a, b) => a + b, 0), dur = Math.max(1.2, spokenLen(text) / CPS);
+    let acc = 0; const wt = wts.map((x) => { const s = cur + dur * acc / tot; acc += x; return s; });
+    PH.push({ sc, text, words, wt, a: cur, b: cur + dur });
+    cur += dur + GAP;
+  }
+  SCENES[0][1] = 0;
+}
+const DURATION = PH[PH.length - 1].b + TAIL;
+SCENES.forEach((s, i) => { s[2] = i < SCENES.length - 1 ? SCENES[i + 1][1] : DURATION; });
+const CUTS = SCENES.slice(1).map((s) => s[1]);
+// Phrase lookup by text prefix (first match), then word times inside it.
+const Q = (prefix) => { const i = PH.findIndex((p) => p.text.startsWith(prefix)); if (i < 0) throw new Error("phrase " + prefix); return PH[i]; };
+const P = (prefix) => Q(prefix).a, E = (prefix) => Q(prefix).b;
+const W = (prefix, w) => { const p = Q(prefix), k = p.words.findIndex((x) => x.toLowerCase().startsWith(w.toLowerCase())); if (k < 0) throw new Error(`cue ${prefix} ${w}`); return p.wt[k]; };
+const S = (id) => SCENES.find((s) => s[0] === id)[1];
+const HITS = [P("16 à 4."), W("Et là, il se passe", "marcher"), W("Résultat : sept", "sept"), P("Dix ans de carrière")];
+window.TIMING = { DURATION, SCENES, CUTS, HITS, PH: PH.map(({ text, a, b }) => ({ text, a, b })) };
+
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a=0, b=1) => Math.max(a, Math.min(b, x));
+const ease = (x) => { x = clamp(x); return 1 - Math.pow(1 - x, 3); };
+const inout = (x) => { x = clamp(x); return x < .5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3) / 2; };
+const back = (x) => { x = clamp(x); const c1 = 1.9, c3 = c1 + 1; return 1 + c3*Math.pow(x-1,3) + c1*Math.pow(x-1,2); };
+function rise(id, t, at, dur=0.45, dy=50) {
+  const p = ease((t - at) / dur), el = $(id);
+  el.style.opacity = p; el.style.transform = `translateY(${(1-p)*dy}px)`; el.style.filter = `blur(${(1-p)*10}px)`;
+}
+function slam(id, t, at, dur=0.4) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 2); el.style.transform = `scale(${2.2 - 1.2*ease(p)})`; el.style.filter = `blur(${(1-ease(p))*14}px)`;
+}
+function pop(id, t, at, dur=0.5) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 1.8); el.style.transform = `scale(${p === 0 ? .6 : .6 + .4*back(p)})`;
+}
+let shake = 0, red = 0;
+const impact = (t, at, amp=14) => { const d = t - at; if (d >= 0 && d < 0.35) shake = Math.max(shake, (1 - d/0.35) * amp); };
+const redHit = (t, at) => { if (t > at && t < at + 0.4) red = Math.max(red, 0.2 * (1 - (t - at) / 0.4)); };
+
+let shownPh = -2;
+function renderSubs(t) {
+  let idx = -1;
+  for (let i = 0; i < PH.length; i++) if (t >= PH[i].a - 0.05) idx = i;
+  if (idx === PH.length - 1 && t > PH[idx].b + 1.2) idx = -1;
+  const subs = $("subs");
+  if (idx !== shownPh) { subs.innerHTML = idx < 0 ? "" : PH[idx].words.map((w) => `<span>${w}</span>`).join(" "); shownPh = idx; }
+  if (idx < 0) { subs.style.opacity = 0; return; }
+  const p = PH[idx];
+  [...subs.children].forEach((el, k) => {
+    const end = k + 1 < p.wt.length ? p.wt[k + 1] : p.b;
+    el.className = t >= end ? "said" : t >= p.wt[k] ? "now" : "next";
+  });
+  const q = ease((t - p.a + 0.05) / 0.15);
+  subs.style.opacity = q; subs.style.transform = `translateY(${(1-q)*14}px)`;
+}
+
+window.render = function (t) {
+  shake = 0; red = 0;
+  $("progress").style.width = (t / DURATION * 100) + "%";
+  for (const [id, a, b] of SCENES) {
+    const vis = (t >= a && t < b) ? Math.min(ease((t - a) / 0.25), id === "s13" ? 1 : 1 - ease((t - (b - 0.25)) / 0.25)) : 0;
+    $(id).style.opacity = vis;
+  }
+  let fl = 0; for (const c of CUTS) { const d = t - c; if (d >= -0.05 && d < 0.25) fl = Math.max(fl, 1 - Math.abs(d + 0.05) / 0.3); }
+  $("flash").style.opacity = fl * 0.4;
+  const cur = SCENES.find(([, a, b]) => t >= a && t < b) || SCENES[SCENES.length - 1];
+  let camScale = 1 + 0.04 * inout((t - cur[1]) / (cur[2] - cur[1]));
+
+  // S1
+  slam("s1n", t, P("16 à 4.") - 0.1); impact(t, P("16 à 4.") + 0.15, 18); redHit(t, P("16 à 4.") + 0.15);
+  rise("s1a", t, W("des milliers de dollars", "sept"));
+  // S2
+  rise("s2tag", t, S("s2") + 0.1); slam("s2t", t, W("Et en Amérique du Nord", "iBUYPOWER")); impact(t, W("Et en Amérique du Nord", "iBUYPOWER") + 0.2);
+  ["DaZeD", "swag", "steel", "AZK", "Skadoodle"].forEach((n, i) => pop("s2p" + (i + 1), t, W("Des joueurs comme", n)));
+  // S3
+  rise("s3tag", t, S("s3") + 0.1);
+  pop("s3a", t, W("Certaines valent", "centimes")); pop("s3b", t, W("Certaines valent", "centaines")); pop("s3c", t, W("Certaines valent", "milliers"));
+  rise("s3x1", t, W("Pas de pièce", "pièce")); rise("s3x2", t, W("Pas de pièce", "d'âge")); rise("s3x3", t, W("Pas d'argent liquide", "bookmaker"));
+  // S4
+  rise("s4tag", t, S("s4") + 0.1); rise("s4board", t, P("Le 20 août 2014"));
+  pop("s4fav", t, P("iBUYPOWER est grand favori"));
+  { const a = P("Et là, il se passe"), b = PH.filter((p) => p.text === "16 à 4.")[1].a + 0.2, k = inout((t - a) / (b - a));
+    $("s4l").textContent = Math.round(4 * k); $("s4r").textContent = Math.round(16 * k); impact(t, b, 18); redHit(t, b); }
+  rise("s4z", t, P("des rounds lâchés"));
+  // S5
+  slam("s5a", t, S("s5") + 0.1); impact(t, S("s5") + 0.3, 10); rise("s5b", t, P("Le 16 janvier 2015"));
+  // S6
+  rise("s6tag", t, S("s6") + 0.1); rise("s6flow", t, W("Avec l'aide", "mises"));
+  pop("s6m1", t, W("Les chiffres qui sortent", "10")); impact(t, W("Les chiffres qui sortent", "10") + 0.2, 10);
+  pop("s6m2", t, W("et autour de", "7")); impact(t, W("et autour de", "7") + 0.2, 10);
+  // S7
+  rise("s7tag", t, S("s7") + 0.1); rise("s7q", t, P("Dans son communiqué"));
+  ["DaZeD", "swag", "AZK", "steel"].forEach((n, i) => pop("s7n" + (i + 1), t, W("Les quatre joueurs", n)));
+  pop("s7n5", t, W("Duc", "Pham")); pop("s7n6", t, W("Duc", "Boorn")); pop("s7n7", t, W("Duc", "Foster"));
+  impact(t, W("Résultat : sept", "sept") + 0.2, 16); redHit(t, W("Résultat : sept", "sept") + 0.2);
+  rise("s7s", t, P("Skadoodle, lui"));
+  // S8
+  slam("s8a", t, S("s8") + 0.1); impact(t, S("s8") + 0.3, 10);
+  pop("s8b1", t, W("CEVO, la ligue", "CEVO")); pop("s8b2", t, W("CEVO, la ligue", "FACEIT")); pop("s8b3", t, W("CEVO, la ligue", "ESEA"));
+  // S9
+  rise("s9tag", t, P("En janvier 2018")); slam("s9a", t, P("Cloud9, au Major")); impact(t, P("Cloud9, au Major") + 0.2);
+  rise("s9b", t, W("Et dans l'équipe", "Skadoodle")); rise("s9c", t, P("et si les autres"));
+  // S10
+  rise("s10tag", t, S("s10") + 0.1);
+  pop("s10a", t, P("Un, le volume")); pop("s10b", t, P("Deux, le sens")); pop("s10c", t, P("Trois, les comptes"));
+  rise("s10z", t, P("Parce que ce qui a fait tomber"));
+  // S11
+  rise("s11tag", t, S("s11") + 0.1); pop("s11a", t, P("En 2016, Valve")); pop("s11b", t, P("deux gros youtubeurs"));
+  // S12
+  pop("s12a", t, W("Et la fin de l'histoire", "ESL")); pop("s12b", t, W("Et la fin de l'histoire", "DreamHack")); pop("s12c", t, P("Il faudra attendre"));
+  slam("s12z", t, P("Dix ans de carrière")); impact(t, P("Dix ans de carrière") + 0.2, 18); redHit(t, P("Dix ans de carrière") + 0.2);
+  // S13
+  pop("s13logo", t, S("s13") + 0.2, 0.6); pop("s13cta", t, W("Si ce genre", "abonne")); rise("s13foot", t, E("La prochaine affaire") + 0.3, 0.4, 20);
+  $("s13cta").style.boxShadow = `0 0 ${30 + 25*Math.sin(t*4)}px rgba(245,184,0,.55)`;
+
+  renderSubs(t);
+  $("redflash").style.opacity = red;
+  const sx = shake ? Math.sin(t * 97) * shake : 0, sy = shake ? Math.cos(t * 83) * shake : 0;
+  $("cam").style.transform = `translate(${sx}px, ${sy}px) scale(${camScale})`;
+};
+window.render(0);
+</script>
+</body>
+</html>

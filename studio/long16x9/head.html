@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --bg:#050506; --panel:#101013; --line:#23232a; --gold:#f5b800; --red:#ff3b3b; --green:#2fd27a; --text:#f4f4f5; --muted:#8f8f99; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { width:1920px; height:1080px; background:var(--bg); overflow:hidden; font-family:"Inter", sans-serif; color:var(--text); }
+  #stage { position:relative; width:1920px; height:1080px; overflow:hidden; background:var(--bg); }
+  #cam { position:absolute; inset:0; transform-origin:50% 42%; }
+  #glow { position:absolute; inset:-200px; background:radial-gradient(ellipse 900px 520px at 50% 40%, rgba(245,184,0,.12), transparent 70%); }
+  #grid { position:absolute; inset:-200px; opacity:.06;
+    background-image:linear-gradient(var(--gold) 1px, transparent 1px), linear-gradient(90deg, var(--gold) 1px, transparent 1px); background-size:90px 90px; }
+  #vignette { position:absolute; inset:0; pointer-events:none; background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.75) 100%); }
+  #flash { position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; }
+  #redflash { position:absolute; inset:0; background:var(--red); opacity:0; pointer-events:none; mix-blend-mode:screen; }
+  #progress { position:absolute; top:0; left:0; height:8px; background:var(--gold); z-index:5; }
+  #chapter { position:absolute; top:30px; left:48px; font-weight:800; letter-spacing:.3em; font-size:22px; color:var(--muted); z-index:5; }
+  #chapter b { color:var(--gold); }
+  .scene { position:absolute; inset:70px 0 250px 0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 160px; text-align:center; opacity:0; }
+  .scene > * { zoom:1.25; }
+  .row { display:flex; gap:28px; justify-content:center; align-items:stretch; }
+  .k { display:block; font-family:"Inter Display","Inter",sans-serif; font-weight:900; line-height:.98; }
+  .tag { display:inline-block; font-weight:800; font-size:26px; letter-spacing:.22em; color:#000; background:var(--gold); padding:12px 22px; border-radius:10px; white-space:nowrap; }
+  .tag.red { background:var(--red); color:#fff; }
+  .muted { color:var(--muted); } .gold { color:var(--gold); } .red { color:var(--red); } .green { color:var(--green); }
+  .card { background:var(--panel); border:2px solid var(--line); border-radius:24px; padding:26px 30px; }
+  .chip { display:inline-block; font-size:18px; font-weight:800; letter-spacing:.15em; color:#000; background:#fff; padding:6px 12px; border-radius:6px; opacity:.85; }
+  .name { font-family:"Inter Display","Inter",sans-serif; font-weight:900; font-size:44px; }
+  .lbl { font-size:22px; font-weight:700; color:var(--muted); letter-spacing:.12em; margin-top:8px; }
+  #subs { position:absolute; left:220px; right:220px; top:858px; text-align:center; font-family:"Inter Display","Inter",sans-serif; font-weight:800; font-size:50px; line-height:1.2; z-index:6; text-shadow:0 3px 0 #000, 0 0 22px rgba(0,0,0,.95), 0 0 6px #000; }
+  #subs span { display:inline-block; }
+  #subs .next { color:rgba(255,255,255,.42); }
+  #subs .now { color:var(--gold); }
+  #subs .said { color:#fff; }
+</style>
+</head>
+<body>
+<div id="stage">

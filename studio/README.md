@@ -27,3 +27,13 @@ sous-titres synchronisés sur la voix off de Noaim, musique générée (libre de
 7. **Miniature** (`thumb/`) : 1280x720, gros score ou chiffre choc + question en jaune, `node shot.mjs`.
 
 Playwright : `/opt/node-tools/node_modules/playwright/index.mjs` (Chromium préinstallé).
+
+## Vidéo longue quotidienne (format actuel, depuis le 23/10/2026)
+Noaim veut la vidéo **déjà montée** (animations + sous-titres karaoké + musique) : il ajoute sa voix dans CapCut en lisant les sous-titres.
+Modèle : `long16x9/` (1920x1080, exemple iBUYPOWER).
+- `script.html` : `CAPS` = phrases (scène, texte) ; timing calculé à 14,5 caractères/s (nombres comptés comme prononcés).
+  Les animations se calent sur les mots avec `P("début de phrase")`, `W("début de phrase", "mot")`, `S("s3")`.
+- `body.html` : une `<div class="scene" id="sN">` par séquence (zone utile 70→830 px, sous-titres en bas).
+- `node render.mjs timing` puis `python3 music.py` (musique, puis loudnorm −18 LUFS),
+  rendu parallèle : `node render.mjs part 0 3 & node render.mjs part 1 3 & node render.mjs part 2 3`,
+  concat ffmpeg (`-f concat -c copy`) puis mux avec la musique.
