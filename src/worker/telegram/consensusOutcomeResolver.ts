@@ -207,6 +207,31 @@ async function editConsensusStatusLine(
   }
 }
 
+/** Visible "prono validé" in the VIP group: a reply to the original alert,
+ *  so members get a notification (the in-place status edit is silent).
+ *  Never throws. */
+async function postWonReply(
+  client: TelegramClient,
+  sentMessageId: bigint | number | null,
+  homeTeam: string,
+  awayTeam: string,
+  homeScore: number,
+  awayScore: number,
+): Promise<void> {
+  if (sentMessageId == null) return;
+  try {
+    const entity = await resolveVipGroup(client);
+    if (!entity) return;
+    await client.sendMessage(entity, {
+      message: `✅ PRONO VALIDÉ ✅
+${homeTeam} ${homeScore}-${awayScore} ${awayTeam}`,
+      replyTo: Number(sentMessageId),
+    });
+  } catch (err) {
+    console.error("[consensusOutcomeResolver] failed to post the won reply:", err instanceof Error ? err.message : err);
+  }
+}
+
 export async function resolvePendingConsensusOutcomes(
   db: PrismaClient,
   client: TelegramClient,
@@ -275,6 +300,9 @@ export async function resolvePendingConsensusOutcomes(
     });
     try {
       await editConsensusStatusLine(client, alert.sentMessageId, verdictLine);
+      if (outcome === "WON") {
+        await postWonReply(client, alert.sentMessageId, alert.homeTeam ?? "", alert.awayTeam ?? "", homeScore, awayScore);
+      }
     } catch (err) {
       console.error(`[consensusOutcomeResolver] failed to edit verdict for ${alert.id}:`, err instanceof Error ? err.message : err);
     }
@@ -284,8 +312,8 @@ export async function resolvePendingConsensusOutcomes(
     });
     resolved++;
 
-    // Public proof on X, after the match and only for winners — the VIP
-    // pick itself never goes out before kick-off. Never throws.
+    // Public proof on X (via Buffer), after the match and only for winners.
+    // Never throws.
     if (outcome === "WON") {
       await publishValidatedPick({
         id: alert.id,
@@ -295,7 +323,7 @@ export async function resolvePendingConsensusOutcomes(
         selection: alert.selection ?? "",
         homeScore,
         awayScore,
-        halfTimeScore: alert.market === "OVER_UNDER_HT" ? halfTimeScore : null,
+        halfTimeScore: alert.market?.endsWith("_HT") ? halfTimeScore : null,
       });
     }
   };
