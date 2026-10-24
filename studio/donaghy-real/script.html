@@ -1,0 +1,198 @@
+<script>
+// Voice-over lines = on-screen subtitles. Noaim reads them over the finished
+// video, so timing comes from text length (CPS), numbers counted as spoken.
+const CAPS = [
+  ["s1", "Un arbitre. Pas un joueur, pas un entraîneur. Un arbitre."],
+  ["s1", "En 2007, la NBA, la ligue de basket la plus regardée au monde, se prend la pire claque de son histoire."],
+  ["s1", "Un de ses arbitres finit en prison pour une histoire de paris."],
+  ["s2", "Il s'appelle Tim Donaghy."],
+  ["s2", "Treize saisons en NBA. Un arbitre expérimenté, respecté, qui siffle des matchs importants."],
+  ["s2", "Sur le papier, le profil parfait. Personne ne se méfie de lui."],
+  ["s3", "Et c'est justement ça le problème. Pourquoi un arbitre, et pas un joueur ?"],
+  ["s3", "Au basket, un coup de sifflet, c'est une faute."],
+  ["s3", "Une faute, c'est souvent deux lancers francs. Et des lancers francs, c'est des points."],
+  ["s3", "Un arbitre peut faire monter ou descendre le score d'un match sans que personne ne le remarque vraiment."],
+  ["s3", "Il touche chaque action, et pendant le match, personne ne le regarde, lui."],
+  ["s4", "Selon la justice américaine, Donaghy transmettait des pronostics à des parieurs."],
+  ["s4", "Le schéma est simple. D'un côté, Donaghy."],
+  ["s4", "Au milieu, Tommy Martino, un ami de longue date, qui sert d'intermédiaire."],
+  ["s4", "Et de l'autre côté, Jimmy Battista, un parieur professionnel."],
+  ["s4", "Donaghy donne ses pronos sur des matchs NBA, y compris sur des matchs qu'il arbitre lui-même."],
+  ["s4", "Et quand le prono passe, il touche de l'argent liquide."],
+  ["sMoney", "Selon ESPN, c'était 5 000 dollars à chaque prono gagnant."],
+  ["sMoney", "Et quand le prono était faux ? Rien. Zéro."],
+  ["sMoney", "Les pronos passaient par téléphone, parfois avec un langage codé, pour ne pas se faire repérer."],
+  ["sInfo", "Il donne aussi des infos que le grand public n'a pas."],
+  ["sInfo", "Par exemple, quels arbitres vont siffler quel match, et comment ils s'entendent avec certains joueurs."],
+  ["sInfo", "Et même l'état de forme de certains joueurs : qui est blessé, qui joue diminué."],
+  ["sInfo", "Et selon l'accusation, il aurait même commencé à parier sur ses propres matchs dès 2003."],
+  ["sInfo", "Ça, en revanche, il ne l'a pas reconnu dans son plaider-coupable."],
+  ["s5", "Et combien il a touché ? Là, ça dépend de qui parle."],
+  ["s5", "Selon Donaghy lui-même, environ 30 000 dollars."],
+  ["s5", "Selon Martino, l'intermédiaire, plutôt 120 000 dollars."],
+  ["s5", "Et selon Battista, le parieur, autour de 200 000 dollars."],
+  ["s5", "Trois versions, trois montants. Mais une chose est sûre : l'argent circulait."],
+  ["s6", "Pendant ce temps-là, le FBI s'intéresse à l'affaire."],
+  ["s6", "Le 9 juillet 2007, Donaghy démissionne de la NBA."],
+  ["s6", "Quelques jours plus tard, l'affaire éclate dans la presse. Tout le monde tombe de haut."],
+  ["s6", "Le 15 août 2007, il plaide coupable devant un tribunal fédéral."],
+  ["s6", "Il reconnaît avoir participé à une fraude et avoir transmis des informations à des parieurs."],
+  ["s6", "Il risquait jusqu'à 25 ans de prison."],
+  ["sStern", "Le patron de la NBA, David Stern, parle d'un « criminel isolé », qui aurait agi seul."],
+  ["sStern", "Mais tout le monde n'est pas convaincu."],
+  ["sStern", "Dans le milieu des paris, certains se demandent comment un seul homme a pu faire ça pendant des années,"],
+  ["sStern", "sans que personne autour de lui ne voie rien."],
+  ["s7", "Le verdict tombe le 29 juillet 2008."],
+  ["s7", "Donaghy prend 15 mois de prison ferme, plus trois ans de liberté surveillée."],
+  ["s7", "Battista, le parieur, prend lui aussi 15 mois."],
+  ["s7", "Et Martino, l'intermédiaire, un an et un jour."],
+  ["s7", "Donaghy sortira de prison en novembre 2009."],
+  ["s8", "Mais ce qui fait vraiment peur dans cette histoire, c'est pas l'argent."],
+  ["s8", "C'est le fait qu'il suffisait d'un seul homme."],
+  ["s8", "Pas besoin d'acheter dix joueurs. Un seul arbitre, au bon endroit, et tu peux peser sur un match."],
+  ["s8", "Et pendant des années, personne n'a rien vu."],
+  ["s8", "Les fans regardaient les joueurs, les caméras suivaient le ballon."],
+  ["s8", "Lui, il était au milieu du terrain, avec son sifflet."],
+  ["s8", "Imagine. Tu regardes un match, tu crois voir du sport."],
+  ["s8", "Et en fait, une partie du résultat se joue sur un coup de fil passé la veille."],
+  ["s8", "C'est pour ça qu'on regarde les cotes."],
+  ["s8", "Quand un match bouge de façon bizarre avant même le coup d'envoi, il y a souvent quelqu'un qui sait quelque chose."],
+  ["s8", "Un joueur, un entraîneur… ou parfois, celui qu'on oublie toujours : l'arbitre."],
+  ["s9", "Si ce genre d'histoire te parle, abonne-toi."],
+  ["s9", "La prochaine affaire arrive bientôt."],
+];
+const CPS = 13.5, GAP = 0.35, SCENE_GAP = 0.45, LEAD = 0.8, TAIL = 4;
+const spokenLen = (t) => t.replace(/\b(19|20)\d\d\b/g, "x".repeat(18)).replace(/\d+[  ]000/g, "x".repeat(10)).replace(/\d+/g, "x".repeat(6)).length;
+const PH = [], SCENES = [];
+{
+  let cur = LEAD, prev = null;
+  for (const [sc, text] of CAPS) {
+    if (sc !== prev) { if (prev) cur += SCENE_GAP; SCENES.push([sc, Math.max(0, cur - 0.35), 0]); prev = sc; }
+    const words = text.replace(/ ([?:!»])/g, " $1").replace(/« /g, "« ").split(" ");
+    const wts = words.map((w) => /\d/.test(w) ? Math.max(w.length, 6) : w.length + 1);
+    const tot = wts.reduce((a, b) => a + b, 0), dur = Math.max(1.2, spokenLen(text) / CPS);
+    let acc = 0; const wt = wts.map((x) => { const s = cur + dur * acc / tot; acc += x; return s; });
+    PH.push({ sc, text, words, wt, a: cur, b: cur + dur });
+    cur += dur + GAP;
+  }
+  SCENES[0][1] = 0;
+}
+const DURATION = PH[PH.length - 1].b + TAIL;
+SCENES.forEach((s, i) => { s[2] = i < SCENES.length - 1 ? SCENES[i + 1][1] : DURATION; });
+const CUTS = SCENES.slice(1).map((s) => s[1]);
+// Phrase lookup by text prefix (first match), then word times inside it.
+const Q = (prefix) => { const i = PH.findIndex((p) => p.text.startsWith(prefix)); if (i < 0) throw new Error("phrase " + prefix); return PH[i]; };
+const P = (prefix) => Q(prefix).a, E = (prefix) => Q(prefix).b;
+const W = (prefix, w) => { const p = Q(prefix), k = p.words.findIndex((x) => x.toLowerCase().startsWith(w.toLowerCase())); if (k < 0) throw new Error(`cue ${prefix} ${w}`); return p.wt[k]; };
+const S = (id) => SCENES.find((s) => s[0] === id)[1];
+const HITS = [P("Un arbitre."), W("Un de ses arbitres", "prison"), W("Le 15 août 2007", "coupable"), W("Donaghy prend", "15")];
+window.TIMING = { DURATION, SCENES, CUTS, HITS, PH: PH.map(({ text, a, b }) => ({ text, a, b })) };
+
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a=0, b=1) => Math.max(a, Math.min(b, x));
+const ease = (x) => { x = clamp(x); return 1 - Math.pow(1 - x, 3); };
+const inout = (x) => { x = clamp(x); return x < .5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3) / 2; };
+const back = (x) => { x = clamp(x); const c1 = 1.9, c3 = c1 + 1; return 1 + c3*Math.pow(x-1,3) + c1*Math.pow(x-1,2); };
+function rise(id, t, at, dur=0.45, dy=50) {
+  const p = ease((t - at) / dur), el = $(id);
+  el.style.opacity = p; el.style.transform = `translateY(${(1-p)*dy}px)`; el.style.filter = `blur(${(1-p)*10}px)`;
+}
+function slam(id, t, at, dur=0.4) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 2); el.style.transform = `scale(${2.2 - 1.2*ease(p)})`; el.style.filter = `blur(${(1-ease(p))*14}px)`;
+}
+function pop(id, t, at, dur=0.5) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 1.8); el.style.transform = `scale(${p === 0 ? .6 : .6 + .4*back(p)})`;
+}
+let shake = 0, red = 0;
+const impact = (t, at, amp=14) => { return; const d = t - at; if (d >= 0 && d < 0.35) shake = Math.max(shake, (1 - d/0.35) * amp); };
+const redHit = (t, at) => { if (t > at && t < at + 0.4) red = Math.max(red, 0.2 * (1 - (t - at) / 0.4)); };
+
+let shownPh = -2;
+function renderSubs(t) {
+  let idx = -1;
+  for (let i = 0; i < PH.length; i++) if (t >= PH[i].a - 0.05) idx = i;
+  if (idx === PH.length - 1 && t > PH[idx].b + 1.2) idx = -1;
+  const subs = $("subs");
+  if (idx !== shownPh) { subs.innerHTML = idx < 0 ? "" : PH[idx].words.map((w) => `<span>${w}</span>`).join(" "); shownPh = idx; }
+  if (idx < 0) { subs.style.opacity = 0; return; }
+  const p = PH[idx];
+  [...subs.children].forEach((el, k) => {
+    const end = k + 1 < p.wt.length ? p.wt[k + 1] : p.b;
+    el.className = t >= end ? "said" : t >= p.wt[k] ? "now" : "next";
+  });
+  const q = ease((t - p.a + 0.05) / 0.15);
+  subs.style.opacity = q; subs.style.transform = `translateY(${(1-q)*14}px)`;
+}
+
+window.render = function (t) {
+  shake = 0; red = 0;
+  $("progress").style.width = (t / DURATION * 100) + "%";
+  for (const [id, a, b] of SCENES) {
+    const vis = (t >= a && t < b) ? Math.min(ease((t - a) / 0.25), id === "s9" ? 1 : 1 - ease((t - (b - 0.25)) / 0.25)) : 0;
+    $(id).style.opacity = vis;
+  }
+  let fl = 0; for (const c of CUTS) { const d = t - c; if (d >= -0.05 && d < 0.25) fl = Math.max(fl, 1 - Math.abs(d + 0.05) / 0.3); }
+  $("flash").style.opacity = fl * 0.4;
+  const cur = SCENES.find(([, a, b]) => t >= a && t < b) || SCENES[SCENES.length - 1];
+  let camScale = 1;
+
+  // S1
+  rise("s1tag", t, 0.2); slam("s1a", t, P("Un arbitre.")); impact(t, P("Un arbitre.") + 0.2, 16);
+  slam("s1b", t, W("Un de ses arbitres", "prison")); impact(t, W("Un de ses arbitres", "prison") + 0.2, 18); redHit(t, W("Un de ses arbitres", "prison") + 0.2);
+  // S2
+  rise("s2tag", t, S("s2") + 0.1); slam("s2t", t, W("Il s'appelle", "Tim")); impact(t, W("Il s'appelle", "Tim") + 0.2);
+  pop("s2c1", t, W("Treize saisons", "Treize")); pop("s2c2", t, W("Treize saisons", "NBA"));
+  // S3
+  rise("s3tag", t, S("s3") + 0.1);
+  pop("s3a", t, W("Au basket", "coup")); pop("s3b", t, W("Au basket", "faute")); pop("s3c", t, W("Une faute, c'est", "lancers")); pop("s3d", t, W("Une faute, c'est", "points"));
+  rise("s3z", t, P("Il touche chaque action"));
+  // S4
+  rise("s4tag", t, S("s4") + 0.1);
+  pop("s4a", t, W("Le schéma est simple", "Donaghy")); pop("s4b", t, W("Au milieu", "Martino")); pop("s4c", t, W("Et de l'autre côté", "Battista"));
+  rise("s4z", t, P("Et quand le prono passe"));
+  // S4b
+  rise("s4btag", t, S("sMoney") + 0.1); slam("s4bn", t, W("Selon ESPN", "5")); impact(t, W("Selon ESPN", "5") + 0.2, 14);
+  rise("s4ba", t, W("Selon ESPN", "prono")); rise("s4bb", t, W("Et quand le prono était faux", "Rien")); pop("s4bc", t, W("Les pronos passaient", "téléphone"));
+  // S4c
+  rise("s4ctag", t, S("sInfo") + 0.1);
+  pop("s4c1", t, W("Par exemple, quels arbitres", "arbitres")); pop("s4c2", t, W("Par exemple, quels arbitres", "s'entendent")); pop("s4c3", t, W("Et même l'état", "forme"));
+  pop("s4c4", t, P("Et selon l'accusation"));
+  // S5
+  rise("s5tag", t, S("s5") + 0.1);
+  pop("s5a", t, W("Selon Donaghy", "30")); pop("s5b", t, W("Selon Martino", "120")); pop("s5c", t, W("Et selon Battista", "200"));
+  impact(t, W("Et selon Battista", "200") + 0.2, 12);
+  // S6
+  pop("s6b", t, P("Pendant ce temps-là")); pop("s6a", t, P("Le 9 juillet 2007")); pop("s6c", t, P("Le 15 août 2007"));
+  impact(t, W("Le 15 août 2007", "coupable") + 0.2, 16); redHit(t, W("Le 15 août 2007", "coupable") + 0.2);
+  // S6b
+  rise("s6btag", t, S("sStern") + 0.1); slam("s6ba", t, W("Le patron de la NBA", "«")); impact(t, W("Le patron de la NBA", "«") + 0.2, 12);
+  rise("s6bb", t, P("Mais tout le monde n'est pas"));
+  // S7
+  rise("s7tag", t, S("s7") + 0.1);
+  pop("s7a", t, W("Donaghy prend", "15")); impact(t, W("Donaghy prend", "15") + 0.2, 14);
+  pop("s7b", t, W("Battista, le parieur", "15")); pop("s7c", t, W("Et Martino", "un"));
+  // S8
+  rise("s8tag", t, S("s8") + 0.1); slam("s8a", t, P("C'est le fait qu'il suffisait")); impact(t, P("C'est le fait qu'il suffisait") + 0.2);
+  slam("s8b", t, W("Pas besoin d'acheter", "Un")); rise("s8c", t, P("Pas besoin d'acheter"));
+  // S9
+  pop("s9logo", t, S("s9") + 0.2, 0.6); pop("s9cta", t, W("Si ce genre", "abonne")); rise("s9foot", t, E("La prochaine affaire") + 0.3, 0.4, 20);
+  $("s9cta").style.boxShadow = `0 0 ${30 + 25*Math.sin(t*4)}px rgba(245,184,0,.55)`;
+
+  // flow arrows appear with the card they point to
+  document.querySelectorAll(".row > .k.gold").forEach((a) => { a.style.opacity = a.nextElementSibling.style.opacity || 0; });
+  // photo segments (match bg.py): credits on, "images d'illustration" off
+  const PHOTO = [[19.4315, 28.6, "cr1"], [186.4, 199.9, "cr2"]];
+  let onPhoto = false;
+  for (const [a, b, id] of PHOTO) { const v = t >= a && t < b; onPhoto = onPhoto || v; $(id).style.opacity = v ? Math.min(ease((t - a - 0.3) / 0.4), 1 - ease((t - b + 0.3) / 0.3)) : 0; }
+  $("illu").style.opacity = (onPhoto || t >= S("s9")) ? 0 : 1;
+  renderSubs(t);
+  $("redflash").style.opacity = red;
+  const sx = shake ? Math.sin(t * 97) * shake : 0, sy = shake ? Math.cos(t * 83) * shake : 0;
+  $("cam").style.transform = `translate(${sx}px, ${sy}px) scale(${camScale})`;
+};
+window.render(0);
+</script>
+</body>
+</html>
