@@ -2,7 +2,7 @@
 # Each row: start, end, clip, in-point, options (s=slow factor, f=hflip, v=vertical source, p=photo, d=extra darkening)
 import subprocess, os, sys
 from concurrent.futures import ThreadPoolExecutor
-FF = "/vercel/.local/lib/python3.14/site-packages/imageio_ffmpeg/binaries/ffmpeg-linux-x86_64-v7.0.2"
+FF = os.environ["FF"]
 C = "/vercel/clips/"
 OUT = "/vercel/bg/"
 os.makedirs(OUT, exist_ok=True)
@@ -93,7 +93,7 @@ def job(i):
     return i, n, r.returncode, r.stderr[-300:]
 
 idx = [int(x) for x in sys.argv[1:]] or range(len(EDL))
-with ThreadPoolExecutor(2) as ex:
+with ThreadPoolExecutor(int(os.environ.get("JOBS", "2"))) as ex:
     for i, n, rc, err in ex.map(job, idx):
         print(i, n, rc, err, flush=True)
 with open(OUT + "list.txt", "w") as f:

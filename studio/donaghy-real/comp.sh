@@ -1,7 +1,7 @@
 #!/bin/bash
 # Final assembly in the sandbox: real-footage track + transparent graphics + music.
 set -e
-F=/vercel/.local/lib/python3.14/site-packages/imageio_ffmpeg/binaries/ffmpeg-linux-x86_64-v7.0.2
+F=$FF
 R=https://raw.githubusercontent.com/noaimk77/oddshunter/claude/social-media-assets/studio/donaghy-real
 mkdir -p /vercel/final /tmp/www && cd /vercel/final
 for f in overlay.webm music.m4a thumb-text.png; do curl -sfL -o $f $R/$f; done
