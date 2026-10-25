@@ -1,0 +1,183 @@
+<script>
+// Voice-over lines = on-screen subtitles. Noaim reads them over the finished
+// video, so timing comes from text length (CPS), numbers counted as spoken.
+const CAPS = [
+  ["s1", "Mai 2025, Sheffield. Un joueur chinois de 28 ans soulève le trophée le plus prestigieux du snooker."],
+  ["s1", "Il s'appelle Zhao Xintong. Et il n'est même pas professionnel : il joue en amateur."],
+  ["s1", "Deux ans plus tôt, il était suspendu, en plein milieu de la plus grosse affaire de matchs truqués de l'histoire du snooker."],
+  ["s1", "Dix joueurs chinois sanctionnés. Deux bannis à vie. Voilà comment tout s'est effondré."],
+  ["s2", "Avant de rentrer dans l'histoire, il faut comprendre un truc."],
+  ["s2", "Au snooker, t'es seul face à la table. Pas de coéquipier, personne pour partager la faute."],
+  ["s2", "Une bille ratée de quelques millimètres, et personne ne peut prouver que c'était exprès."],
+  ["s2", "Et on peut parier sur presque tout : le vainqueur, le score exact, le nombre de manches."],
+  ["s2", "Sur des petits matchs de début de tournoi, que personne ne regarde, c'est le terrain parfait."],
+  ["s3", "En août 2022, une alerte tombe."],
+  ["s3", "L'IBIA, l'association qui surveille les paris pour le compte des bookmakers, repère des mises bizarres sur des matchs de snooker."],
+  ["s3", "Des montants trop gros, placés au même moment, toujours dans le même sens."],
+  ["s3", "Quand beaucoup d'argent tombe sur un résultat improbable, sur un petit match, c'est rarement un hasard."],
+  ["s3", "L'instance du snooker, la WPBSA, ouvre une enquête avec Sportradar, une société spécialisée dans l'intégrité sportive."],
+  ["s3", "Et très vite, des noms sortent. Tous chinois."],
+  ["s4", "Au centre, deux joueurs : Liang Wenbo et Li Hang."],
+  ["s4", "Liang, c'est pas n'importe qui : ancien finaliste du UK Championship, un nom connu de tout le circuit."],
+  ["s4", "Selon la commission de discipline, ce sont eux les meneurs."],
+  ["s4", "Ils ont truqué des matchs, et ils ont mis la pression sur des joueurs plus jeunes pour qu'ils en truquent aussi."],
+  ["s4", "Liang est reconnu coupable d'avoir truqué, ou participé au trucage, de cinq matchs entre juillet et septembre 2022."],
+  ["s4", "Et en plus, il a détruit des preuves et refusé de coopérer avec l'enquête."],
+  ["s5", "Le problème, c'est que parmi les jeunes du groupe, il y a deux énormes talents."],
+  ["s5", "Yan Bingtao, vainqueur du Masters en 2021, à seulement 20 ans."],
+  ["s5", "Et Zhao Xintong, vainqueur du UK Championship la même année."],
+  ["s5", "Deux des plus grands espoirs du snooker mondial."],
+  ["s5", "Yan finit par avouer : il a truqué des matchs et parié sur le snooker."],
+  ["s6", "Et Zhao ? Son cas est plus étrange."],
+  ["s6", "Selon la commission, c'est le seul des dix à n'avoir truqué aucun match lui-même."],
+  ["s6", "Mais en mars 2022, il a placé des paris pour Yan, en passant par Li Hang, sur des matchs que Yan voulait arranger."],
+  ["s6", "Et il pariait lui-même sur des matchs de snooker depuis 2019, alors que c'est interdit aux joueurs."],
+  ["s6", "Selon le South China Morning Post, il aurait même essayé de dissuader son ami, avant de se laisser embarquer."],
+  ["s7", "Le verdict tombe le 6 juin 2023."],
+  ["s7", "Liang Wenbo et Li Hang sont bannis à vie du snooker, et doivent payer 43 000 livres de frais chacun."],
+  ["s7", "Yan Bingtao prend cinq ans de suspension. Zhao Xintong, vingt mois."],
+  ["s7", "Les deux voient leur peine réduite, parce qu'ils ont avoué tôt et plaidé coupable."],
+  ["s7", "Les six autres joueurs prennent des suspensions de plusieurs années."],
+  ["s7", "Pour l'instance du snooker, c'est un groupe isolé, pas une culture de triche dans tout le sport."],
+  ["s8", "Et c'est là que l'histoire devient folle."],
+  ["s8", "Zhao purge sa suspension jusqu'en septembre 2024, et revient sans statut professionnel."],
+  ["s8", "Au printemps 2025, il se présente aux qualifications du championnat du monde, en amateur."],
+  ["s8", "Il gagne ses quatre matchs de qualification, il entre au Crucible, et il ne s'arrête plus."],
+  ["s8", "En finale, il bat le Gallois Mark Williams, 18 manches à 12."],
+  ["s8", "Premier champion du monde asiatique de l'histoire, et premier amateur à gagner le titre."],
+  ["s9", "Alors, rédemption ou malaise ? Les deux se défendent."],
+  ["s9", "Il a purgé sa peine, il n'a truqué aucun match lui-même, et ce titre, il l'a gagné sur la table."],
+  ["s9", "Mais cette affaire montre une chose : même les plus grands talents peuvent se faire happer quand les paris entrent dans le vestiaire."],
+  ["s9", "Et ce qui a tout fait tomber, c'est pas une caméra, ni un témoin. C'est l'argent. Des mises bizarres, au mauvais moment."],
+  ["s9", "Les cotes parlent souvent avant les joueurs."],
+  ["s10", "Si ce genre d'histoire te parle, abonne-toi."],
+  ["s10", "La prochaine affaire arrive bientôt."],
+];
+const CPS = 13.5, GAP = 0.35, SCENE_GAP = 0.45, LEAD = 0.8, TAIL = 4;
+const spokenLen = (t) => t.replace(/\b(19|20)\d\d\b/g, "x".repeat(18)).replace(/\d+[  ]000/g, "x".repeat(10)).replace(/\d+/g, "x".repeat(6)).length;
+const PH = [], SCENES = [];
+{
+  let cur = LEAD, prev = null;
+  for (const [sc, text] of CAPS) {
+    if (sc !== prev) { if (prev) cur += SCENE_GAP; SCENES.push([sc, Math.max(0, cur - 0.35), 0]); prev = sc; }
+    const words = text.replace(/ ([?:!»])/g, " $1").replace(/« /g, "« ").split(" ");
+    const wts = words.map((w) => /\d/.test(w) ? Math.max(w.length, 6) : w.length + 1);
+    const tot = wts.reduce((a, b) => a + b, 0), dur = Math.max(1.2, spokenLen(text) / CPS);
+    let acc = 0; const wt = wts.map((x) => { const s = cur + dur * acc / tot; acc += x; return s; });
+    PH.push({ sc, text, words, wt, a: cur, b: cur + dur });
+    cur += dur + GAP;
+  }
+  SCENES[0][1] = 0;
+}
+const DURATION = PH[PH.length - 1].b + TAIL;
+SCENES.forEach((s, i) => { s[2] = i < SCENES.length - 1 ? SCENES[i + 1][1] : DURATION; });
+const CUTS = SCENES.slice(1).map((s) => s[1]);
+// Phrase lookup by text prefix (first match), then word times inside it.
+const Q = (prefix) => { const i = PH.findIndex((p) => p.text.startsWith(prefix)); if (i < 0) throw new Error("phrase " + prefix); return PH[i]; };
+const P = (prefix) => Q(prefix).a, E = (prefix) => Q(prefix).b;
+const W = (prefix, w) => { const p = Q(prefix), k = p.words.findIndex((x) => x.toLowerCase().startsWith(w.toLowerCase())); if (k < 0) throw new Error(`cue ${prefix} ${w}`); return p.wt[k]; };
+const S = (id) => SCENES.find((s) => s[0] === id)[1];
+const HITS = [W("Mai 2025", "soulève"), W("Liang Wenbo et Li Hang sont", "bannis"), W("En finale", "18")];
+// real-photo windows, shared with the footage EDL (edl.py reads TIMING.PHOTOS)
+const PHOTOS = [["liang", P("Au centre, deux joueurs") - 0.2, E("Selon la commission de discipline") + 0.3], ["zhao", P("En finale") - 0.2, E("Premier champion du monde") + 0.4]];
+window.TIMING = { DURATION, SCENES, CUTS, HITS, PHOTOS, PH: PH.map(({ text, a, b }) => ({ text, a, b })) };
+
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a=0, b=1) => Math.max(a, Math.min(b, x));
+const ease = (x) => { x = clamp(x); return 1 - Math.pow(1 - x, 3); };
+const inout = (x) => { x = clamp(x); return x < .5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3) / 2; };
+const back = (x) => { x = clamp(x); const c1 = 1.9, c3 = c1 + 1; return 1 + c3*Math.pow(x-1,3) + c1*Math.pow(x-1,2); };
+function rise(id, t, at, dur=0.45, dy=50) {
+  const p = ease((t - at) / dur), el = $(id);
+  el.style.opacity = p; el.style.transform = `translateY(${(1-p)*dy}px)`; el.style.filter = `blur(${(1-p)*10}px)`;
+}
+function slam(id, t, at, dur=0.4) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 2); el.style.transform = `scale(${2.2 - 1.2*ease(p)})`; el.style.filter = `blur(${(1-ease(p))*14}px)`;
+}
+function pop(id, t, at, dur=0.5) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 1.8); el.style.transform = `scale(${p === 0 ? .6 : .6 + .4*back(p)})`;
+}
+let shake = 0, red = 0;
+const impact = (t, at, amp=14) => { return; const d = t - at; if (d >= 0 && d < 0.35) shake = Math.max(shake, (1 - d/0.35) * amp); };
+const redHit = (t, at) => { if (t > at && t < at + 0.4) red = Math.max(red, 0.2 * (1 - (t - at) / 0.4)); };
+
+let shownPh = -2;
+function renderSubs(t) {
+  let idx = -1;
+  for (let i = 0; i < PH.length; i++) if (t >= PH[i].a - 0.05) idx = i;
+  if (idx === PH.length - 1 && t > PH[idx].b + 1.2) idx = -1;
+  const subs = $("subs");
+  if (idx !== shownPh) { subs.innerHTML = idx < 0 ? "" : PH[idx].words.map((w) => `<span>${w}</span>`).join(" "); shownPh = idx; }
+  if (idx < 0) { subs.style.opacity = 0; return; }
+  const p = PH[idx];
+  [...subs.children].forEach((el, k) => {
+    const end = k + 1 < p.wt.length ? p.wt[k + 1] : p.b;
+    el.className = t >= end ? "said" : t >= p.wt[k] ? "now" : "next";
+  });
+  const q = ease((t - p.a + 0.05) / 0.15);
+  subs.style.opacity = q; subs.style.transform = `translateY(${(1-q)*14}px)`;
+}
+
+window.render = function (t) {
+  shake = 0; red = 0;
+  $("progress").style.width = (t / DURATION * 100) + "%";
+  for (const [id, a, b] of SCENES) {
+    const vis = (t >= a && t < b) ? Math.min(ease((t - a) / 0.25), id === "s10" ? 1 : 1 - ease((t - (b - 0.25)) / 0.25)) : 0;
+    $(id).style.opacity = vis;
+  }
+  let fl = 0; for (const c of CUTS) { const d = t - c; if (d >= -0.05 && d < 0.25) fl = Math.max(fl, 1 - Math.abs(d + 0.05) / 0.3); }
+  $("flash").style.opacity = fl * 0.4;
+  const cur = SCENES.find(([, a, b]) => t >= a && t < b) || SCENES[SCENES.length - 1];
+  let camScale = 1;
+
+  // S1
+  rise("s1tag", t, 0.2); slam("s1a", t, W("Mai 2025", "soulève")); pop("s1b", t, W("Il s'appelle Zhao", "amateur"));
+  pop("s1c", t, W("Dix joueurs", "Dix")); pop("s1d", t, W("Dix joueurs", "Deux")); redHit(t, W("Dix joueurs", "bannis") + 0.1);
+  // S2
+  rise("s2tag", t, S("s2") + 0.1);
+  pop("s2a", t, W("Au snooker, t'es seul", "seul")); pop("s2b", t, W("Une bille ratée", "bille")); pop("s2c", t, W("Et on peut parier", "parier"));
+  rise("s2z", t, P("Sur des petits matchs"));
+  // S3
+  rise("s3tag", t, S("s3") + 0.1); slam("s3t", t, W("L'IBIA", "mises"));
+  pop("s3a", t, W("Des montants trop gros", "montants")); pop("s3b", t, W("Des montants trop gros", "moment")); pop("s3c", t, W("Des montants trop gros", "sens"));
+  rise("s3z", t, W("L'instance du snooker", "enquête"));
+  // S4
+  rise("s4tag", t, S("s4") + 0.1); slam("s4t", t, W("Au centre, deux joueurs", "Liang"));
+  pop("s4a", t, W("Liang est reconnu", "cinq")); pop("s4b", t, W("Et en plus, il a détruit", "détruit"));
+  // S5
+  rise("s5tag", t, S("s5") + 0.1); pop("s5a", t, W("Yan Bingtao, vainqueur", "Yan")); pop("s5b", t, W("Et Zhao Xintong, vainqueur", "Zhao"));
+  rise("s5z", t, W("Yan finit par avouer", "avouer"));
+  // S6
+  rise("s6tag", t, S("s6") + 0.1);
+  pop("s6a", t, W("Selon la commission, c'est le seul", "aucun")); pop("s6b", t, W("Mais en mars 2022", "paris")); pop("s6c", t, W("Et il pariait lui-même", "pariait"));
+  // S7
+  rise("s7tag", t, S("s7") + 0.1);
+  pop("s7a", t, W("Liang Wenbo et Li Hang sont", "bannis")); pop("s7b", t, W("Liang Wenbo et Li Hang sont", "bannis") + 0.15);
+  pop("s7c", t, W("Yan Bingtao prend", "cinq")); pop("s7d", t, W("Yan Bingtao prend", "vingt"));
+  rise("s7z", t, P("Les six autres"));
+  // S8
+  rise("s8tag", t, S("s8") + 0.1); slam("s8n", t, W("En finale", "18")); rise("s8a", t, W("En finale", "18") + 0.3);
+  pop("s8b", t, W("Premier champion du monde", "asiatique")); pop("s8c", t, W("Premier champion du monde", "amateur"));
+  // S9
+  rise("s9tag", t, P("Et ce qui a tout fait tomber"));
+  slam("s9a", t, W("Et ce qui a tout fait tomber", "caméra")); slam("s9b", t, W("Et ce qui a tout fait tomber", "témoin")); slam("s9c", t, W("Et ce qui a tout fait tomber", "l'argent"));
+  // S10
+  pop("s10logo", t, S("s10") + 0.2, 0.6); pop("s10cta", t, W("Si ce genre", "abonne")); rise("s10foot", t, E("La prochaine affaire") + 0.3, 0.4, 20);
+  $("s10cta").style.boxShadow = `0 0 ${30 + 25*Math.sin(t*4)}px rgba(245,184,0,.55)`;
+
+  // flow arrows appear with the card they point to
+  document.querySelectorAll(".row > .k.gold").forEach((a) => { a.style.opacity = a.nextElementSibling.style.opacity || 0; });
+  let onPhoto = false;
+  for (const [, a, b] of PHOTOS) onPhoto = onPhoto || (t >= a && t < b);
+  $("illu").style.opacity = (onPhoto || t >= S("s10")) ? 0 : 1;
+  renderSubs(t);
+  $("redflash").style.opacity = red;
+  const sx = shake ? Math.sin(t * 97) * shake : 0, sy = shake ? Math.cos(t * 83) * shake : 0;
+  $("cam").style.transform = `translate(${sx}px, ${sy}px) scale(${camScale})`;
+};
+window.render(0);
+</script>
+</body>
+</html>
