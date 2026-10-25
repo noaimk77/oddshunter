@@ -17,6 +17,7 @@ def sh(cmd):
 
 status("tools")
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--user", "imageio-ffmpeg"], capture_output=True)
+import site, importlib; site.addsitedir(site.getusersitepackages()); importlib.invalidate_caches()  # --user dir may not exist at startup
 import imageio_ffmpeg; FF = imageio_ffmpeg.get_ffmpeg_exe()
 for f in ("edl.json", "overlay.webm", "music.m4a", "thumb-text.png"):
     open(W + f, "wb").write(get(R + f))
