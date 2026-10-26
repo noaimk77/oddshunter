@@ -41,6 +41,9 @@ for theme, rule in CFG.get("discover", {}).items():
                 if rx.search(slug) and not re.search(rule.get("not", "^$"), slug): hits[i] = slug
     found[theme] = hits
     THEMES[theme] = list(hits)[:rule.get("max", 10)] + THEMES.get(theme, [])
+for theme, extra in CFG.get("pad", {}).items():  # too few dedicated clips: mix in related ones
+    for k in extra:
+        if len(THEMES.get(theme, [])) < 6: THEMES[theme] = THEMES.get(theme, []) + THEMES.get(k, [])[:4]
 print("FOUND", json.dumps(found), flush=True)
 def dl(i):
     if os.path.exists(C + i + ".mp4"): return
