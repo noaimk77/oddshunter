@@ -1,0 +1,22 @@
+{
+ "name": "oddshunter-lords-2010",
+ "discover": {
+  "cricket": {"rx": "(cricket|wicket|bowler|batsman|batting)", "cats": ["cricket", "sport", "sports", "stadium", "ball"], "pages": 3, "max": 10},
+  "news": {"rx": "(newspaper|news|journalist|reporter|press|printing|paparazzi|camera-flash)", "not": "(breakfast|dress)", "cats": ["newspaper", "journalist", "news", "press", "camera"], "pages": 2, "max": 6},
+  "stadium": {"rx": "(stadium|crowd|spectator|cheering)", "cats": ["stadium", "crowd", "sport"], "pages": 2, "max": 6}
+ },
+ "themes": {
+  "money": ["18296", "18304", "45703", "18297"],
+  "phone": ["309", "23073"],
+  "data": ["47012", "47214", "9607", "47016", "47018"],
+  "court": ["46820", "47686", "47602"],
+  "police": ["49329", "47803", "17536"],
+  "city": ["41161", "40746", "6754"],
+  "fans": ["29914", "49254", "24343"]
+ },
+ "fallback": {"cricket": "stadium", "news": "phone", "stadium": "fans"},
+ "photos": {"amir": "Mohammad Amir", "butt": "Salman Butt"},
+ "photo_bg": "cricket",
+ "thumb_bg": "cricket",
+ "thumb_photo": "amir"
+}

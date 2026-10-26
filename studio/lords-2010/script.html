@@ -1,0 +1,173 @@
+<script>
+// Voice-over lines = on-screen subtitles. Noaim reads them over the finished
+// video, so timing comes from text length (CPS), numbers counted as spoken.
+const CAPS = [
+  ["s1", "26 août 2010, Lord's, le temple du cricket. Un gamin de 18 ans prend son élan, et pose le pied loin, très loin devant la ligne."],
+  ["s1", "Une faute. Un no-ball. Au cricket, ça arrive tous les jours."],
+  ["s1", "Sauf que celui-là, un journaliste savait exactement quand il allait tomber. Il l'avait appris la veille."],
+  ["s1", "Voici l'histoire du spot-fixing de Lord's, le scandale qui a envoyé trois joueurs pakistanais en prison."],
+  ["s2", "D'abord, c'est quoi le spot-fixing ?"],
+  ["s2", "Truquer un match entier, c'est risqué : il faut acheter plein de monde, et ça finit par se voir."],
+  ["s2", "Le spot-fixing, c'est truquer un seul moment. Une action précise, à un instant précis."],
+  ["s2", "Le résultat du match ne change pas. Mais si quelqu'un a parié sur ce moment-là, il gagne à coup sûr."],
+  ["s2", "Et pour le public, c'est invisible. Une faute parmi des centaines."],
+  ["s3", "Été 2010. Le Pakistan est en tournée en Angleterre."],
+  ["s3", "Un journaliste du News of the World, Mazher Mahmood, se fait passer pour un riche homme d'affaires qui veut parier."],
+  ["s3", "Il rencontre un agent de joueurs : Mazhar Majeed."],
+  ["s3", "Et Majeed, filmé en caméra cachée, se vante de pouvoir faire truquer des moments de match."],
+  ["s3", "Pour le prouver, il annonce à l'avance trois no-balls, avec le moment exact où ils vont tomber."],
+  ["s3", "Le journaliste lui remet 150 000 livres, en liquide."],
+  ["s4", "Le quatrième test entre l'Angleterre et le Pakistan commence à Lord's."],
+  ["s4", "Mohammad Amir a 18 ans. C'est un des plus grands talents du cricket mondial."],
+  ["s4", "Le 26 août, il bowle un no-ball, au moment annoncé. Et pas un petit : son pied dépasse nettement la ligne."],
+  ["s4", "Le lendemain, il en bowle un autre. Et Mohammad Asif, l'autre bowler, en fait un aussi."],
+  ["s4", "Trois no-balls, aux moments que Majeed avait donnés. Exactement comme prévu."],
+  ["s5", "Le 29 août 2010, le journal publie tout."],
+  ["s5", "Les vidéos, les enregistrements, les annonces faites à l'avance."],
+  ["s5", "Scotland Yard arrête Majeed. Le capitaine, Salman Butt, et les deux bowlers se retrouvent au cœur de l'enquête."],
+  ["s5", "Le cricket mondial tombe de haut."],
+  ["s6", "Et combien ont-ils touché ?"],
+  ["s6", "Selon Majeed, Mohammad Asif aurait reçu 65 000 livres, et le capitaine Salman Butt, 10 000."],
+  ["s6", "Et Amir, le plus jeune, le plus doué ? 2 500 livres."],
+  ["s6", "Celui qui avait le plus à perdre est celui qui a été le moins payé."],
+  ["s7", "En février 2011, l'ICC, l'instance mondiale du cricket, suspend les trois joueurs : jusqu'à dix ans pour Butt, cinq ans pour Amir."],
+  ["s7", "Puis en novembre 2011, c'est la justice britannique qui tranche, au tribunal de Southwark, à Londres."],
+  ["s7", "Salman Butt prend 30 mois de prison. Mohammad Asif, un an."],
+  ["s7", "Amir, qui a plaidé coupable, prend six mois."],
+  ["s7", "Et Majeed, l'agent, deux ans et huit mois."],
+  ["s7", "Des joueurs internationaux en prison pour des no-balls. Du jamais vu."],
+  ["s8", "Et pourtant, l'histoire ne s'arrête pas là."],
+  ["s8", "Amir sort après trois mois de détention, purge sa suspension, et revient avec le Pakistan en 2016."],
+  ["s8", "En juillet 2016, il rejoue à Lord's, sur le terrain même du scandale. Et c'est lui qui prend le dernier guichet de la victoire."],
+  ["s8", "Un an plus tard, en finale de la Champions Trophy contre l'Inde, il élimine Rohit Sharma, Virat Kohli et Shikhar Dhawan."],
+  ["s8", "Le Pakistan gagne le titre."],
+  ["s9", "Alors, deuxième chance méritée ? Beaucoup pensent que oui."],
+  ["s9", "Selon sa défense, il avait 18 ans, et il était sous l'influence de son capitaine et de son agent."],
+  ["s9", "Mais cette affaire montre une chose : le spot-fixing, c'est la triche la plus discrète qui existe."],
+  ["s9", "Un no-ball, ça arrive tous les jours. Sans la caméra cachée, personne n'aurait jamais rien prouvé."],
+  ["s9", "C'est pour ça qu'on regarde les mouvements de cotes. Quand de l'argent tombe sur un détail que personne ne peut prévoir, c'est souvent que quelqu'un le connaît déjà."],
+  ["s10", "Si ce genre d'histoire te parle, abonne-toi."],
+  ["s10", "La prochaine affaire arrive bientôt."],
+];
+const CPS = 13.5, GAP = 0.35, SCENE_GAP = 0.45, LEAD = 0.8, TAIL = 4;
+const spokenLen = (t) => t.replace(/\b(19|20)\d\d\b/g, "x".repeat(18)).replace(/\d+[  ]000/g, "x".repeat(10)).replace(/\d+/g, "x".repeat(6)).length;
+const PH = [], SCENES = [];
+{
+  let cur = LEAD, prev = null;
+  for (const [sc, text] of CAPS) {
+    if (sc !== prev) { if (prev) cur += SCENE_GAP; SCENES.push([sc, Math.max(0, cur - 0.35), 0]); prev = sc; }
+    const words = text.replace(/ ([?:!»])/g, " $1").replace(/« /g, "« ").split(" ");
+    const wts = words.map((w) => /\d/.test(w) ? Math.max(w.length, 6) : w.length + 1);
+    const tot = wts.reduce((a, b) => a + b, 0), dur = Math.max(1.2, spokenLen(text) / CPS);
+    let acc = 0; const wt = wts.map((x) => { const s = cur + dur * acc / tot; acc += x; return s; });
+    PH.push({ sc, text, words, wt, a: cur, b: cur + dur });
+    cur += dur + GAP;
+  }
+  SCENES[0][1] = 0;
+}
+const DURATION = PH[PH.length - 1].b + TAIL;
+SCENES.forEach((s, i) => { s[2] = i < SCENES.length - 1 ? SCENES[i + 1][1] : DURATION; });
+const CUTS = SCENES.slice(1).map((s) => s[1]);
+// Phrase lookup by text prefix (first match), then word times inside it.
+const Q = (prefix) => { const i = PH.findIndex((p) => p.text.startsWith(prefix)); if (i < 0) throw new Error("phrase " + prefix); return PH[i]; };
+const P = (prefix) => Q(prefix).a, E = (prefix) => Q(prefix).b;
+const W = (prefix, w) => { const p = Q(prefix), k = p.words.findIndex((x) => x.toLowerCase().startsWith(w.toLowerCase())); if (k < 0) throw new Error(`cue ${prefix} ${w}`); return p.wt[k]; };
+const S = (id) => SCENES.find((s) => s[0] === id)[1];
+const HITS = [W("26 août 2010", "pose"), W("Le journaliste lui remet", "150"), W("Salman Butt prend", "30")];
+// real-photo windows, shared with the footage EDL (edl.py reads TIMING.PHOTOS)
+const PHOTOS = [["amir", P("Mohammad Amir a 18 ans") - 0.2, E("Le 26 août, il bowle") + 0.3], ["butt", P("Salman Butt prend") - 0.2, E("Et Majeed, l'agent") + 0.3]];
+window.TIMING = { DURATION, SCENES, CUTS, HITS, PHOTOS, PH: PH.map(({ text, a, b }) => ({ text, a, b })) };
+
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a=0, b=1) => Math.max(a, Math.min(b, x));
+const ease = (x) => { x = clamp(x); return 1 - Math.pow(1 - x, 3); };
+const inout = (x) => { x = clamp(x); return x < .5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3) / 2; };
+const back = (x) => { x = clamp(x); const c1 = 1.9, c3 = c1 + 1; return 1 + c3*Math.pow(x-1,3) + c1*Math.pow(x-1,2); };
+function rise(id, t, at, dur=0.45, dy=50) {
+  const p = ease((t - at) / dur), el = $(id);
+  el.style.opacity = p; el.style.transform = `translateY(${(1-p)*dy}px)`; el.style.filter = `blur(${(1-p)*10}px)`;
+}
+function slam(id, t, at, dur=0.4) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 2); el.style.transform = `scale(${2.2 - 1.2*ease(p)})`; el.style.filter = `blur(${(1-ease(p))*14}px)`;
+}
+function pop(id, t, at, dur=0.5) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 1.8); el.style.transform = `scale(${p === 0 ? .6 : .6 + .4*back(p)})`;
+}
+let shake = 0, red = 0;
+const impact = (t, at, amp=14) => { return; const d = t - at; if (d >= 0 && d < 0.35) shake = Math.max(shake, (1 - d/0.35) * amp); };
+const redHit = (t, at) => { if (t > at && t < at + 0.4) red = Math.max(red, 0.2 * (1 - (t - at) / 0.4)); };
+
+let shownPh = -2;
+function renderSubs(t) {
+  let idx = -1;
+  for (let i = 0; i < PH.length; i++) if (t >= PH[i].a - 0.05) idx = i;
+  if (idx === PH.length - 1 && t > PH[idx].b + 1.2) idx = -1;
+  const subs = $("subs");
+  if (idx !== shownPh) { subs.innerHTML = idx < 0 ? "" : PH[idx].words.map((w) => `<span>${w}</span>`).join(" "); shownPh = idx; }
+  if (idx < 0) { subs.style.opacity = 0; return; }
+  const p = PH[idx];
+  [...subs.children].forEach((el, k) => {
+    const end = k + 1 < p.wt.length ? p.wt[k + 1] : p.b;
+    el.className = t >= end ? "said" : t >= p.wt[k] ? "now" : "next";
+  });
+  const q = ease((t - p.a + 0.05) / 0.15);
+  subs.style.opacity = q; subs.style.transform = `translateY(${(1-q)*14}px)`;
+}
+
+window.render = function (t) {
+  shake = 0; red = 0;
+  $("progress").style.width = (t / DURATION * 100) + "%";
+  for (const [id, a, b] of SCENES) {
+    const vis = (t >= a && t < b) ? Math.min(ease((t - a) / 0.25), id === "s10" ? 1 : 1 - ease((t - (b - 0.25)) / 0.25)) : 0;
+    $(id).style.opacity = vis;
+  }
+  let fl = 0; for (const c of CUTS) { const d = t - c; if (d >= -0.05 && d < 0.25) fl = Math.max(fl, 1 - Math.abs(d + 0.05) / 0.3); }
+  $("flash").style.opacity = fl * 0.4;
+  const cur = SCENES.find(([, a, b]) => t >= a && t < b) || SCENES[SCENES.length - 1];
+  let camScale = 1;
+
+  // S1
+  rise("s1tag", t, 0.2); slam("s1a", t, W("Une faute. Un no-ball", "no-ball")); rise("s1b", t, W("Sauf que celui-là", "veille"));
+  pop("s1c", t, W("Voici l'histoire", "prison")); redHit(t, W("Voici l'histoire", "prison") + 0.1);
+  // S2
+  rise("s2tag", t, S("s2") + 0.1); pop("s2a", t, W("Truquer un match entier", "risqué")); pop("s2b", t, W("Le spot-fixing, c'est truquer", "moment"));
+  rise("s2z", t, P("Le résultat du match"));
+  // S3
+  rise("s3tag", t, S("s3") + 0.1); pop("s3a", t, W("Un journaliste du News", "journaliste")); pop("s3b", t, W("Il rencontre un agent", "Majeed"));
+  pop("s3c", t, W("Pour le prouver", "trois")); slam("s3n", t, W("Le journaliste lui remet", "150")); rise("s3m", t, W("Le journaliste lui remet", "liquide"));
+  // S4
+  rise("s4tag", t, S("s4") + 0.1); slam("s4t", t, W("Mohammad Amir a 18", "Amir"));
+  pop("s4a", t, W("Mohammad Amir a 18", "talents")); pop("s4b", t, W("Le 26 août, il bowle", "no-ball"));
+  // S5
+  rise("s5tag", t, S("s5") + 0.1); slam("s5a", t, W("Le 29 août 2010", "publie"));
+  pop("s5b", t, W("Les vidéos", "vidéos")); pop("s5c", t, W("Les vidéos", "enregistrements")); pop("s5d", t, W("Scotland Yard arrête", "Scotland"));
+  // S6
+  rise("s6tag", t, S("s6") + 0.1); pop("s6a", t, W("Selon Majeed, Mohammad Asif", "65")); pop("s6b", t, W("Selon Majeed, Mohammad Asif", "10"));
+  pop("s6c", t, W("Et Amir, le plus jeune", "2")); redHit(t, W("Et Amir, le plus jeune", "2") + 0.1);
+  // S7
+  rise("s7tag", t, P("Puis en novembre 2011"));
+  pop("s7a", t, W("Salman Butt prend", "30")); pop("s7b", t, W("Salman Butt prend", "an")); pop("s7c", t, W("Amir, qui a plaidé", "six")); pop("s7d", t, W("Et Majeed, l'agent", "deux"));
+  // S8
+  rise("s8tag", t, S("s8") + 0.1); pop("s8a", t, W("Amir sort après", "revient")); pop("s8b", t, W("En juillet 2016", "Lord's")); pop("s8c", t, W("Un an plus tard", "Rohit"));
+  // S9
+  rise("s9tag", t, S("s9") + 0.1); slam("s9a", t, P("Un no-ball, ça arrive")); slam("s9b", t, W("Un no-ball, ça arrive", "tous")); rise("s9c", t, W("Un no-ball, ça arrive", "caméra"));
+  // S10
+  pop("s10logo", t, S("s10") + 0.2, 0.6); pop("s10cta", t, W("Si ce genre", "abonne")); rise("s10foot", t, E("La prochaine affaire") + 0.3, 0.4, 20);
+  $("s10cta").style.boxShadow = `0 0 ${30 + 25*Math.sin(t*4)}px rgba(245,184,0,.55)`;
+
+  // flow arrows appear with the card they point to
+  document.querySelectorAll(".row > .k.gold").forEach((a) => { a.style.opacity = a.nextElementSibling.style.opacity || 0; });
+  let onPhoto = false;
+  for (const [, a, b] of PHOTOS) onPhoto = onPhoto || (t >= a && t < b);
+  $("illu").style.opacity = (onPhoto || t >= S("s10")) ? 0 : 1;
+  renderSubs(t);
+  $("redflash").style.opacity = red;
+  const sx = shake ? Math.sin(t * 97) * shake : 0, sy = shake ? Math.cos(t * 83) * shake : 0;
+  $("cam").style.transform = `translate(${sx}px, ${sy}px) scale(${camScale})`;
+};
+window.render(0);
+</script>
+</body>
+</html>
