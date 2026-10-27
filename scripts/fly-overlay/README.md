@@ -34,7 +34,21 @@ La notation reste silencieuse pour les pertes (`editMessage: false` dans index.t
 choix de Noaim du 2026-09-06). Le patch appliqué est la fonction `postWonReply`
 de `patch.py`, appelée juste après `resolved++` dans `applyVerdict`.
 
-## v185 (à déployer) — prono VIP gagné transféré dans le canal gratuit
+## v185 (2026-10-27, déployée) — prono VIP gagné transféré dans le canal gratuit
+Image `deployment-01M5ZRBSAE5FTGH1X13KYN9CYS`, construite `FROM` l'image v184
+(`deployment-01M5N8ZYFB2H524AZYZ6D3RARX`, retour arrière possible vers celle-ci).
+Le `fly.toml` sauvegardé pointe sur `Dockerfile.worker` : le passer à `Dockerfile`
+avant `flyctl deploy`, sinon le build échoue. En plus de `patch_free_forward.py`
+(indentation corrigée à 6 espaces pour coller à la prod), deux retraits faits à la main :
+- `index.ts` : appel `sendPendingWinRecaps` supprimé. La prod
+  (`SEND_FREE_CHANNEL_POSTS=true`) transférait déjà chaque gain depuis la boucle, ce qui
+  aurait fait doublon avec le nouveau transfert au moment de la notation.
+- `freeChannel.ts` : `maybeSendDailyRecap` n'envoie plus le texte « Hier dans le VIP »
+  (3 variantes). La note du lundi, la promo série et le message du soir restent.
+`pickShare.ts` ne fait pas doublon : il publie le prono gratuit (« 🎁 ») avant le match,
+pas un transfert après la victoire.
+
+### Notes d'origine
 À appliquer sur le `consensusOutcomeResolver.ts` de v184 (récupéré sur la machine) :
 `python3 patch_free_forward.py .`. Quand un prono VIP est gagné, juste après la
 réponse « ✅ PRONO VALIDÉ ✅ » dans le VIP, le message VIP original est transféré

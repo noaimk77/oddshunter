@@ -59,9 +59,9 @@ async function forwardWonToFreeChannel(
 }
 
 export async function resolvePendingConsensusOutcomes("""),
-    ("""        await postWonReply(client, alert.sentMessageId, alert.homeTeam ?? "", alert.awayTeam ?? "", homeScore, awayScore);
-""", """        await postWonReply(client, alert.sentMessageId, alert.homeTeam ?? "", alert.awayTeam ?? "", homeScore, awayScore);
-        await forwardWonToFreeChannel(client, alert.sentMessageId, alert.homeTeam ?? "", alert.awayTeam ?? "", homeScore, awayScore);
+    ("""      await postWonReply(client, alert.sentMessageId, alert.homeTeam ?? "", alert.awayTeam ?? "", homeScore, awayScore);
+""", """      await postWonReply(client, alert.sentMessageId, alert.homeTeam ?? "", alert.awayTeam ?? "", homeScore, awayScore);
+      await forwardWonToFreeChannel(client, alert.sentMessageId, alert.homeTeam ?? "", alert.awayTeam ?? "", homeScore, awayScore);
 """),
 ]
 for old, new in edits:
