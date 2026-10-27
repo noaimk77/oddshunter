@@ -1,0 +1,96 @@
+{
+ "name": "oddshunter-matchs-fantomes",
+ "discover": {
+  "soccer": {
+   "rx": "(soccer|football|futbol|goalkeeper|penalty|striker)",
+   "not": "(american|rugby|table|foosball)",
+   "cats": [
+    "soccer",
+    "football",
+    "sport",
+    "stadium"
+   ],
+   "pages": 3,
+   "max": 10
+  },
+  "empty": {
+   "rx": "(empty|lockdown|quarantine|deserted|mask|pandemic)",
+   "cats": [
+    "empty",
+    "quarantine",
+    "covid",
+    "city",
+    "street"
+   ],
+   "pages": 2,
+   "max": 6
+  },
+  "hacker": {
+   "rx": "(hacker|coding|typing|laptop|computer|server|programmer|data-center)",
+   "cats": [
+    "hacker",
+    "computer",
+    "laptop",
+    "technology"
+   ],
+   "pages": 2,
+   "max": 8
+  }
+ },
+ "themes": {
+  "money": [
+   "18296",
+   "18304",
+   "45703",
+   "18297"
+  ],
+  "phone": [
+   "309",
+   "23073"
+  ],
+  "data": [
+   "47012",
+   "47214",
+   "9607",
+   "47016",
+   "47018"
+  ],
+  "court": [
+   "46820",
+   "47686",
+   "47602"
+  ],
+  "police": [
+   "49329",
+   "47803",
+   "17536"
+  ],
+  "city": [
+   "41161",
+   "40746",
+   "6754"
+  ],
+  "fans": [
+   "29914",
+   "49254",
+   "24343"
+  ]
+ },
+ "fallback": {
+  "soccer": "fans",
+  "empty": "city",
+  "hacker": "data"
+ },
+ "photos": {},
+ "photo_bg": "soccer",
+ "thumb_bg": "soccer",
+ "thumb_photo": "none",
+ "pad": {
+  "soccer": [
+   "fans"
+  ],
+  "empty": [
+   "city"
+  ]
+ }
+}

@@ -1,0 +1,168 @@
+<script>
+// Voice-over lines = on-screen subtitles. Noaim reads them over the finished
+// video, so timing comes from text length (CPS), numbers counted as spoken.
+const CAPS = [
+  ["s1", "Mars 2020. Le monde est à l'arrêt. Plus de foot, plus de tennis, plus rien."],
+  ["s1", "Et pourtant, des bookmakers proposent des cotes sur un petit tournoi de foot en Ukraine."],
+  ["s1", "Des gens parient. Des scores tombent. Des gagnants encaissent."],
+  ["s1", "Sauf que selon la fédération ukrainienne, ces matchs n'ont jamais pu être joués. Bienvenue dans le monde des matchs fantômes."],
+  ["s2", "Pour comprendre, il faut revenir au printemps 2020."],
+  ["s2", "Le Covid arrête presque tout le sport. Il reste quelques championnats, comme en Biélorussie ou au Nicaragua, et les parieurs se jettent dessus."],
+  ["s2", "Le foot ukrainien, lui, est suspendu depuis le 18 mars."],
+  ["s2", "Les bookmakers ont des clients qui veulent parier, et presque rien à leur proposer."],
+  ["s2", "C'est exactement le genre de vide dont les truqueurs rêvent."],
+  ["s3", "Il y a un truc que peu de gens savent : les bookmakers ne regardent pas chaque match."],
+  ["s3", "Sur les petits matchs, ils reçoivent les infos de sociétés de données, qui envoient des scouts au stade."],
+  ["s3", "Le scout note tout en direct : les buts, les corners, les cartons. Et ces données font bouger les cotes chez des dizaines de bookmakers."],
+  ["s3", "Donc si quelqu'un contrôle le scout, ou se fait passer pour lui, il contrôle ce que voit tout le marché."],
+  ["s4", "Fin mars 2020, un tournoi amical apparaît : l'Azov Cup."],
+  ["s4", "Quatre petites équipes ukrainiennes, de niveau régional ou de division inférieure."],
+  ["s4", "Il y a un site internet, un calendrier. Tout a l'air officiel."],
+  ["s4", "Un des plus gros fournisseurs de données du marché le transmet à ses clients bookmakers."],
+  ["s4", "Les matchs sont cotés en direct, et les paris tombent, notamment sur le score exact."],
+  ["s5", "Après trois matchs, des schémas de paris anormaux sont repérés."],
+  ["s5", "Trop d'argent, sur les bons scores, au bon moment."],
+  ["s5", "Selon Inside World Football, les mises sur ce tournoi auraient pu atteindre 100 000 livres."],
+  ["s6", "Et là, deux versions s'affrontent."],
+  ["s6", "Pour la fédération ukrainienne, c'est simple : il est impossible que quelqu'un ait joué, tout le pays est en confinement."],
+  ["s6", "Pour elle, ce sont des matchs fantômes : des scores inventés, envoyés par un faux scout."],
+  ["s6", "Pour le fournisseur de données, les matchs ont bien eu lieu, mais ils étaient truqués, et il se dit lui-même victime d'une fraude."],
+  ["s6", "Dans les deux cas, une chose est sûre : des gens ont parié sur des résultats que quelqu'un connaissait d'avance."],
+  ["s6", "Selon Inside World Football, les organisateurs seraient presque certainement liés à des réseaux biélorusses et turcs."],
+  ["s7", "Tu crois que c'est un cas isolé ? En octobre 2024, une enquête de Bellingcat et du magazine Josimar va beaucoup plus loin."],
+  ["s7", "Selon cette enquête, un grand bookmaker en ligne diffusait et cotait, jour et nuit, des matchs amateurs très louches."],
+  ["s7", "Des équipes aux noms qui ressemblent à ceux de grands clubs, filmées dans des lieux tenus secrets."],
+  ["s7", "Les journalistes disent avoir localisé 16 de ces sites, dans plusieurs pays."],
+  ["s7", "Et parmi les joueurs, il y aurait des enfants dès 14 ans, payés en liquide, parfois passés au détecteur de mensonges."],
+  ["s8", "Le point commun entre tout ça ?"],
+  ["s8", "L'argent ne va pas là où il y a du sport. Il va là où il y a des cotes."],
+  ["s8", "Un match n'a même plus besoin d'être vrai pour être coté. Il suffit que des données arrivent."],
+  ["s8", "Et plus le match est petit, moins il y a de monde pour vérifier."],
+  ["s9", "C'est pour ça qu'on surveille les cotes, et surtout les petits matchs dont personne ne parle."],
+  ["s9", "Quand un score exact est massivement joué sur un tournoi que personne ne connaît, la vraie question, c'est pas qui va gagner."],
+  ["s9", "C'est : est-ce que ce match existe vraiment ?"],
+  ["s10", "Si ce genre d'histoire te parle, abonne-toi."],
+  ["s10", "La prochaine affaire arrive bientôt."],
+];
+const CPS = 13.5, GAP = 0.35, SCENE_GAP = 0.45, LEAD = 0.8, TAIL = 4;
+const spokenLen = (t) => t.replace(/\b(19|20)\d\d\b/g, "x".repeat(18)).replace(/\d+[  ]000/g, "x".repeat(10)).replace(/\d+/g, "x".repeat(6)).length;
+const PH = [], SCENES = [];
+{
+  let cur = LEAD, prev = null;
+  for (const [sc, text] of CAPS) {
+    if (sc !== prev) { if (prev) cur += SCENE_GAP; SCENES.push([sc, Math.max(0, cur - 0.35), 0]); prev = sc; }
+    const words = text.replace(/ ([?:!»])/g, " $1").replace(/« /g, "« ").split(" ");
+    const wts = words.map((w) => /\d/.test(w) ? Math.max(w.length, 6) : w.length + 1);
+    const tot = wts.reduce((a, b) => a + b, 0), dur = Math.max(1.2, spokenLen(text) / CPS);
+    let acc = 0; const wt = wts.map((x) => { const s = cur + dur * acc / tot; acc += x; return s; });
+    PH.push({ sc, text, words, wt, a: cur, b: cur + dur });
+    cur += dur + GAP;
+  }
+  SCENES[0][1] = 0;
+}
+const DURATION = PH[PH.length - 1].b + TAIL;
+SCENES.forEach((s, i) => { s[2] = i < SCENES.length - 1 ? SCENES[i + 1][1] : DURATION; });
+const CUTS = SCENES.slice(1).map((s) => s[1]);
+// Phrase lookup by text prefix (first match), then word times inside it.
+const Q = (prefix) => { const i = PH.findIndex((p) => p.text.startsWith(prefix)); if (i < 0) throw new Error("phrase " + prefix); return PH[i]; };
+const P = (prefix) => Q(prefix).a, E = (prefix) => Q(prefix).b;
+const W = (prefix, w) => { const p = Q(prefix), k = p.words.findIndex((x) => x.toLowerCase().startsWith(w.toLowerCase())); if (k < 0) throw new Error(`cue ${prefix} ${w}`); return p.wt[k]; };
+const S = (id) => SCENES.find((s) => s[0] === id)[1];
+const HITS = [W("Sauf que selon la fédération", "jamais"), W("Selon Inside World Football, les mises", "100"), W("Et parmi les joueurs", "14")];
+// no real-person photo in this story: footage only
+const PHOTOS = [];
+window.TIMING = { DURATION, SCENES, CUTS, HITS, PHOTOS, PH: PH.map(({ text, a, b }) => ({ text, a, b })) };
+
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a=0, b=1) => Math.max(a, Math.min(b, x));
+const ease = (x) => { x = clamp(x); return 1 - Math.pow(1 - x, 3); };
+const inout = (x) => { x = clamp(x); return x < .5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3) / 2; };
+const back = (x) => { x = clamp(x); const c1 = 1.9, c3 = c1 + 1; return 1 + c3*Math.pow(x-1,3) + c1*Math.pow(x-1,2); };
+function rise(id, t, at, dur=0.45, dy=50) {
+  const p = ease((t - at) / dur), el = $(id);
+  el.style.opacity = p; el.style.transform = `translateY(${(1-p)*dy}px)`; el.style.filter = `blur(${(1-p)*10}px)`;
+}
+function slam(id, t, at, dur=0.4) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 2); el.style.transform = `scale(${2.2 - 1.2*ease(p)})`; el.style.filter = `blur(${(1-ease(p))*14}px)`;
+}
+function pop(id, t, at, dur=0.5) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 1.8); el.style.transform = `scale(${p === 0 ? .6 : .6 + .4*back(p)})`;
+}
+let shake = 0, red = 0;
+const impact = (t, at, amp=14) => { return; const d = t - at; if (d >= 0 && d < 0.35) shake = Math.max(shake, (1 - d/0.35) * amp); };
+const redHit = (t, at) => { if (t > at && t < at + 0.4) red = Math.max(red, 0.2 * (1 - (t - at) / 0.4)); };
+
+let shownPh = -2;
+function renderSubs(t) {
+  let idx = -1;
+  for (let i = 0; i < PH.length; i++) if (t >= PH[i].a - 0.05) idx = i;
+  if (idx === PH.length - 1 && t > PH[idx].b + 1.2) idx = -1;
+  const subs = $("subs");
+  if (idx !== shownPh) { subs.innerHTML = idx < 0 ? "" : PH[idx].words.map((w) => `<span>${w}</span>`).join(" "); shownPh = idx; }
+  if (idx < 0) { subs.style.opacity = 0; return; }
+  const p = PH[idx];
+  [...subs.children].forEach((el, k) => {
+    const end = k + 1 < p.wt.length ? p.wt[k + 1] : p.b;
+    el.className = t >= end ? "said" : t >= p.wt[k] ? "now" : "next";
+  });
+  const q = ease((t - p.a + 0.05) / 0.15);
+  subs.style.opacity = q; subs.style.transform = `translateY(${(1-q)*14}px)`;
+}
+
+window.render = function (t) {
+  shake = 0; red = 0;
+  $("progress").style.width = (t / DURATION * 100) + "%";
+  for (const [id, a, b] of SCENES) {
+    const vis = (t >= a && t < b) ? Math.min(ease((t - a) / 0.25), id === "s10" ? 1 : 1 - ease((t - (b - 0.25)) / 0.25)) : 0;
+    $(id).style.opacity = vis;
+  }
+  let fl = 0; for (const c of CUTS) { const d = t - c; if (d >= -0.05 && d < 0.25) fl = Math.max(fl, 1 - Math.abs(d + 0.05) / 0.3); }
+  $("flash").style.opacity = fl * 0.4;
+  const cur = SCENES.find(([, a, b]) => t >= a && t < b) || SCENES[SCENES.length - 1];
+  let camScale = 1;
+
+  // S1
+  rise("s1tag", t, 0.2); slam("s1a", t, W("Et pourtant, des bookmakers", "cotes")); slam("s1b", t, W("Sauf que selon la fédération", "jamais"));
+  pop("s1c", t, W("Sauf que selon la fédération", "fantômes")); redHit(t, W("Sauf que selon la fédération", "jamais") + 0.1);
+  // S2
+  rise("s2tag", t, S("s2") + 0.1); pop("s2a", t, W("Le Covid arrête", "arrête")); pop("s2b", t, W("Le foot ukrainien", "suspendu"));
+  pop("s2c", t, W("Les bookmakers ont des clients", "rien")); rise("s2z", t, P("C'est exactement le genre"));
+  // S3
+  rise("s3tag", t, S("s3") + 0.1); pop("s3a", t, W("Sur les petits matchs, ils reçoivent", "scouts")); pop("s3b", t, W("Sur les petits matchs, ils reçoivent", "sociétés"));
+  pop("s3c", t, W("Le scout note tout", "dizaines")); rise("s3z", t, P("Donc si quelqu'un contrôle"));
+  // S4
+  rise("s4tag", t, S("s4") + 0.1); slam("s4t", t, W("Fin mars 2020", "l'Azov")); pop("s4a", t, W("Quatre petites équipes", "Quatre"));
+  pop("s4b", t, W("Il y a un site internet", "site")); pop("s4c", t, W("Les matchs sont cotés", "cotés"));
+  // S5
+  rise("s5tag", t, S("s5") + 0.1); slam("s5a", t, W("Après trois matchs", "anormaux")); slam("s5n", t, W("Selon Inside World Football, les mises", "100"));
+  rise("s5m", t, W("Selon Inside World Football, les mises", "livres"));
+  // S6
+  rise("s6tag", t, S("s6") + 0.1); pop("s6a", t, W("Pour la fédération ukrainienne", "impossible")); pop("s6b", t, W("Pour le fournisseur de données", "truqués"));
+  // S7
+  rise("s7tag", t, S("s7") + 0.1); slam("s7t", t, W("Selon cette enquête", "cotait"));
+  pop("s7a", t, W("Les journalistes disent", "16")); pop("s7b", t, W("Selon cette enquête", "nuit")); pop("s7c", t, W("Et parmi les joueurs", "14"));
+  rise("s7z", t, W("Et parmi les joueurs", "liquide")); redHit(t, W("Et parmi les joueurs", "14") + 0.1);
+  // S8
+  rise("s8tag", t, S("s8") + 0.1); rise("s8a", t, P("L'argent ne va pas")); slam("s8b", t, W("L'argent ne va pas", "Il"));
+  // S9
+  rise("s9tag", t, S("s9") + 0.1); rise("s9a", t, W("Quand un score exact", "pas")); slam("s9b", t, P("C'est : est-ce que"));
+  // S10
+  pop("s10logo", t, S("s10") + 0.2, 0.6); pop("s10cta", t, W("Si ce genre", "abonne")); rise("s10foot", t, E("La prochaine affaire") + 0.3, 0.4, 20);
+  $("s10cta").style.boxShadow = `0 0 ${30 + 25*Math.sin(t*4)}px rgba(245,184,0,.55)`;
+
+  // flow arrows appear with the card they point to
+  document.querySelectorAll(".row > .k.gold").forEach((a) => { a.style.opacity = a.nextElementSibling.style.opacity || 0; });
+  let onPhoto = false;
+  for (const [, a, b] of PHOTOS) onPhoto = onPhoto || (t >= a && t < b);
+  $("illu").style.opacity = (onPhoto || t >= S("s10")) ? 0 : 1;
+  renderSubs(t);
+  $("redflash").style.opacity = red;
+  const sx = shake ? Math.sin(t * 97) * shake : 0, sy = shake ? Math.cos(t * 83) * shake : 0;
+  $("cam").style.transform = `translate(${sx}px, ${sy}px) scale(${camScale})`;
+};
+window.render(0);
+</script>
+</body>
+</html>
