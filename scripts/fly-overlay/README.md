@@ -33,3 +33,13 @@ le compte de Noaim répond au message du prono « ✅ PRONO VALIDÉ ✅ + score 
 La notation reste silencieuse pour les pertes (`editMessage: false` dans index.ts,
 choix de Noaim du 2026-09-06). Le patch appliqué est la fonction `postWonReply`
 de `patch.py`, appelée juste après `resolved++` dans `applyVerdict`.
+
+## v185 (à déployer) — prono VIP gagné transféré dans le canal gratuit
+À appliquer sur le `consensusOutcomeResolver.ts` de v184 (récupéré sur la machine) :
+`python3 patch_free_forward.py .`. Quand un prono VIP est gagné, juste après la
+réponse « ✅ PRONO VALIDÉ ✅ » dans le VIP, le message VIP original est transféré
+tel quel dans le canal gratuit, puis le compte répond sous le transfert
+« ✅✅✅ Prono VIP validé ! + score ». Nouveau secret requis :
+`TELEGRAM_FREE_CHANNEL` (@username, t.me/username ou lien t.me/+invitation).
+Demande de Noaim du 2026-10-27 : plus de récap texte « Hier dans le VIP » — ce récap
+vit dans le code de prod absent de GitHub, à retirer au même déploiement.
