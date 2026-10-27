@@ -1,0 +1,32 @@
+# Assembles a long video (real footage + graphics layer + music) on GitHub's runners,
+# which can reach the free footage / photo sites. Push studio/<folder>/RENDER to start;
+# the finished MP4 + thumbnail are attached to a release named after the folder.
+name: build-video
+on:
+  push:
+    branches: [claude/social-media-assets]
+    paths: ["studio/*/RENDER"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - name: Find folder
+        id: f
+        run: |
+          d=$(git diff --name-only HEAD~1 HEAD | grep -E '^studio/[^/]+/RENDER$' | head -1 | cut -d/ -f2)
+          echo "dir=$d" >> "$GITHUB_OUTPUT"
+      - name: Build
+        run: |
+          sudo mkdir -p /vercel /tmp/www && sudo chown -R "$USER" /vercel /tmp/www
+          python3 studio/${{ steps.f.outputs.dir }}/build.py "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/studio/${{ steps.f.outputs.dir }}" | tee /tmp/www/build.log
+          ls -la /tmp/www
+      - name: Publish
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          tag="video-${{ steps.f.outputs.dir }}-${{ github.run_number }}"
+          gh release create "$tag" /tmp/www/*.mp4 /tmp/www/*.jpg /tmp/www/credits.json /tmp/www/build.log --target "${{ github.sha }}" --title "$tag" --notes "Vidéo montée (build automatique)."
