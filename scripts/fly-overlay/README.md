@@ -91,8 +91,8 @@ flyctl deploy --remote-only --dockerfile Dockerfile -a oddshunter-worker
 - Restent inchangés dans le gratuit : transfert de chaque gagnant + « ✅✅✅ Prono VIP validé ! »
   (v185), promo « série en cours » (`maybeSendStreakPromo`), prono « 🎁 » de `pickShare.ts`.
 
-## v187 (2026-10-28, construite, pas encore déployée) — alerte VIP : noms d'équipes + photo
-À construire `FROM` l'image v186 (`deployment-01M60ZTQ2P9WMB8XHEH598BQXC`, retour arrière
+## v187 (2026-10-28, déployée) — alerte VIP : noms d'équipes + photo
+Image `deployment-01M610N2QW5HZ88PX9B4DAE37G`, construite `FROM` l'image v186 (`deployment-01M60ZTQ2P9WMB8XHEH598BQXC`, retour arrière
 possible vers celle-ci) avec `Dockerfile.v187`, `patch_v187.py` (sur `tipParser.ts`,
 `tipParser.test.ts`, `tipLlmFallback.ts`, `vipGroup.ts` de v186) et le nouveau module
 `src/worker/telegram/alertImage.ts` (+ son test) de ce repo. Le build lance 151 tests
