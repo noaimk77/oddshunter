@@ -154,3 +154,20 @@ le même, sauf FixHunter qui suffit seul.
 - Flip de Vip ESPORTS : posté seulement en réponse sous un prono déjà dans le VIP, plus
   jamais en message seul.
 - Inchangé : autobet (paris auto des groupes suivis), lecture du dossier « VIP » pour l'écoute.
+
+## v190 (2026-10-28, construite, pas encore déployée) — lecture des captures malgré Gemini surchargé
+À construire `FROM` l'image v189 (`deployment-01M61KF8GEE4R37M5WK5RKRVZZ`, retour arrière
+possible vers celle-ci) avec `Dockerfile.v190` et `patch_v190.py` (remplace `callGemini` de
+`tipLlmFallback.ts` v189 en entier, échoue si la prod a bougé).
+
+Cas réel du 2026-10-28 18h41 : le « W1 » de FixHunter sur Team Spirit vs Natus Vincere n'a
+jamais été lu (enregistré en ticket sans équipes ni prono). Au même moment la chaîne Gemini
+répondait : 3.5-flash-lite délai dépassé, 3.1-flash-lite 503 (surcharge), 3-flash-preview et
+3.5-flash 429 (quota gratuit).
+- Si un modèle a seulement expiré ou répondu 503, la chaîne entière est relancée une fois
+  20 s plus tard au lieu d'abandonner la capture.
+- Claude (`claude-opus-5-5`, effort bas, SDK `@anthropic-ai/sdk` déjà dans l'image) devient
+  le dernier maillon, même prompt, même JSON. **La clé `ANTHROPIC_API_KEY` du worker est
+  refusée (401, vérifié le 2026-10-28 par `models.retrieve`)** : le premier 401 coupe ce
+  maillon jusqu'au redémarrage, il ne sert qu'une fois une clé valide posée
+  (`flyctl secrets set ANTHROPIC_API_KEY=… -a oddshunter-worker`).

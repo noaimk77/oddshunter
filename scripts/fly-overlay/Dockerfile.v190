@@ -1,0 +1,7 @@
+# v190 = production v189 image + patch_v190.py (slip reading survives a Gemini overload; Claude as last link).
+FROM registry.fly.io/oddshunter-worker:deployment-01M61KF8GEE4R37M5WK5RKRVZZ
+COPY src/worker/telegram/tipLlmFallback.ts /app/src/worker/telegram/tipLlmFallback.ts
+# Any failure below stops the build and leaves production untouched.
+RUN cd /app && npx vitest run src/worker/telegram
+RUN cd /app && npx tsx -e "import('./src/worker/telegram/tipLlmFallback.ts').then(() => console.log('modules ok'))"
+RUN cd /app && (npx tsc --noEmit -p . 2>&1 | grep -E "src/worker/telegram/tipLlmFallback" && exit 1 || echo "tsc: nothing on the patched files")
