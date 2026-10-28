@@ -123,8 +123,8 @@ les deux équipes, et le VIP recevait la capture de la conversation telle quelle
   inchangée. Conversation sans capture exploitable : alerte en texte seul. La même photo
   part au prono 🎁 du canal gratuit.
 
-## v188 (2026-10-28, construite, pas encore déployée) — résultat VIP en éditant l'alerte
-À construire `FROM` l'image v187 (`deployment-01M610N2QW5HZ88PX9B4DAE37G`, retour arrière
+## v188 (2026-10-28, déployée) — résultat VIP en éditant l'alerte
+Image `deployment-01M61JXXY4XBFHW9M0JQSGQHCF`, construite `FROM` l'image v187 (`deployment-01M610N2QW5HZ88PX9B4DAE37G`, retour arrière
 possible vers celle-ci) avec `Dockerfile.v188` et `patch_v188.py`, appliqué sur
 `consensusOutcomeResolver.ts` et son test récupérés sur la machine v187.
 
