@@ -137,3 +137,20 @@ possible vers celle-ci) avec `Dockerfile.v188` et `patch_v188.py`, appliqué sur
   v185 sous le transfert (gardée à la demande de Noaim). Perdus et remboursés : VIP seulement.
 - Inchangé : `editMessage: false` dans `index.ts` (l'ancienne ligne « Résultat : … » reste
   désactivée), publication X des gagnants via Buffer.
+
+## v189 (2026-10-28, construite, pas encore déployée) — seul FixHunter publie seul dans le VIP
+À construire `FROM` l'image v188 (`deployment-01M61JXXY4XBFHW9M0JQSGQHCF`, retour arrière
+possible vers celle-ci) avec `Dockerfile.v189` et `patch_v189.py`, appliqué sur `config.ts`,
+`vipFolder.ts` (+ test) et `tipListener.ts` de v188. Le build lance tous les tests de
+`src/worker/telegram` (361) et le contrôle de types.
+
+Demande de Noaim du 2026-10-28 : un prono part dans le VIP seulement quand 2 groupes envoient
+le même, sauf FixHunter qui suffit seul.
+- `lonePickGoesToVip` : avant, un prono seul partait au VIP s'il venait d'un groupe du dossier
+  Telegram « VIP » (Suspicious Game…) ou d'un « Max bet »/« 3/3 » de Vip ESPORTS. Maintenant
+  seulement de FixHunter, reconnu par son id (`LONE_VIP_SOURCE_CHAT_IDS`, défaut
+  `-1001999889425`). Les autres attendent un 2e groupe (le prono est gardé et monte au VIP
+  dès qu'un 2e groupe envoie le même).
+- Flip de Vip ESPORTS : posté seulement en réponse sous un prono déjà dans le VIP, plus
+  jamais en message seul.
+- Inchangé : autobet (paris auto des groupes suivis), lecture du dossier « VIP » pour l'écoute.

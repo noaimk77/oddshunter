@@ -1,0 +1,8 @@
+# v189 = production v188 image + patch_v189.py (only FixHunter posts to the VIP on its own).
+FROM registry.fly.io/oddshunter-worker:deployment-01M61JXXY4XBFHW9M0JQSGQHCF
+COPY src/worker/config.ts /app/src/worker/config.ts
+COPY src/worker/telegram/vipFolder.ts src/worker/telegram/vipFolder.test.ts src/worker/telegram/tipListener.ts /app/src/worker/telegram/
+# Any failure below stops the build and leaves production untouched.
+RUN cd /app && npx vitest run src/worker/telegram
+RUN cd /app && npx tsx -e "Promise.all([import('./src/worker/config.ts'), import('./src/worker/telegram/vipFolder.ts')]).then(() => console.log('modules ok'))"
+RUN cd /app && (npx tsc --noEmit -p . 2>&1 | grep -E "src/worker/(config|telegram/(vipFolder|tipListener))\.ts" && exit 1 || echo "tsc: nothing on the patched files")
