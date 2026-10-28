@@ -1,0 +1,7 @@
+# v187 = production v186 image + patch_v187.py + alertImage.ts (VIP alert team names + photo crop).
+FROM registry.fly.io/oddshunter-worker:deployment-01M60ZTQ2P9WMB8XHEH598BQXC
+COPY src/worker/telegram/tipParser.ts src/worker/telegram/tipParser.test.ts src/worker/telegram/tipLlmFallback.ts src/worker/telegram/vipGroup.ts src/worker/telegram/alertImage.ts src/worker/telegram/alertImage.test.ts /app/src/worker/telegram/
+# Any failure below stops the build and leaves production untouched.
+RUN cd /app && npx vitest run src/worker/telegram/tipParser.test.ts src/worker/telegram/alertImage.test.ts src/worker/telegram/vipGroup.test.ts src/worker/telegram/tipLlmFallback.test.ts src/worker/telegram/freeChannel.test.ts
+RUN cd /app && npx tsx -e "Promise.all([import('./src/worker/telegram/vipGroup.ts'), import('./src/worker/telegram/tipParser.ts'), import('./src/worker/telegram/tipLlmFallback.ts'), import('./src/worker/telegram/alertImage.ts')]).then(() => console.log('modules ok'))"
+RUN cd /app && (npx tsc --noEmit -p . 2>&1 | grep -E "src/worker/telegram/(tipParser|tipLlmFallback|vipGroup|alertImage)" && exit 1 || echo "tsc: nothing on the patched files")

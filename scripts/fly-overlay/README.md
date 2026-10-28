@@ -90,3 +90,35 @@ flyctl deploy --remote-only --dockerfile Dockerfile -a oddshunter-worker
   s'il n'y a aucun gagnant. Reconnue après un redémarrage par sa première ligne.
 - Restent inchangés dans le gratuit : transfert de chaque gagnant + « ✅✅✅ Prono VIP validé ! »
   (v185), promo « série en cours » (`maybeSendStreakPromo`), prono « 🎁 » de `pickShare.ts`.
+
+## v187 (2026-10-28, construite, pas encore déployée) — alerte VIP : noms d'équipes + photo
+À construire `FROM` l'image v186 (`deployment-01M60ZTQ2P9WMB8XHEH598BQXC`, retour arrière
+possible vers celle-ci) avec `Dockerfile.v187`, `patch_v187.py` (sur `tipParser.ts`,
+`tipParser.test.ts`, `tipLlmFallback.ts`, `vipGroup.ts` de v186) et le nouveau module
+`src/worker/telegram/alertImage.ts` (+ son test) de ce repo. Le build lance 151 tests
+(parseur, image, VIP, LLM, canal gratuit) et le contrôle de types.
+
+```sh
+mkdir -p /tmp/deploy/src/worker/telegram && cd /tmp/deploy
+cp <repo>/scripts/fly-overlay/{Dockerfile.v187,patch_v187.py} . && mv Dockerfile.v187 Dockerfile
+cp <repo>/src/worker/telegram/alertImage*.ts src/worker/telegram/
+flyctl ssh console -a oddshunter-worker -C 'tar cf - -C /app src/worker/telegram/tipParser.ts \
+  src/worker/telegram/tipParser.test.ts src/worker/telegram/tipLlmFallback.ts src/worker/telegram/vipGroup.ts' | tar xf -
+python3 patch_v187.py .
+flyctl config save -a oddshunter-worker -y   # puis dockerfile = "Dockerfile" dans fly.toml
+flyctl deploy --remote-only --dockerfile Dockerfile -a oddshunter-worker
+```
+
+Cas réel du 2026-10-28 11h10 : « U21 vs U21 / Plus de 4,5 buts @2,04 » pour Khon Kaen
+United U21 vs Rasi Salai United U21. Les groupes sources avaient posté une capture de
+téléphone d'un autre canal (« vip 3.0 »). L'OCR met les noms sur une ligne et
+« U21 03 : 48 U21 » dessous ; le parseur prenait le chrono pour un score et « U21 » pour
+les deux équipes, et le VIP recevait la capture de la conversation telle quelle.
+- `tipParser.ts` : un côté qui n'est qu'une catégorie (U19/U21…, II, III, Res, Reserve(s))
+  ou la même équipe des deux côtés n'est plus un match ; Gemini lit alors les noms sur
+  l'image (chemin `extractFullTipWithLLM` déjà en place).
+- `vipGroup.ts` + `alertImage.ts` : juste avant de poster, Gemini dit si la photo est une
+  capture de conversation et donne le cadre de la capture bookmaker qui montre le prono ;
+  elle est recadrée avec `sharp`. Capture directe ou pas de réponse en 10 s : photo
+  inchangée. Conversation sans capture exploitable : alerte en texte seul. La même photo
+  part au prono 🎁 du canal gratuit.
