@@ -155,8 +155,8 @@ le même, sauf FixHunter qui suffit seul.
   jamais en message seul.
 - Inchangé : autobet (paris auto des groupes suivis), lecture du dossier « VIP » pour l'écoute.
 
-## v190 (2026-10-28, construite, pas encore déployée) — lecture des captures malgré Gemini surchargé
-À construire `FROM` l'image v189 (`deployment-01M61KF8GEE4R37M5WK5RKRVZZ`, retour arrière
+## v190 (2026-10-28, déployée) — lecture des captures malgré Gemini surchargé
+Image `deployment-01M61VPXEFR87HYDRAVJZD0KWF`, construite `FROM` l'image v189 (`deployment-01M61KF8GEE4R37M5WK5RKRVZZ`, retour arrière
 possible vers celle-ci) avec `Dockerfile.v190` et `patch_v190.py` (remplace `callGemini` de
 `tipLlmFallback.ts` v189 en entier, échoue si la prod a bougé).
 
