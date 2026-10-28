@@ -1,0 +1,67 @@
+{
+ "name": "oddshunter-tennis-maestro",
+ "discover": {
+  "tennis": {
+   "rx": "(tennis|racket|racquet)",
+   "not": "(table-tennis|ping-pong|badminton)",
+   "cats": [
+    "tennis",
+    "sport",
+    "sports"
+   ],
+   "pages": 3,
+   "max": 12
+  }
+ },
+ "themes": {
+  "money": [
+   "18296",
+   "18304",
+   "45703",
+   "18297"
+  ],
+  "phone": [
+   "309",
+   "23073"
+  ],
+  "data": [
+   "47012",
+   "47214",
+   "9607",
+   "47016",
+   "47018"
+  ],
+  "court": [
+   "46820",
+   "47686",
+   "47602"
+  ],
+  "police": [
+   "49329",
+   "47803",
+   "17536"
+  ],
+  "city": [
+   "41161",
+   "40746",
+   "6754"
+  ],
+  "fans": [
+   "29914",
+   "49254",
+   "24343"
+  ]
+ },
+ "fallback": {
+  "tennis": "fans"
+ },
+ "photos": {},
+ "photo_bg": "tennis",
+ "thumb_bg": "tennis",
+ "thumb_photo": "none",
+ "pad": {
+  "tennis": [
+   "fans"
+  ]
+ }
+}

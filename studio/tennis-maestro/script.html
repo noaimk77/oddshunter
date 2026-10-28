@@ -1,0 +1,156 @@
+<script>
+// Voice-over lines = on-screen subtitles. Noaim reads them over the finished
+// video, so timing comes from text length (CPS), numbers counted as spoken.
+const CAPS = [
+  ["s1", "Juin 2018, en Belgique. La police arrête un Arménien de moins de 30 ans."],
+  ["s1", "Un joueur de tennis interrogé par les enquêteurs ne le connaît que sous un surnom : le Maestro."],
+  ["s1", "Dans son réseau, selon le Washington Post, plus de 180 joueurs de tennis professionnels, sur cinq continents."],
+  ["s1", "C'est le plus gros réseau de matchs truqués jamais découvert dans le tennis. Et il a été démantelé par un simple policier de province."],
+  ["s2", "Pour comprendre, il faut savoir une chose : le tennis, c'est le rêve des truqueurs."],
+  ["s2", "Un seul joueur à convaincre. Pas d'équipe, pas de coéquipier qui pose des questions."],
+  ["s2", "Et tu peux parier sur presque tout : un set, un jeu, parfois même un point."],
+  ["s2", "Sur les petits tournois, loin des caméras, les joueurs gagnent très peu. Beaucoup perdent de l'argent en voyageant d'un tournoi à l'autre."],
+  ["s2", "Pour eux, une offre pour perdre un set, ça peut rapporter plus qu'un titre."],
+  ["s3", "Et c'est exactement ce que proposait le Maestro, de son vrai nom Grigor Sargsyan."],
+  ["s3", "Selon le Washington Post, il payait les joueurs plus pour perdre un match, ou une partie de match, que ce qu'ils pouvaient gagner en remportant le tournoi."],
+  ["s3", "Le joueur reçoit une consigne : perdre tel set, ou tel jeu."],
+  ["s3", "Ensuite, Sargsyan envoie des messages à des parieurs pour leur dire sur quels matchs miser."],
+  ["s3", "L'argent est misé, les gains reviennent, et une partie sert à payer les joueurs. Et ça recommence."],
+  ["s4", "Celui qui va tout faire tomber, c'est pas une grande agence internationale."],
+  ["s4", "C'est un policier belge, Nicolas Borremans, basé en Flandre."],
+  ["s4", "Son idée : suivre l'argent. Les paris suspects, les comptes, les virements."],
+  ["s4", "Petit à petit, la piste remonte jusqu'au Maestro."],
+  ["s4", "En juin 2018, c'est le coup de filet : l'opération vise 28 personnes, dont Sargsyan."],
+  ["s5", "Et là, l'ampleur donne le vertige."],
+  ["s5", "Plus de 180 joueurs, sur cinq continents, selon le Washington Post."],
+  ["s5", "Selon la VRT, la radio-télévision publique belge, le groupe a truqué 375 matchs au total."],
+  ["s5", "Dans les années qui suivent, l'agence d'intégrité du tennis suspend des joueurs de plusieurs pays liés au réseau."],
+  ["s6", "Le procès a lieu en Belgique. Et le 30 juin 2023, le tribunal d'Audenarde rend son jugement."],
+  ["s6", "28 personnes sont condamnées."],
+  ["s6", "Grigor Sargsyan prend la peine la plus lourde : cinq ans de prison et 8 000 euros d'amende."],
+  ["s6", "Sept joueurs de tennis sont aussi reconnus coupables."],
+  ["s6", "Et en 2024, le Tribunal arbitral du sport confirme presque toutes les sanctions contre six joueurs liés à l'affaire."],
+  ["s7", "Le plus inquiétant dans cette histoire ? Ça ne se passait pas à Roland-Garros."],
+  ["s7", "Ça se passait dans des tournois dont personne ne parle. Peu de spectateurs, peu de caméras, mais des paris ouverts sur chaque jeu."],
+  ["s7", "Et le seul endroit où on peut vraiment voir la triche, c'est dans les cotes."],
+  ["s7", "De l'argent qui tombe sur un set improbable, sur un match que personne ne regarde. C'est ça, le signal."],
+  ["s8", "Si ce genre d'histoire te parle, abonne-toi."],
+  ["s8", "La prochaine affaire arrive bientôt."],
+];
+const CPS = 13.5, GAP = 0.35, SCENE_GAP = 0.45, LEAD = 0.8, TAIL = 4;
+const spokenLen = (t) => t.replace(/\b(19|20)\d\d\b/g, "x".repeat(18)).replace(/\d+[  ]000/g, "x".repeat(10)).replace(/\d+/g, "x".repeat(6)).length;
+const PH = [], SCENES = [];
+{
+  let cur = LEAD, prev = null;
+  for (const [sc, text] of CAPS) {
+    if (sc !== prev) { if (prev) cur += SCENE_GAP; SCENES.push([sc, Math.max(0, cur - 0.35), 0]); prev = sc; }
+    const words = text.replace(/ ([?:!»])/g, " $1").replace(/« /g, "« ").split(" ");
+    const wts = words.map((w) => /\d/.test(w) ? Math.max(w.length, 6) : w.length + 1);
+    const tot = wts.reduce((a, b) => a + b, 0), dur = Math.max(1.2, spokenLen(text) / CPS);
+    let acc = 0; const wt = wts.map((x) => { const s = cur + dur * acc / tot; acc += x; return s; });
+    PH.push({ sc, text, words, wt, a: cur, b: cur + dur });
+    cur += dur + GAP;
+  }
+  SCENES[0][1] = 0;
+}
+const DURATION = PH[PH.length - 1].b + TAIL;
+SCENES.forEach((s, i) => { s[2] = i < SCENES.length - 1 ? SCENES[i + 1][1] : DURATION; });
+const CUTS = SCENES.slice(1).map((s) => s[1]);
+// Phrase lookup by text prefix (first match), then word times inside it.
+const Q = (prefix) => { const i = PH.findIndex((p) => p.text.startsWith(prefix)); if (i < 0) throw new Error("phrase " + prefix); return PH[i]; };
+const P = (prefix) => Q(prefix).a, E = (prefix) => Q(prefix).b;
+const W = (prefix, w) => { const p = Q(prefix), k = p.words.findIndex((x) => x.toLowerCase().startsWith(w.toLowerCase())); if (k < 0) throw new Error(`cue ${prefix} ${w}`); return p.wt[k]; };
+const S = (id) => SCENES.find((s) => s[0] === id)[1];
+const HITS = [W("Un joueur de tennis interrogé", "Maestro"), W("Selon la VRT", "375"), W("Grigor Sargsyan prend", "cinq")];
+// no free photo of the people involved: footage only
+const PHOTOS = [];
+window.TIMING = { DURATION, SCENES, CUTS, HITS, PHOTOS, PH: PH.map(({ text, a, b }) => ({ text, a, b })) };
+
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a=0, b=1) => Math.max(a, Math.min(b, x));
+const ease = (x) => { x = clamp(x); return 1 - Math.pow(1 - x, 3); };
+const inout = (x) => { x = clamp(x); return x < .5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3) / 2; };
+const back = (x) => { x = clamp(x); const c1 = 1.9, c3 = c1 + 1; return 1 + c3*Math.pow(x-1,3) + c1*Math.pow(x-1,2); };
+function rise(id, t, at, dur=0.45, dy=50) {
+  const p = ease((t - at) / dur), el = $(id);
+  el.style.opacity = p; el.style.transform = `translateY(${(1-p)*dy}px)`; el.style.filter = `blur(${(1-p)*10}px)`;
+}
+function slam(id, t, at, dur=0.4) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 2); el.style.transform = `scale(${2.2 - 1.2*ease(p)})`; el.style.filter = `blur(${(1-ease(p))*14}px)`;
+}
+function pop(id, t, at, dur=0.5) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 1.8); el.style.transform = `scale(${p === 0 ? .6 : .6 + .4*back(p)})`;
+}
+let shake = 0, red = 0;
+const impact = (t, at, amp=14) => { return; const d = t - at; if (d >= 0 && d < 0.35) shake = Math.max(shake, (1 - d/0.35) * amp); };
+const redHit = (t, at) => { if (t > at && t < at + 0.4) red = Math.max(red, 0.2 * (1 - (t - at) / 0.4)); };
+
+let shownPh = -2;
+function renderSubs(t) {
+  let idx = -1;
+  for (let i = 0; i < PH.length; i++) if (t >= PH[i].a - 0.05) idx = i;
+  if (idx === PH.length - 1 && t > PH[idx].b + 1.2) idx = -1;
+  const subs = $("subs");
+  if (idx !== shownPh) { subs.innerHTML = idx < 0 ? "" : PH[idx].words.map((w) => `<span>${w}</span>`).join(" "); shownPh = idx; }
+  if (idx < 0) { subs.style.opacity = 0; return; }
+  const p = PH[idx];
+  [...subs.children].forEach((el, k) => {
+    const end = k + 1 < p.wt.length ? p.wt[k + 1] : p.b;
+    el.className = t >= end ? "said" : t >= p.wt[k] ? "now" : "next";
+  });
+  const q = ease((t - p.a + 0.05) / 0.15);
+  subs.style.opacity = q; subs.style.transform = `translateY(${(1-q)*14}px)`;
+}
+
+window.render = function (t) {
+  shake = 0; red = 0;
+  $("progress").style.width = (t / DURATION * 100) + "%";
+  for (const [id, a, b] of SCENES) {
+    const vis = (t >= a && t < b) ? Math.min(ease((t - a) / 0.25), id === "s8" ? 1 : 1 - ease((t - (b - 0.25)) / 0.25)) : 0;
+    $(id).style.opacity = vis;
+  }
+  let fl = 0; for (const c of CUTS) { const d = t - c; if (d >= -0.05 && d < 0.25) fl = Math.max(fl, 1 - Math.abs(d + 0.05) / 0.3); }
+  $("flash").style.opacity = fl * 0.4;
+  const cur = SCENES.find(([, a, b]) => t >= a && t < b) || SCENES[SCENES.length - 1];
+  let camScale = 1;
+
+  // S1
+  rise("s1tag", t, 0.2); slam("s1a", t, W("Un joueur de tennis interrogé", "Maestro")); slam("s1n", t, W("Dans son réseau", "180"));
+  pop("s1c", t, W("C'est le plus gros réseau", "plus")); redHit(t, W("Dans son réseau", "180") + 0.1);
+  // S2
+  rise("s2tag", t, S("s2") + 0.1); pop("s2a", t, W("Un seul joueur", "seul")); pop("s2b", t, W("Et tu peux parier", "set"));
+  pop("s2c", t, W("Sur les petits tournois", "peu")); rise("s2z", t, P("Pour eux, une offre"));
+  // S3
+  rise("s3tag", t, S("s3") + 0.1); pop("s3a", t, W("Le joueur reçoit", "consigne")); pop("s3b", t, W("Ensuite, Sargsyan envoie", "messages"));
+  pop("s3c", t, W("Ensuite, Sargsyan envoie", "miser")); rise("s3z", t, P("L'argent est misé"));
+  // S4
+  rise("s4tag", t, S("s4") + 0.1); slam("s4t", t, W("C'est un policier belge", "Nicolas")); rise("s4a", t, W("C'est un policier belge", "Flandre"));
+  pop("s4b", t, W("Son idée", "l'argent")); pop("s4c", t, W("En juin 2018", "28"));
+  // S5
+  rise("s5tag", t, S("s5") + 0.1); pop("s5a", t, W("Plus de 180 joueurs", "180")); pop("s5b", t, W("Plus de 180 joueurs", "cinq"));
+  pop("s5c", t, W("Selon la VRT", "375")); redHit(t, W("Selon la VRT", "375") + 0.1);
+  // S6
+  rise("s6tag", t, S("s6") + 0.1); slam("s6a", t, W("28 personnes", "condamnées")); pop("s6b", t, W("Grigor Sargsyan prend", "cinq"));
+  pop("s6c", t, W("Sept joueurs", "Sept"));
+  // S7
+  rise("s7tag", t, S("s7") + 0.1); rise("s7a", t, W("Le plus inquiétant", "Roland-Garros")); slam("s7b", t, P("Ça se passait dans des tournois"));
+  // S8
+  pop("s8logo", t, S("s8") + 0.2, 0.6); pop("s8cta", t, W("Si ce genre", "abonne")); rise("s8foot", t, E("La prochaine affaire") + 0.3, 0.4, 20);
+  $("s8cta").style.boxShadow = `0 0 ${30 + 25*Math.sin(t*4)}px rgba(245,184,0,.55)`;
+
+  // flow arrows appear with the card they point to
+  document.querySelectorAll(".row > .k.gold").forEach((a) => { a.style.opacity = a.nextElementSibling.style.opacity || 0; });
+  let onPhoto = false;
+  for (const [, a, b] of PHOTOS) onPhoto = onPhoto || (t >= a && t < b);
+  $("illu").style.opacity = (onPhoto || t >= S("s8")) ? 0 : 1;
+  renderSubs(t);
+  $("redflash").style.opacity = red;
+  const sx = shake ? Math.sin(t * 97) * shake : 0, sy = shake ? Math.cos(t * 83) * shake : 0;
+  $("cam").style.transform = `translate(${sx}px, ${sy}px) scale(${camScale})`;
+};
+window.render(0);
+</script>
+</body>
+</html>
