@@ -122,3 +122,18 @@ les deux équipes, et le VIP recevait la capture de la conversation telle quelle
   elle est recadrée avec `sharp`. Capture directe ou pas de réponse en 10 s : photo
   inchangée. Conversation sans capture exploitable : alerte en texte seul. La même photo
   part au prono 🎁 du canal gratuit.
+
+## v188 (2026-10-28, construite, pas encore déployée) — résultat VIP en éditant l'alerte
+À construire `FROM` l'image v187 (`deployment-01M610N2QW5HZ88PX9B4DAE37G`, retour arrière
+possible vers celle-ci) avec `Dockerfile.v188` et `patch_v188.py`, appliqué sur
+`consensusOutcomeResolver.ts` et son test récupérés sur la machine v187.
+
+- Chaque prono VIP noté reçoit son résultat **dans le message d'origine** (édition de la
+  légende, mise en forme gardée) : gagné `✅✅✅✅`, perdu `❌`, remboursé `🔁🔁`, sur une
+  ligne à la fin. Une ligne déjà présente est remplacée, jamais empilée.
+- La réponse « ✅ PRONO VALIDÉ ✅ » de v184 sous le prono est supprimée.
+- Prono gagné : le message VIP modifié est transféré dans le canal gratuit, sans la réponse
+  « ✅✅✅ Prono VIP validé ! » de v185 (gardée seulement si l'édition a échoué). Perdus et
+  remboursés ne vont pas dans le gratuit.
+- Inchangé : `editMessage: false` dans `index.ts` (l'ancienne ligne « Résultat : … » reste
+  désactivée), publication X des gagnants via Buffer.

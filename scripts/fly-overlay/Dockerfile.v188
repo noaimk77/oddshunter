@@ -1,0 +1,7 @@
+# v188 = production v187 image + patch_v188.py (VIP result shown by editing the alert).
+FROM registry.fly.io/oddshunter-worker:deployment-01M610N2QW5HZ88PX9B4DAE37G
+COPY src/worker/telegram/consensusOutcomeResolver.ts src/worker/telegram/consensusOutcomeResolver.test.ts /app/src/worker/telegram/
+# Any failure below stops the build and leaves production untouched.
+RUN cd /app && npx vitest run src/worker/telegram/consensusOutcomeResolver.test.ts
+RUN cd /app && npx tsx -e "import('./src/worker/telegram/consensusOutcomeResolver.ts').then(() => console.log('modules ok'))"
+RUN cd /app && (npx tsc --noEmit -p . 2>&1 | grep -E "src/worker/telegram/consensusOutcomeResolver" && exit 1 || echo "tsc: nothing on the patched files")
