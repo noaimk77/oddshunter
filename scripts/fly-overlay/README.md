@@ -138,8 +138,8 @@ possible vers celle-ci) avec `Dockerfile.v188` et `patch_v188.py`, appliqué sur
 - Inchangé : `editMessage: false` dans `index.ts` (l'ancienne ligne « Résultat : … » reste
   désactivée), publication X des gagnants via Buffer.
 
-## v189 (2026-10-28, construite, pas encore déployée) — seul FixHunter publie seul dans le VIP
-À construire `FROM` l'image v188 (`deployment-01M61JXXY4XBFHW9M0JQSGQHCF`, retour arrière
+## v189 (2026-10-28, déployée) — seul FixHunter publie seul dans le VIP
+Image `deployment-01M61KF8GEE4R37M5WK5RKRVZZ`, construite `FROM` l'image v188 (`deployment-01M61JXXY4XBFHW9M0JQSGQHCF`, retour arrière
 possible vers celle-ci) avec `Dockerfile.v189` et `patch_v189.py`, appliqué sur `config.ts`,
 `vipFolder.ts` (+ test) et `tipListener.ts` de v188. Le build lance tous les tests de
 `src/worker/telegram` (361) et le contrôle de types.
