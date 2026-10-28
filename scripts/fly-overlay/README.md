@@ -57,3 +57,36 @@ tel quel dans le canal gratuit, puis le compte répond sous le transfert
 `TELEGRAM_FREE_CHANNEL` (@username, t.me/username ou lien t.me/+invitation).
 Demande de Noaim du 2026-10-27 : plus de récap texte « Hier dans le VIP » — ce récap
 vit dans le code de prod absent de GitHub, à retirer au même déploiement.
+
+## v186 (2026-10-28, déployée) — canal gratuit : 1xBet tous les 3 jours, nouvelle note du lundi
+Image `deployment-01M60ZTQ2P9WMB8XHEH598BQXC`, construite `FROM` l'image v185
+(`deployment-01M5ZRBSAE5FTGH1X13KYN9CYS`, retour arrière possible vers celle-ci) avec
+`Dockerfile.v186` et `patch_v186.py`, appliqué sur `freeChannel.ts`, `freeChannel.test.ts`
+et `index.ts` de v185. Le build lance les tests de `freeChannel.test.ts`, vérifie que
+Telegram lit bien le HTML (tuto = premier lien, href = lien d'affiliation) et échoue sinon.
+Le transfert des gagnants de v185 (`consensusOutcomeResolver.ts`) n'est pas touché.
+
+```sh
+mkdir -p /tmp/deploy && cd /tmp/deploy
+cp <repo>/scripts/fly-overlay/{Dockerfile.v186,patch_v186.py} . && mv Dockerfile.v186 Dockerfile
+flyctl ssh console -a oddshunter-worker \
+  -C 'tar cf - -C /app src/worker/index.ts src/worker/telegram/freeChannel.ts src/worker/telegram/freeChannel.test.ts' | tar xf -
+python3 patch_v186.py .
+flyctl config save -a oddshunter-worker -y   # puis dockerfile = "Dockerfile" dans fly.toml
+flyctl deploy --remote-only --dockerfile Dockerfile -a oddshunter-worker
+```
+(`--build-only` ne pousse pas l'image dans le registre : un `deploy --image` derrière échoue.)
+
+- **Message 1xBet** (remplace le message du soir quotidien) : vers 19h00–19h25 Paris, quand
+  le dernier message 1xBet du canal a au moins 3 jours calendaires ; textes A → B → C → D
+  de Noaim en HTML, lien preview activé (le tuto YouTube est le premier lien). Rien avant
+  le 31/10/2026 (A posté à la main le 28/10). Pas de table ni de volume sur le worker :
+  la date et le texte du dernier envoi sont relus dans le canal (recherche « 1xbet » +
+  id de la vidéo), donc un redéploiement ou un message posté à la main sont pris en compte ;
+  le texte suivant est celui d'après (A si le dernier n'est pas un des 4).
+- **Note du lundi** (~10h Paris) : un seul message, une ligne par prono VIP gagné la
+  semaine passée `✅ Équipe A vs Équipe B | prono @cote` (sans `@cote` si inconnue), puis
+  « Le VIP c'est par ici 👉 https://oddshunter98.vercel.app/abonnement ». Rien n'est posté
+  s'il n'y a aucun gagnant. Reconnue après un redémarrage par sa première ligne.
+- Restent inchangés dans le gratuit : transfert de chaque gagnant + « ✅✅✅ Prono VIP validé ! »
+  (v185), promo « série en cours » (`maybeSendStreakPromo`), prono « 🎁 » de `pickShare.ts`.

@@ -1,0 +1,10 @@
+# v186 = production v185 image + patch_v186.py (free channel: 1xBet every 3 days, new Monday note).
+FROM registry.fly.io/oddshunter-worker:deployment-01M5ZRBSAE5FTGH1X13KYN9CYS
+COPY src/worker/index.ts /app/src/worker/index.ts
+COPY src/worker/telegram/freeChannel.ts /app/src/worker/telegram/freeChannel.ts
+COPY src/worker/telegram/freeChannel.test.ts /app/src/worker/telegram/freeChannel.test.ts
+# Any failure below stops the build and leaves production untouched.
+RUN cd /app && npx vitest run src/worker/telegram/freeChannel.test.ts
+RUN cd /app && npx tsx -e "Promise.all([import('./src/worker/telegram/freeChannel.ts'), import('./src/worker/telegram/consensusOutcomeResolver.ts')]).then(() => console.log('modules ok'))"
+# Telegram must read the 1xBet HTML as: tutorial = first URL, link = the affiliate one.
+RUN cd /app && npx tsx -e "import('telegram/extensions/html').then(async ({ HTMLParser }) => { const m = await import('./src/worker/telegram/freeChannel.ts'); const ONEXBET_TEMPLATES = m.ONEXBET_TEMPLATES ?? m.default.ONEXBET_TEMPLATES; for (const t of ONEXBET_TEMPLATES) { const [text, ents] = HTMLParser.parse(t); const link = ents.find((e) => e.url); if (link.url !== 'https://reffpa.com/L?tag=d_5964613m_4098c_&site=5964613&ad=4098') throw new Error('bad href ' + link.url); if (text.indexOf('youtu.be') > link.offset) throw new Error('tuto not first'); } console.log('html ok'); })"
