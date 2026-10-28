@@ -5,9 +5,9 @@ test. Usage: python3 patch_v188.py <root>
 
 Noaim 2026-10-28: every graded VIP pick gets its result, as a line of emojis
 added to the original alert (no reply under it any more):
-won ✅✅✅✅, lost ❌, refunded 🔁🔁. A won pick is then forwarded to the free
-channel as edited, without the extra "Prono VIP validé" reply (that reply is
-kept only as the fallback when the edit failed).
+won ✅✅✅✅, lost ❌, refunded 🔁🔁. Only a won pick is then forwarded to the
+free channel, as edited, with the short "Prono VIP validé" reply under it
+(Noaim 2026-10-28: keep that line).
 """
 import sys
 root = sys.argv[1]
@@ -83,38 +83,18 @@ async function markVipResult(client: TelegramClient, sentMessageId: bigint | num
 }
 """),
     ("""/** Public proof on the free channel: forward the original VIP message as is,
- *  then reply to the forward with a short "validé" line. Never throws. */
-async function forwardWonToFreeChannel(
-  client: TelegramClient,
-  sentMessageId: bigint | number | null,
-  homeTeam: string,
-  awayTeam: string,
-  homeScore: number,
-  awayScore: number,
-): Promise<void> {""", """/** Public proof on the free channel: forward the VIP alert, which already
- *  ends with its ✅ line. The "validé" reply under the forward is only the
- *  fallback for an alert whose edit failed (`marked` false). Never throws. */
-async function forwardWonToFreeChannel(
-  client: TelegramClient,
-  sentMessageId: bigint | number | null,
-  homeTeam: string,
-  awayTeam: string,
-  homeScore: number,
-  awayScore: number,
-  marked: boolean,
-): Promise<void> {"""),
-    ("""    const [forwarded] = await client.forwardMessages(free, { messages: [Number(sentMessageId)], fromPeer: vip });
-    await client.sendMessage(free, {""", """    const [forwarded] = await client.forwardMessages(free, { messages: [Number(sentMessageId)], fromPeer: vip });
-    if (marked) return;
-    await client.sendMessage(free, {"""),
+ *  then reply to the forward with a short "validé" line. Never throws. */""",
+     """/** Public proof on the free channel, winners only: forward the VIP alert
+ *  (already ending with its ✅ line), then reply to the forward with a short
+ *  "validé" line. Never throws. */"""),
     ("""    if (outcome === "WON") {
       await postWonReply(client, alert.sentMessageId, alert.homeTeam ?? "", alert.awayTeam ?? "", homeScore, awayScore);
       await forwardWonToFreeChannel(client, alert.sentMessageId, alert.homeTeam ?? "", alert.awayTeam ?? "", homeScore, awayScore);
     }
-""", """    // Every result, won, lost or refunded, shows on the alert itself.
-    const marked = await markVipResult(client, alert.sentMessageId, outcome);
+""", """    // Every result, won, lost or refunded, shows on the alert itself, before any forward.
+    await markVipResult(client, alert.sentMessageId, outcome);
     if (outcome === "WON") {
-      await forwardWonToFreeChannel(client, alert.sentMessageId, alert.homeTeam ?? "", alert.awayTeam ?? "", homeScore, awayScore, marked);
+      await forwardWonToFreeChannel(client, alert.sentMessageId, alert.homeTeam ?? "", alert.awayTeam ?? "", homeScore, awayScore);
     }
 """),
 ], "markVipResult")

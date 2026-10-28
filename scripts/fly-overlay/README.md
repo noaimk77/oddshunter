@@ -132,8 +132,8 @@ possible vers celle-ci) avec `Dockerfile.v188` et `patch_v188.py`, appliqué sur
   légende, mise en forme gardée) : gagné `✅✅✅✅`, perdu `❌`, remboursé `🔁🔁`, sur une
   ligne à la fin. Une ligne déjà présente est remplacée, jamais empilée.
 - La réponse « ✅ PRONO VALIDÉ ✅ » de v184 sous le prono est supprimée.
-- Prono gagné : le message VIP modifié est transféré dans le canal gratuit, sans la réponse
-  « ✅✅✅ Prono VIP validé ! » de v185 (gardée seulement si l'édition a échoué). Perdus et
-  remboursés ne vont pas dans le gratuit.
+- Seul un prono gagné va dans le canal gratuit : le message VIP, déjà modifié avec ses
+  ✅✅✅✅, y est transféré, puis la courte réponse « ✅✅✅ Prono VIP validé ! + score » de
+  v185 sous le transfert (gardée à la demande de Noaim). Perdus et remboursés : VIP seulement.
 - Inchangé : `editMessage: false` dans `index.ts` (l'ancienne ligne « Résultat : … » reste
   désactivée), publication X des gagnants via Buffer.
