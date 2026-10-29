@@ -191,3 +191,38 @@ dans le gratuit n'est plus utile, le résultat est déjà dans le message modifi
   elle est transférée telle quelle dans le gratuit. **Aucun message n'est envoyé.**
 - Si l'édition échoue, le prono n'est pas transféré (le transfert n'afficherait aucun résultat).
 - Inchangés : perdu `❌`, remboursé `🔁🔁` (VIP seulement), publication X via Buffer.
+
+## v192 (2026-10-29, déployée) — résultats VIP lus aussi dans les groupes sources
+Image `deployment-01M63Y14BJ9D6B6QSPPG898WYY`, construite `FROM` l'image v191 (`deployment-01M63WZCHWVSBBFR8K47EW98ZD`, retour arrière
+possible vers celle-ci) avec `Dockerfile.v192`, `patch_v192.py` (sur `consensusOutcomeResolver.ts`
+et `flashscore.ts`, pendant le build) et le nouveau module `src/worker/telegram/telegramResults.ts`
+(+ son test) de ce repo. Build seul vérifié le 2026-10-29 : patch appliqué, 25 tests, tsc propre.
+
+```sh
+mkdir -p /tmp/deploy/src/worker/telegram && cd /tmp/deploy
+cp <repo>/scripts/fly-overlay/{Dockerfile.v192,patch_v192.py} . && mv Dockerfile.v192 Dockerfile
+cp <repo>/src/worker/telegram/telegramResults*.ts src/worker/telegram/
+flyctl config save -a oddshunter-worker -y   # puis dockerfile = "Dockerfile" dans fly.toml
+flyctl deploy --remote-only --dockerfile Dockerfile -a oddshunter-worker
+```
+
+Demande de Noaim du 2026-10-29 : des pronos finis depuis longtemps restaient sans ✅/❌/🔁, faute de
+score sur TheSportsDB, BetExplorer ou Flashscore (MESA Pro Series en esport, Myanmar U20, Mumbai
+Super League). Sofascore n'est pas utilisable : 403 depuis Fly.
+- **Résultat donné par les groupes sources** : quand aucun score n'est trouvé, le worker relit les
+  200 derniers messages de chaque groupe qui a envoyé le prono (au plus toutes les 5 min par groupe).
+  Compte comme résultat, dans cet ordre : le prono lui-même modifié avec ✅/❌, une réponse au prono,
+  un message qui nomme une des équipes, ou un message court (« ✅✅✅ », « Passé », photo + ❌) juste
+  après le prono, si ce groupe n'a envoyé aucun autre prono dans les 6 h avant ni entre les deux.
+  Les groupes qui se contredisent ne donnent rien. Sans score, l'alerte reçoit seulement les emojis
+  (`✅✅✅✅`, `❌`, `🔁🔁`), un gagnant part quand même au gratuit, rien sur X.
+- **Flashscore esports** (sport 36) ajouté au flux, pour le vainqueur du match seulement (le score
+  est en cartes). Il ne couvre que les gros tournois (PGL, Worlds…).
+- Un prono n'est abandonné qu'après 24 h sans résultat (au lieu de 8 h), 48 h au maximum, et le
+  worker regarde 60 alertes par passage au lieu de 20. Au démarrage, les alertes abandonnées sans
+  score dans les dernières 48 h sont remises en attente une fois.
+- Premier passage (2026-10-29 13h37 UTC) : 13 alertes remises en attente, 11 notées dont 9 par
+  les messages des groupes (8 gagnés, 1 perdu). Flashscore avait FURIA 2-0 TyLoo et Chrisoupolis
+  0-2 Kalamata sans que le résolveur les rapproche (noms « FURIA Esports », « Nestos Chrysoupoli »).
+- The Audacity vs Chinggis Warriors (2026-10-29) est noté gagné à la main (`MANUAL_VERDICTS`) : le
+  tipster a écrit que le pari était passé.
