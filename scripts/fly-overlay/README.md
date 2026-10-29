@@ -171,3 +171,23 @@ répondait : 3.5-flash-lite délai dépassé, 3.1-flash-lite 503 (surcharge), 3-
   refusée (401, vérifié le 2026-10-28 par `models.retrieve`)** : le premier 401 coupe ce
   maillon jusqu'au redémarrage, il ne sert qu'une fois une clé valide posée
   (`flyctl secrets set ANTHROPIC_API_KEY=… -a oddshunter-worker`).
+
+## v191 (2026-10-29, déployée) — prono gagné : score dans l'alerte, plus de réponse
+Image `deployment-01M63WZCHWVSBBFR8K47EW98ZD`, construite `FROM` l'image v190 (`deployment-01M61VPXEFR87HYDRAVJZD0KWF`, retour arrière
+possible vers celle-ci) avec `Dockerfile.v191` et `patch_v191.py`. Le patch tourne **pendant le
+build**, sur `consensusOutcomeResolver.ts` et son test copiés depuis l'image v190 : rien à
+récupérer sur la machine avant. Le patch échoue (et la prod reste intacte) si ce code a bougé.
+
+```sh
+mkdir -p /tmp/deploy && cd /tmp/deploy
+cp <repo>/scripts/fly-overlay/{Dockerfile.v191,patch_v191.py} . && mv Dockerfile.v191 Dockerfile
+flyctl config save -a oddshunter-worker -y   # puis dockerfile = "Dockerfile" dans fly.toml
+flyctl deploy --remote-only --dockerfile Dockerfile -a oddshunter-worker
+```
+
+Demande de Noaim du 2026-10-29 : la réponse « ✅✅✅ Prono VIP validé ! + score » sous le transfert
+dans le gratuit n'est plus utile, le résultat est déjà dans le message modifié.
+- Prono gagné : l'alerte VIP se termine par `✅✅✅✅ Équipe A 1-4 Équipe B` (une ligne), puis
+  elle est transférée telle quelle dans le gratuit. **Aucun message n'est envoyé.**
+- Si l'édition échoue, le prono n'est pas transféré (le transfert n'afficherait aucun résultat).
+- Inchangés : perdu `❌`, remboursé `🔁🔁` (VIP seulement), publication X via Buffer.

@@ -1,0 +1,16 @@
+# v191 = production v190 image + patch_v191.py (won VIP pick: score on the edited alert, no reply in the free channel).
+# The patch runs here on the files of the production image, so no file has to be fetched from the machine first.
+FROM registry.fly.io/oddshunter-worker:deployment-01M61VPXEFR87HYDRAVJZD0KWF AS prod
+
+FROM python:3.12-slim AS patch
+WORKDIR /w
+COPY --from=prod /app/src/worker/telegram/consensusOutcomeResolver.ts /app/src/worker/telegram/consensusOutcomeResolver.test.ts src/worker/telegram/
+COPY patch_v191.py .
+RUN python3 patch_v191.py /w
+
+FROM prod
+COPY --from=patch /w/src/worker/telegram/consensusOutcomeResolver.ts /w/src/worker/telegram/consensusOutcomeResolver.test.ts /app/src/worker/telegram/
+# Any failure below stops the build and leaves production untouched.
+RUN cd /app && npx vitest run src/worker/telegram/consensusOutcomeResolver.test.ts
+RUN cd /app && npx tsx -e "import('./src/worker/telegram/consensusOutcomeResolver.ts').then(() => console.log('modules ok'))"
+RUN cd /app && (npx tsc --noEmit -p . 2>&1 | grep -E "src/worker/telegram/consensusOutcomeResolver" && exit 1 || echo "tsc: nothing on the patched files")
