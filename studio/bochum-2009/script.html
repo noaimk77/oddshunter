@@ -1,0 +1,157 @@
+<script>
+// Voice-over lines = on-screen subtitles. Noaim reads them over the finished
+// video, so timing comes from text length (CPS), numbers counted as spoken.
+const CAPS = [
+  ["s1", "19 novembre 2009. La police allemande lance une opération dans plusieurs pays d'Europe."],
+  ["s1", "17 arrestations, et environ 200 matchs de foot soupçonnés d'avoir été truqués, dans neuf pays."],
+  ["s1", "Pour l'UEFA, c'est le plus gros scandale de matchs truqués jamais découvert en Europe."],
+  ["s1", "Et au centre de tout ça, un nom que la justice allemande connaît déjà très bien : Ante Šapina."],
+  ["s2", "Pour comprendre, il faut revenir cinq ans en arrière, à Berlin."],
+  ["s2", "Il y a là un bar à paris sportifs, le Café King, lié à la famille Šapina."],
+  ["s2", "C'est là qu'un arbitre allemand, Robert Hoyzer, rencontre Ante Šapina."],
+  ["s2", "Selon la justice, Hoyzer touche près de 70 000 euros, et même une télé écran plat, pour orienter des matchs."],
+  ["s2", "Les enquêteurs soupçonnent 23 matchs truqués entre avril et décembre 2004, surtout dans les divisions inférieures."],
+  ["s3", "Début 2005, le scandale éclate. Et l'Allemagne doit accueillir la Coupe du monde l'année suivante."],
+  ["s3", "Hoyzer avoue. Il prend deux ans et cinq mois de prison."],
+  ["s3", "Ante Šapina, considéré comme le cerveau, prend 35 mois. Ses frères s'en sortent avec du sursis."],
+  ["s3", "On pourrait croire que l'histoire s'arrête là. Sauf que non."],
+  ["s4", "Après sa peine, Šapina ne change pas de métier. Il change d'échelle."],
+  ["s4", "Selon les enquêteurs, il ne vise plus seulement l'Allemagne, mais des championnats dans toute l'Europe."],
+  ["s4", "Et les paris ne se font plus au comptoir d'un bar berlinois : ils partent surtout en Asie, sur des marchés énormes où les grosses mises passent inaperçues."],
+  ["s5", "Le 19 novembre 2009, le parquet de Bochum frappe."],
+  ["s5", "15 arrestations en Allemagne, 2 en Suisse."],
+  ["s5", "Environ 200 matchs sous suspicion, dans neuf pays : l'Allemagne, la Belgique, la Suisse, la Croatie, la Slovénie, la Turquie, la Hongrie, la Bosnie et l'Autriche."],
+  ["s5", "Et même des matchs de Coupe d'Europe : l'UEFA dit examiner des rencontres de Ligue des champions et de Ligue Europa."],
+  ["s6", "Au procès, Šapina avoue avoir truqué plus de 20 matchs."],
+  ["s6", "Parmi eux, un match de qualification pour la Ligue des champions, entre Debrecen et la Fiorentina."],
+  ["s6", "Et selon son propre témoignage, il est même allé à Sarajevo rencontrer un arbitre bosnien, pour arranger un match de qualification pour la Coupe du monde."],
+  ["s7", "En mai 2011, le tribunal de Bochum le condamne à cinq ans et demi de prison, pour 22 faits de fraude et de tentative de fraude."],
+  ["s7", "Après un nouveau procès, sa peine est ramenée à cinq ans en 2014, parce qu'il a coopéré avec les enquêteurs."],
+  ["s7", "Et l'enquête, elle, continue de grossir : selon les procureurs, elle finit par porter sur 270 matchs et plus de 250 personnes."],
+  ["s8", "Ce qui est fou dans cette histoire, c'est pas seulement le nombre de matchs."],
+  ["s8", "C'est qu'un homme déjà condamné pour ça a pu recommencer, en plus grand, quelques années plus tard."],
+  ["s8", "Le trucage, c'est un business. Tant qu'il y a des paris énormes sur des petits matchs, il y aura des gens pour essayer."],
+  ["s8", "Et c'est souvent l'argent qui les trahit : des mises qui tombent au mauvais moment, sur des matchs que personne ne regarde."],
+  ["s9", "Si ce genre d'histoire te parle, abonne-toi."],
+  ["s9", "La prochaine affaire arrive bientôt."],
+];
+const CPS = 13.5, GAP = 0.35, SCENE_GAP = 0.45, LEAD = 0.8, TAIL = 4;
+const spokenLen = (t) => t.replace(/\b(19|20)\d\d\b/g, "x".repeat(18)).replace(/\d+[  ]000/g, "x".repeat(10)).replace(/\d+/g, "x".repeat(6)).length;
+const PH = [], SCENES = [];
+{
+  let cur = LEAD, prev = null;
+  for (const [sc, text] of CAPS) {
+    if (sc !== prev) { if (prev) cur += SCENE_GAP; SCENES.push([sc, Math.max(0, cur - 0.35), 0]); prev = sc; }
+    const words = text.replace(/ ([?:!»])/g, " $1").replace(/« /g, "« ").split(" ");
+    const wts = words.map((w) => /\d/.test(w) ? Math.max(w.length, 6) : w.length + 1);
+    const tot = wts.reduce((a, b) => a + b, 0), dur = Math.max(1.2, spokenLen(text) / CPS);
+    let acc = 0; const wt = wts.map((x) => { const s = cur + dur * acc / tot; acc += x; return s; });
+    PH.push({ sc, text, words, wt, a: cur, b: cur + dur });
+    cur += dur + GAP;
+  }
+  SCENES[0][1] = 0;
+}
+const DURATION = PH[PH.length - 1].b + TAIL;
+SCENES.forEach((s, i) => { s[2] = i < SCENES.length - 1 ? SCENES[i + 1][1] : DURATION; });
+const CUTS = SCENES.slice(1).map((s) => s[1]);
+// Phrase lookup by text prefix (first match), then word times inside it.
+const Q = (prefix) => { const i = PH.findIndex((p) => p.text.startsWith(prefix)); if (i < 0) throw new Error("phrase " + prefix); return PH[i]; };
+const P = (prefix) => Q(prefix).a, E = (prefix) => Q(prefix).b;
+const W = (prefix, w) => { const p = Q(prefix), k = p.words.findIndex((x) => x.toLowerCase().startsWith(w.toLowerCase())); if (k < 0) throw new Error(`cue ${prefix} ${w}`); return p.wt[k]; };
+const S = (id) => SCENES.find((s) => s[0] === id)[1];
+const HITS = [W("17 arrestations", "17"), W("Hoyzer avoue", "deux"), W("En mai 2011", "cinq")];
+// real-photo window (Robert Hoyzer, if Commons has a free photo), shared with edl.py
+const PHOTOS = [["hoyzer", P("C'est là qu'un arbitre") - 0.2, E("Les enquêteurs soupçonnent 23") + 0.3]];
+window.TIMING = { DURATION, SCENES, CUTS, HITS, PHOTOS, PH: PH.map(({ text, a, b }) => ({ text, a, b })) };
+
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a=0, b=1) => Math.max(a, Math.min(b, x));
+const ease = (x) => { x = clamp(x); return 1 - Math.pow(1 - x, 3); };
+const inout = (x) => { x = clamp(x); return x < .5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3) / 2; };
+const back = (x) => { x = clamp(x); const c1 = 1.9, c3 = c1 + 1; return 1 + c3*Math.pow(x-1,3) + c1*Math.pow(x-1,2); };
+function rise(id, t, at, dur=0.45, dy=50) {
+  const p = ease((t - at) / dur), el = $(id);
+  el.style.opacity = p; el.style.transform = `translateY(${(1-p)*dy}px)`; el.style.filter = `blur(${(1-p)*10}px)`;
+}
+function slam(id, t, at, dur=0.4) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 2); el.style.transform = `scale(${2.2 - 1.2*ease(p)})`; el.style.filter = `blur(${(1-ease(p))*14}px)`;
+}
+function pop(id, t, at, dur=0.5) {
+  const p = clamp((t - at) / dur), el = $(id);
+  el.style.opacity = ease(p * 1.8); el.style.transform = `scale(${p === 0 ? .6 : .6 + .4*back(p)})`;
+}
+let shake = 0, red = 0;
+const impact = (t, at, amp=14) => { return; const d = t - at; if (d >= 0 && d < 0.35) shake = Math.max(shake, (1 - d/0.35) * amp); };
+const redHit = (t, at) => { if (t > at && t < at + 0.4) red = Math.max(red, 0.2 * (1 - (t - at) / 0.4)); };
+
+let shownPh = -2;
+function renderSubs(t) {
+  let idx = -1;
+  for (let i = 0; i < PH.length; i++) if (t >= PH[i].a - 0.05) idx = i;
+  if (idx === PH.length - 1 && t > PH[idx].b + 1.2) idx = -1;
+  const subs = $("subs");
+  if (idx !== shownPh) { subs.innerHTML = idx < 0 ? "" : PH[idx].words.map((w) => `<span>${w}</span>`).join(" "); shownPh = idx; }
+  if (idx < 0) { subs.style.opacity = 0; return; }
+  const p = PH[idx];
+  [...subs.children].forEach((el, k) => {
+    const end = k + 1 < p.wt.length ? p.wt[k + 1] : p.b;
+    el.className = t >= end ? "said" : t >= p.wt[k] ? "now" : "next";
+  });
+  const q = ease((t - p.a + 0.05) / 0.15);
+  subs.style.opacity = q; subs.style.transform = `translateY(${(1-q)*14}px)`;
+}
+
+window.render = function (t) {
+  shake = 0; red = 0;
+  $("progress").style.width = (t / DURATION * 100) + "%";
+  for (const [id, a, b] of SCENES) {
+    const vis = (t >= a && t < b) ? Math.min(ease((t - a) / 0.25), id === "s9" ? 1 : 1 - ease((t - (b - 0.25)) / 0.25)) : 0;
+    $(id).style.opacity = vis;
+  }
+  let fl = 0; for (const c of CUTS) { const d = t - c; if (d >= -0.05 && d < 0.25) fl = Math.max(fl, 1 - Math.abs(d + 0.05) / 0.3); }
+  $("flash").style.opacity = fl * 0.4;
+  const cur = SCENES.find(([, a, b]) => t >= a && t < b) || SCENES[SCENES.length - 1];
+  let camScale = 1;
+
+  // S1
+  rise("s1tag", t, 0.2); pop("s1a", t, W("17 arrestations", "17")); pop("s1b", t, W("17 arrestations", "200")); pop("s1c", t, W("17 arrestations", "neuf"));
+  slam("s1d", t, W("Et au centre de tout ça", "Ante")); redHit(t, W("Et au centre de tout ça", "Ante") + 0.1);
+  // S2
+  rise("s2tag", t, S("s2") + 0.1); slam("s2t", t, W("Il y a là un bar", "Café")); pop("s2a", t, W("C'est là qu'un arbitre", "Robert"));
+  pop("s2b", t, W("Selon la justice, Hoyzer", "70")); pop("s2c", t, W("Les enquêteurs soupçonnent 23", "23"));
+  // S3
+  rise("s3tag", t, S("s3") + 0.1); pop("s3a", t, W("Hoyzer avoue", "deux")); pop("s3b", t, W("Ante Šapina, considéré", "35")); pop("s3c", t, W("Ante Šapina, considéré", "sursis"));
+  rise("s3z", t, W("Début 2005", "Coupe"));
+  // S4
+  rise("s4tag", t, S("s4") + 0.1); rise("s4a", t, P("Après sa peine")); slam("s4b", t, W("Après sa peine", "d'échelle"));
+  pop("s4c", t, W("Et les paris ne se font plus", "Asie"));
+  // S5
+  rise("s5tag", t, S("s5") + 0.1); pop("s5a", t, W("15 arrestations", "15")); pop("s5c", t, W("Environ 200 matchs sous", "neuf"));
+  pop("s5b", t, W("Et même des matchs de Coupe", "Ligue"));
+  // S6
+  rise("s6tag", t, S("s6") + 0.1); slam("s6n", t, W("Au procès, Šapina avoue", "20")); pop("s6a", t, W("Parmi eux, un match", "Debrecen"));
+  pop("s6b", t, W("Et selon son propre témoignage", "Sarajevo"));
+  // S7
+  rise("s7tag", t, S("s7") + 0.1); pop("s7a", t, W("En mai 2011", "cinq")); pop("s7b", t, W("Après un nouveau procès", "cinq"));
+  pop("s7c", t, W("Et l'enquête, elle", "270")); redHit(t, W("Et l'enquête, elle", "270") + 0.1);
+  // S8
+  rise("s8tag", t, S("s8") + 0.1); rise("s8a", t, P("C'est qu'un homme déjà condamné")); slam("s8b", t, W("C'est qu'un homme déjà condamné", "recommencer"));
+  // S9
+  pop("s9logo", t, S("s9") + 0.2, 0.6); pop("s9cta", t, W("Si ce genre", "abonne")); rise("s9foot", t, E("La prochaine affaire") + 0.3, 0.4, 20);
+  $("s9cta").style.boxShadow = `0 0 ${30 + 25*Math.sin(t*4)}px rgba(245,184,0,.55)`;
+
+  // flow arrows appear with the card they point to
+  document.querySelectorAll(".row > .k.gold").forEach((a) => { a.style.opacity = a.nextElementSibling.style.opacity || 0; });
+  let onPhoto = false;
+  for (const [, a, b] of PHOTOS) onPhoto = onPhoto || (t >= a && t < b);
+  $("illu").style.opacity = (onPhoto || t >= S("s9")) ? 0 : 1;
+  renderSubs(t);
+  $("redflash").style.opacity = red;
+  const sx = shake ? Math.sin(t * 97) * shake : 0, sy = shake ? Math.cos(t * 83) * shake : 0;
+  $("cam").style.transform = `translate(${sx}px, ${sy}px) scale(${camScale})`;
+};
+window.render(0);
+</script>
+</body>
+</html>
